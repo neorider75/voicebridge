@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import time
@@ -89,14 +90,23 @@ async def prechauffage(payload: dict):
     try:
         from ..models import stt as stt_model
         from ..models import tts as tts_model
+    except ImportError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "ml_unavailable", "message": str(exc)})
+
+    # Le chargement effectif (NeuTTS + Kyutai) prend 30–60 s à froid et est
+    # purement CPU-bound + bloquant (lock + import torch, JIT librosa, etc.).
+    # On délègue au threadpool pour ne pas geler l'event loop (sinon le polling
+    # GET /api/system/status reste en attente derrière, et la page paraît figée).
+    def _warm() -> None:
         # Q4 + Q8 pour la langue choisie
         mgr.manager.get(tts_model.model_key_for(language, "normal"))
         mgr.manager.get(tts_model.model_key_for(language, "high"))
         # Kyutai (utile au Live et au STT fichier)
         mgr.manager.get(mgr.MODEL_KYUTAI)
-    except ImportError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
-            "error": "ml_unavailable", "message": str(exc)})
+
+    try:
+        await asyncio.to_thread(_warm)
     except Exception as exc:  # noqa: BLE001
         log.exception("prechauffage failed")
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={

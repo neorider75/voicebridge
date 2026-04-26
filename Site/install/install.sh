@@ -385,6 +385,9 @@ phase4_system() {
   step "Création de l'arborescence /var/voicebridge"
   mkdir -p "$DATA_DIR"/{voices,voices/encoded,audio,models,install,logs,tmp}
   mkdir -p "$HF_CACHE_DIR"
+  # Caches inscriptibles (numba/librosa, matplotlib, etc.) — le venv est en
+  # lecture seule sous ProtectSystem=strict, il faut un emplacement dédié.
+  mkdir -p "$DATA_DIR"/cache/{numba,matplotlib}
   chown -R "$SERVICE_USER:$SERVICE_USER" /var/voicebridge
   ok "Arborescence créée"
 }

@@ -12,6 +12,11 @@ Environment="VB_DATA_DIR=/var/voicebridge/data"
 Environment="VB_FRONTEND_DIR=/var/voicebridge/app/Site/frontend"
 Environment="HF_HOME=/var/voicebridge/data/models/hf-cache"
 Environment="HUGGINGFACE_HUB_CACHE=/var/voicebridge/data/models/hf-cache/hub"
+# Caches inscriptibles (le venv est en lecture seule sous ProtectSystem=strict).
+# Sans NUMBA_CACHE_DIR, librosa @jit(cache=True) crashe au boot de NeuTTS.
+Environment="NUMBA_CACHE_DIR=/var/voicebridge/data/cache/numba"
+Environment="XDG_CACHE_HOME=/var/voicebridge/data/cache"
+Environment="MPLCONFIGDIR=/var/voicebridge/data/cache/matplotlib"
 ExecStart=/var/voicebridge/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=10
