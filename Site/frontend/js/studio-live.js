@@ -25,6 +25,9 @@
   var playbackCtx = null;
   var nextPlayAt = 0;
   var TTS_RATE = 24000;
+  // Level meter (anneau pulsant rouge autour de liveMicZone)
+  var levelAnalyser = null;
+  var levelRaf = null;
 
   function loadVoices() {
     VB.api.get('/api/voices').then(function (d) {
@@ -196,6 +199,11 @@
         };
         sourceNode.connect(workletNode);
         // Pas besoin de connecter à destination (sinon l'utilisateur s'entend)
+        // Level meter : tap parallèle sur le sourceNode → AnalyserNode → RMS
+        // → CSS variable --mic-level sur liveMicZone (cohérent avec voices/new
+        // et studio-stt). Pas de retour audio dans les enceintes (on ne
+        // connecte pas l'AnalyserNode à destination).
+        startLevelMeter(sourceNode, audioCtx);
       });
     }).catch(function (err) {
       console.warn('getUserMedia/worklet failed', err);
@@ -204,7 +212,39 @@
     });
   }
 
+  function startLevelMeter(srcNode, ctx) {
+    try {
+      levelAnalyser = ctx.createAnalyser();
+      levelAnalyser.fftSize = 1024;
+      levelAnalyser.smoothingTimeConstant = 0.6;
+      srcNode.connect(levelAnalyser);
+      var data = new Float32Array(levelAnalyser.fftSize);
+      var zone = $('liveMicZone');
+      function tick() {
+        if (!levelAnalyser) return;
+        levelAnalyser.getFloatTimeDomainData(data);
+        var sum = 0;
+        for (var i = 0; i < data.length; i++) sum += data[i] * data[i];
+        var rms = Math.sqrt(sum / data.length);
+        var level = Math.min(1, rms * 6);
+        if (zone) zone.style.setProperty('--mic-level', level.toFixed(3));
+        levelRaf = requestAnimationFrame(tick);
+      }
+      tick();
+    } catch (e) {
+      console.warn('live level meter unavailable', e);
+    }
+  }
+
+  function stopLevelMeter() {
+    if (levelRaf) { cancelAnimationFrame(levelRaf); levelRaf = null; }
+    levelAnalyser = null;
+    var zone = $('liveMicZone');
+    if (zone) zone.style.setProperty('--mic-level', '0');
+  }
+
   function stopCapture() {
+    stopLevelMeter();
     try { if (workletNode) { workletNode.disconnect(); workletNode = null; } } catch (e) {}
     try { if (sourceNode) { sourceNode.disconnect(); sourceNode = null; } } catch (e) {}
     if (stream) {
