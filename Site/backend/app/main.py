@@ -252,3 +252,28 @@ async def favicon():
     if fp.exists():
         return FileResponse(fp)
     return Response(status_code=204)
+
+
+@app.get("/api/install/voicebridge-app")
+async def download_macos_app(request: Request):
+    """Sert ``VoiceBridge.app.zip`` (auth requis via middleware global).
+
+    Le fichier est généré par la phase 9 de ``install.sh`` après upload du
+    bundle vierge produit par ``Site/macos-app/build.sh``.
+    """
+    fp = config.INSTALL_DIR / "VoiceBridge.app.zip"
+    if not fp.exists():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "not_available",
+                "message": (
+                    "VoiceBridge.app.zip n'a pas encore été uploadé sur le serveur. "
+                    "Build local : Site/macos-app/build.sh --zip ; "
+                    "puis scp dans /var/voicebridge/data/install/."
+                ),
+            },
+        )
+    return FileResponse(
+        fp, media_type="application/zip", filename="VoiceBridge.app.zip",
+    )
