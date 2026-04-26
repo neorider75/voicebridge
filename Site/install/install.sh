@@ -61,6 +61,7 @@ API_TOKEN=""
 # Flags
 MINIMAL=0
 WITH_UFW=0
+FRESH=0
 for arg in "$@"; do
   case "$arg" in
     --minimal)
@@ -69,9 +70,16 @@ for arg in "$@"; do
     --with-ufw)
       WITH_UFW=1
       ;;
+    --fresh)
+      FRESH=1
+      ;;
     -h|--help)
       cat <<EOF
-Usage : sudo ./install.sh [--minimal] [--with-ufw]
+Usage : sudo ./install.sh [--minimal] [--with-ufw] [--fresh]
+
+Par défaut le script REPREND là où il s'est arrêté (sauf si --fresh).
+Les phases déjà complétées (cf. /var/voicebridge/.install_state/) sont
+sautées avec un message "déjà fait — skip".
 
   --minimal     N'installe que la livraison 1 du POC (login + sécurité +
                 Nginx/SSL + systemd) en sautant le téléchargement des
@@ -84,6 +92,11 @@ Usage : sudo ./install.sh [--minimal] [--with-ufw]
                 service expose un port public sur ce VPS (Docker, Node…),
                 il deviendra inaccessible. Faites un audit avec
                 'sudo ss -tlnp' avant de l'activer.
+
+  --fresh       Repart de zéro : supprime l'état de checkpoint et
+                réexécute toutes les phases. Ne supprime PAS les modèles
+                déjà téléchargés ni /var/voicebridge/data/. Pour une
+                désinstallation complète, utiliser uninstall.sh.
 EOF
       exit 0
       ;;
@@ -93,6 +106,49 @@ EOF
       ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# Checkpoint / reprise
+# ---------------------------------------------------------------------------
+
+STATE_DIR="/var/voicebridge/.install_state"
+
+state_init() {
+  if (( FRESH )); then
+    rm -rf "$STATE_DIR"
+  fi
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
+}
+
+is_done() {
+  [[ -f "$STATE_DIR/$1.done" ]]
+}
+
+mark_done() {
+  : > "$STATE_DIR/$1.done"
+}
+
+state_save_var() {
+  printf '%s' "$2" > "$STATE_DIR/$1.txt"
+  chmod 600 "$STATE_DIR/$1.txt"
+}
+
+state_load_var() {
+  [[ -f "$STATE_DIR/$1.txt" ]] && cat "$STATE_DIR/$1.txt"
+}
+
+# Wrapper qui skip une phase si déjà faite
+run_phase() {
+  local key="$1"
+  local fn="$2"
+  if is_done "$key"; then
+    echo -e "${C_GREEN}↷${C_RESET} $key déjà complétée — skip"
+    return 0
+  fi
+  "$fn"
+  mark_done "$key"
+}
 
 # ---------------------------------------------------------------------------
 # Helpers d'affichage
@@ -164,8 +220,44 @@ phase1_checks() {
 # Phase 2 — Questions interactives
 # ---------------------------------------------------------------------------
 
+ask_password() {
+  while true; do
+    read -rsp "▸ Mot de passe administrateur du panel web (min 8 caractères) : " p1; echo
+    read -rsp "▸ Confirmer le mot de passe : " p2; echo
+    if [[ "$p1" != "$p2" ]]; then
+      warn "Les mots de passe ne correspondent pas."
+      continue
+    fi
+    if (( ${#p1} < 8 )); then
+      warn "Mot de passe trop court (min 8 caractères)."
+      continue
+    fi
+    USER_PASSWORD="$p1"
+    break
+  done
+  ok "Mot de passe accepté"
+}
+
 phase2_questions() {
   banner "Phase 2 / 14 — Configuration"
+
+  # Reprise : si phase déjà passée, on restaure DOMAIN/EMAIL depuis l'état
+  # et on ne re-pose le mdp QUE si phase 8 (config.json) est à refaire.
+  if is_done phase2; then
+    DOMAIN=$(state_load_var domain)
+    EMAIL=$(state_load_var email)
+    if [[ -z "$DOMAIN" || -z "$EMAIL" ]]; then
+      warn "État corrompu — relancer avec --fresh"
+      exit 1
+    fi
+    echo -e "${C_GREEN}↷${C_RESET} Reprise — domaine=$DOMAIN, email=$EMAIL"
+    if ! is_done phase8; then
+      warn "Phase 8 (config) à refaire : nouveau mot de passe nécessaire"
+      ask_password
+    fi
+    return 0
+  fi
+
   echo "Ce script va installer VoiceBridge sur ce VPS."
   echo "Durée estimée : 15 à 30 minutes selon votre connexion."
   echo
@@ -186,21 +278,9 @@ phase2_questions() {
     warn "Email invalide. Réessayez."
   done
 
-  while true; do
-    read -rsp "▸ Mot de passe administrateur du panel web (min 8 caractères) : " p1; echo
-    read -rsp "▸ Confirmer le mot de passe : " p2; echo
-    if [[ "$p1" != "$p2" ]]; then
-      warn "Les mots de passe ne correspondent pas."
-      continue
-    fi
-    if (( ${#p1} < 8 )); then
-      warn "Mot de passe trop court (min 8 caractères)."
-      continue
-    fi
-    USER_PASSWORD="$p1"
-    break
-  done
-  ok "Mot de passe accepté"
+  ask_password
+  state_save_var domain "$DOMAIN"
+  state_save_var email "$EMAIL"
 
   echo
   echo "Composants à installer (tous activés par défaut) :"
@@ -733,19 +813,35 @@ main() {
   exec > >(tee -a "$LOG_INSTALL") 2>&1
 
   banner "VoiceBridge — Installation"
+  state_init
+  if (( FRESH )); then
+    warn "Mode --fresh : checkpoint effacé, réexécution complète"
+  elif [[ -d "$STATE_DIR" && -n "$(ls -A "$STATE_DIR" 2>/dev/null)" ]]; then
+    echo -e "${C_GREEN}↷${C_RESET} Reprise détectée (cf. $STATE_DIR)"
+  fi
+
+  # phase1 : non checkpointée (vérifs idempotentes, toujours exécutées)
   phase1_checks
+  # phase2 : gère elle-même la reprise (mdp re-demandé si phase8 à refaire)
   phase2_questions
-  phase3_recap
-  phase4_system
-  phase5_app_code
-  phase6_models
-  phase7_default_voices
-  phase8_config
-  phase9_macos_app
-  phase10_nginx
-  phase11_systemd
-  phase12_firewall
-  phase13_cron
+  mark_done phase2
+  # phase3 (récap + confirm) : skippée en reprise (l'utilisateur a déjà confirmé)
+  if ! is_done phase3; then
+    phase3_recap
+    mark_done phase3
+  fi
+
+  run_phase phase4  phase4_system
+  run_phase phase5  phase5_app_code
+  run_phase phase6  phase6_models
+  run_phase phase7  phase7_default_voices
+  run_phase phase8  phase8_config
+  run_phase phase9  phase9_macos_app
+  run_phase phase10 phase10_nginx
+  run_phase phase11 phase11_systemd
+  run_phase phase12 phase12_firewall
+  run_phase phase13 phase13_cron
+
   phase14_recap
 }
 
