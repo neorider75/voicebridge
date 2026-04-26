@@ -363,8 +363,8 @@ phase4_system() {
   step "Installation des paquets système"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     "$PYTHON_PKG" "$PYTHON_VENV_PKG" python3-pip \
-    build-essential cmake \
-    libopenblas-dev \
+    build-essential cmake pkg-config \
+    libopenblas-dev libblas-dev liblapack-dev \
     ffmpeg \
     nginx certbot python3-certbot-nginx \
     ufw fail2ban \
