@@ -432,8 +432,16 @@ hf_download() {
   local repo="$1"
   local dest="$2"
   step "↓ $repo → $dest"
-  sudo -u "$SERVICE_USER" "$VENV_DIR/bin/huggingface-cli" download "$repo" \
-    --local-dir "$dest" --quiet
+  # ``hf download`` est le nouveau nom (huggingface-cli est déprécié depuis
+  # huggingface-hub >= 0.34). Fallback sur l'ancien nom si la nouvelle CLI
+  # n'est pas disponible (versions plus anciennes).
+  if [[ -x "$VENV_DIR/bin/hf" ]]; then
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/hf" download "$repo" \
+      --local-dir "$dest" --quiet
+  else
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/huggingface-cli" download "$repo" \
+      --local-dir "$dest" --quiet
+  fi
 }
 
 phase6_models() {
