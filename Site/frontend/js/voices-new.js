@@ -247,17 +247,107 @@
 
   // ── Soumission finale ──
 
+  // Étapes simulées de l'ajout de voix : on ne peut pas avoir une vraie
+  // progression (le POST /api/voices est monolithique) mais on reflète
+  // honnêtement les phases que le backend traverse et on adapte la durée
+  // de l'étape "encode" si elle prend plus longtemps que prévu (cold start
+  // NeuTTS Q4 = jusqu'à 60 s).
+  var SUBMIT_STEPS = [
+    { key: 'upload',  label: 'Téléversement…',          target: 20, duration: 600 },
+    { key: 'convert', label: 'Conversion ffmpeg…',      target: 40, duration: 1500 },
+    { key: 'encode',  label: 'Encodage NeuTTS (à froid : ~30 s, à chaud : ~3 s)', target: 92, duration: 30000 },
+  ];
+  var submitTimer = null;
+
+  function showSubmitUI(busy) {
+    // Le bouton est désactivé ET caché : double-clic impossible (la garde
+    // `if (btn.disabled) return` en début de click handler couvre la fenêtre
+    // de quelques ms entre le click et le DOM hidden, et le hidden empêche
+    // tout nouveau clic une fois la transition affichée).
+    var submitBtn = $('btnSubmit');
+    submitBtn.disabled = !!busy;
+    $('submitRow').style.display = busy ? 'none' : 'flex';
+    $('submitProgress').style.display = busy ? 'block' : 'none';
+  }
+
+  function setSubmitProgress(percent, label) {
+    $('submitBar').style.width = Math.min(100, Math.round(percent)) + '%';
+    if (label) $('submitStep').textContent = label;
+  }
+
+  // Fait avancer la barre de `from%` à `to%` sur `duration` ms (linéaire).
+  // Retourne une fonction "abort" qui stoppe l'animation et fige la barre.
+  function tweenTo(from, to, duration, onTick) {
+    var start = Date.now();
+    var stopped = false;
+    function step() {
+      if (stopped) return;
+      var elapsed = Date.now() - start;
+      var t = Math.min(1, elapsed / duration);
+      var v = from + (to - from) * t;
+      onTick(v);
+      if (t < 1) submitTimer = requestAnimationFrame(step);
+    }
+    step();
+    return function () { stopped = true; if (submitTimer) cancelAnimationFrame(submitTimer); };
+  }
+
+  // Joue les étapes upload→convert→encode en chaîne. La dernière étape
+  // (encode) reste en cours tant que le serveur n'a pas répondu — si la
+  // réponse arrive avant la fin de l'animation, on saute à 100%.
+  function startSubmitAnimation() {
+    showSubmitUI(true);
+    setSubmitProgress(0, SUBMIT_STEPS[0].label);
+    var current = 0;
+    var lastTo = 0;
+    var stopFn = null;
+    function next() {
+      if (current >= SUBMIT_STEPS.length) return;
+      var s = SUBMIT_STEPS[current];
+      $('submitStep').textContent = s.label;
+      stopFn = tweenTo(lastTo, s.target, s.duration, function (v) { setSubmitProgress(v); });
+      lastTo = s.target;
+      current += 1;
+      // Programme l'étape suivante après duration (sauf si on est sur la dernière)
+      if (current < SUBMIT_STEPS.length) {
+        setTimeout(function () { if (stopFn) stopFn(); next(); }, SUBMIT_STEPS[current - 1].duration);
+      }
+    }
+    next();
+    return function () { if (stopFn) stopFn(); };
+  }
+
+  function finishSubmitAnimation(success) {
+    if (submitTimer) cancelAnimationFrame(submitTimer);
+    setSubmitProgress(100, success ? '✅ Voix prête' : '❌ Échec');
+  }
+
+  function resetSubmitUI() {
+    if (submitTimer) cancelAnimationFrame(submitTimer);
+    submitTimer = null;
+    setSubmitProgress(0, 'Préparation…');
+    showSubmitUI(false);
+  }
+
   function bindSubmit() {
     $('btnSubmit').addEventListener('click', function () {
+      var btn = $('btnSubmit');
+      if (btn.disabled) return;
+
       var name = $('voiceName').value.trim();
       var lang = $('langSelect').value;
       if (!name) { VB.notify('warning', 'Nom obligatoire'); return; }
 
       if (currentSource === 'url') {
         if (!pendingUrlVoiceId) { VB.notify('warning', 'Lancez d\'abord l\'extraction'); return; }
+        startSubmitAnimation();
         VB.api.post('/api/voices/' + pendingUrlVoiceId + '/confirm')
-          .then(function () { done(); })
-          .catch(function (e) { VB.notify('error', e.message || 'Échec confirmation'); });
+          .then(function () { finishSubmitAnimation(true); done(); })
+          .catch(function (e) {
+            finishSubmitAnimation(false);
+            resetSubmitUI();
+            VB.notify('error', e.message || 'Échec confirmation');
+          });
         return;
       }
 
@@ -267,8 +357,6 @@
 
       if (currentSource === 'record') {
         if (!recordedBlob) { VB.notify('warning', 'Enregistrez d\'abord votre voix'); return; }
-        // Le serveur s'appuie sur l'extension pour décider du décodage ffmpeg
-        // (cf. routes/voices.py) — il faut donc refléter le format réel.
         fd.append('audio_file', recordedBlob, 'recording.' + extForMime(recordedMime));
       } else if (currentSource === 'upload') {
         var input = $('fileInput');
@@ -276,16 +364,13 @@
         fd.append('audio_file', input.files[0]);
       }
 
+      startSubmitAnimation();
       fetch('/api/voices', {
         method: 'POST',
         credentials: 'same-origin',
         body: fd,
       }).then(function (r) {
         if (!r.ok) {
-          // Réponse non-OK : le body peut être JSON ({"detail": {"message": ...}})
-          // ou plain text ("Internal Server Error" sur exception non capturée).
-          // Fallback robuste pour ne pas re-déclencher un JSON.parse SyntaxError
-          // sur du texte brut (Safari renvoie un message cryptique sinon).
           return r.text().then(function (raw) {
             var msg = 'Erreur ' + r.status;
             try {
@@ -301,14 +386,25 @@
           });
         }
         return r.json();
-      }).then(function () { done(); })
-        .catch(function (e) { VB.notify('error', e.message || 'Création impossible'); });
+      }).then(function () {
+        finishSubmitAnimation(true);
+        done();
+      }).catch(function (e) {
+        finishSubmitAnimation(false);
+        resetSubmitUI();
+        VB.notify('error', e.message || 'Création impossible');
+      });
     });
   }
 
   function done() {
+    // Carte de validation visible 1.2 s avant la redirection (mieux qu'une
+    // notif éphémère). Le bouton reste disabled donc impossible de re-soumettre
+    // pendant la transition.
+    var card = $('submitDone');
+    if (card) card.style.display = 'block';
     VB.notify('success', 'Voix ajoutée');
-    setTimeout(function () { window.location.href = '/voices'; }, 600);
+    setTimeout(function () { window.location.href = '/voices'; }, 1200);
   }
 
   document.addEventListener('DOMContentLoaded', function () {
