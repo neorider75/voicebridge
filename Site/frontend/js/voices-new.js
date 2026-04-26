@@ -5,19 +5,14 @@
   function $(id) { return document.getElementById(id); }
   function $$(sel, r) { return Array.prototype.slice.call((r || document).querySelectorAll(sel)); }
 
-  // Textes calibrés pour ~25-30 secondes de lecture naturelle. Plus long
-  // = meilleur clonage NeuTTS (plus de variabilité prosodique capturée).
-  // Mélange voyelles ouvertes/fermées + consonnes sifflantes + ponctuation
-  // variée pour couvrir un bon échantillon phonémique.
+  // Textes calibrés pour ~10-12 secondes de lecture naturelle. NeuTTS Air
+  // est entraîné sur des références de 3 à 15 s — au-delà la qualité peut
+  // se DÉGRADER (cf. doc officielle Neuphonic). On reste dans la plage
+  // recommandée avec une lecture variée (déclaratif + interrogatif +
+  // exclamatif) pour capturer un bon échantillon prosodique.
   var REF_TEXT = {
-    fr: "Ce matin, le ciel était particulièrement clair et l'air avait cette fraîcheur agréable du début d'automne. " +
-        "J'ai décidé de sortir marcher un peu, histoire de prendre l'air et de réfléchir tranquillement à tout ce qui m'attend cette semaine. " +
-        "Les feuilles commençaient à jaunir sur les bords des chemins, et le silence n'était troublé que par le chant lointain des oiseaux. " +
-        "Quelle belle journée pour se promener ! Tu viens avec moi la prochaine fois ? Je pense qu'on pourrait passer par le parc et s'arrêter au café du coin.",
-    en: "I never thought a simple walk could change my whole morning, but here I am, completely surprised by how peaceful everything feels. " +
-        "The air was fresh, the light was soft, and everything felt strangely calm, almost as if the world was holding its breath for a moment. " +
-        "I noticed the colors of the leaves shifting from green to amber, and the steady rhythm of my footsteps felt oddly comforting. " +
-        "What an incredible thing nature can be ! Do you ever get that feeling where time just stops for a moment ? Maybe we could try this together next weekend.",
+    fr: "Ce matin, le ciel était particulièrement clair. J'ai décidé de sortir marcher un peu, histoire de prendre l'air et de réfléchir tranquillement. Quelle belle journée pour se promener ! Tu viens avec moi la prochaine fois ?",
+    en: "I never thought a simple walk could change my whole morning. The air was fresh, the light was soft, and everything felt strangely calm. What an incredible thing nature can be ! Do you ever get that feeling where time just stops for a moment ?",
   };
 
   var currentSource = 'record'; // record | upload | url
