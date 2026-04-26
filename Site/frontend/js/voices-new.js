@@ -184,6 +184,12 @@
     var bar = $('uploadTranscribeBar');
     var step = $('uploadTranscribeStep');
     var prog = $('uploadTranscribeProgress');
+    if (!prog || !bar || !step) {
+      console.warn('[voices-new] uploadTranscribeProgress introuvable dans le DOM — '
+        + 'HTML probablement en cache. Vide les caches Safari et Cmd+Shift+R.');
+      VB.notify('warning', 'Page en cache — videz le cache Safari et rechargez (Cmd+Shift+R).');
+      return;
+    }
     prog.classList.add('visible');
     bar.style.width = '0%';
     step.textContent = 'Transcription Kyutai en cours… (peut prendre ~10-30 s)';
