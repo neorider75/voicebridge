@@ -26,16 +26,28 @@ wheel pip embarque PortAudio binaire, donc pas besoin de
 ``brew install portaudio`` ni de toolchain C. Le build fonctionne sur un
 Mac neuf sans Homebrew.
 
-## Déploiement sur le VPS
+## Déploiement (via git, sans scp)
+
+Le bundle est **versionné dans le repo** sous
+``Site/macos-app/release/VoiceBridge.app.zip`` (24 Mo). Le script
+``build.sh --zip`` y copie la dernière version. Pour publier :
 
 ```bash
-scp dist/VoiceBridge.app.zip root@TON_VPS:/var/voicebridge/data/install/
-ssh root@TON_VPS 'chown voicebridge:voicebridge /var/voicebridge/data/install/VoiceBridge.app.zip'
+git add Site/macos-app/release/VoiceBridge.app.zip
+git commit -m "macos-app : nouveau bundle"
+git push origin main
 ```
 
-L'archive est ensuite servie au front web depuis Réglages → Installation.
-**Le `config.json` embarqué dans le bundle est réécrit côté VPS à l'install
-pour pointer sur le bon `server_url`.**
+Sur le VPS, l'``install.sh`` (phase 9) récupère le bundle depuis le repo
+cloné, **patche** le ``config.json`` embarqué pour pointer sur le bon
+``server_url`` et le re-zippe dans ``/var/voicebridge/data/install/``.
+
+→ Le front web le sert ensuite à ``Réglages → Installation`` via
+``GET /api/install/voicebridge-app``.
+
+> ℹ️ 24 Mo dans git c'est OK pour le POC. Si tu pousses des updates
+> fréquentes, bascule sur Git LFS ou GitHub Releases pour garder le repo
+> léger.
 
 ## Test local sans build
 

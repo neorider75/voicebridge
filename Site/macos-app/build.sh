@@ -67,10 +67,23 @@ echo ""
 echo "✅ Build OK : dist/VoiceBridge.app"
 
 if (( DO_ZIP )); then
-  ( cd dist && zip -qr VoiceBridge.app.zip VoiceBridge.app )
+  # Cleanup xattr + signature ad-hoc (sans ça : Gatekeeper "resource fork detritus")
+  xattr -cr dist/VoiceBridge.app
+  codesign --force --deep --sign - dist/VoiceBridge.app 2>/dev/null || true
+
+  ( cd dist && rm -f VoiceBridge.app.zip && zip -qr VoiceBridge.app.zip VoiceBridge.app )
   echo "✅ Archive : dist/VoiceBridge.app.zip"
+
+  # Copie dans release/ pour distribution via git (install.sh phase 9 le récupère).
+  mkdir -p release
+  cp dist/VoiceBridge.app.zip release/VoiceBridge.app.zip
+  echo "✅ Bundle de release : release/VoiceBridge.app.zip (à committer)"
   echo ""
-  echo "Pour déployer sur ton VPS :"
-  echo "  scp dist/VoiceBridge.app.zip root@TON_VPS:/var/voicebridge/data/install/"
-  echo "  ssh root@TON_VPS 'chown voicebridge:voicebridge /var/voicebridge/data/install/VoiceBridge.app.zip'"
+  echo "Pour publier la nouvelle version :"
+  echo "  git add Site/macos-app/release/VoiceBridge.app.zip"
+  echo "  git commit -m 'macos-app : nouveau bundle (cf. shasum)'"
+  echo "  git push origin main"
+  echo ""
+  echo "Le VPS récupère automatiquement le bundle au prochain install.sh"
+  echo "ou via : sudo -u voicebridge git -C /var/voicebridge/app pull origin main"
 fi

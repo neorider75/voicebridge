@@ -604,19 +604,22 @@ EOF
 phase9_macos_app() {
   banner "Phase 9 / 14 — Préparation VoiceBridge.app pour macOS"
 
-  local template="$APP_DIR/Site/macos-app/VoiceBridge.app.template.zip"
-  if [[ ! -f "$template" ]]; then
-    warn "VoiceBridge.app.template.zip non disponible (livraison 7 du POC)."
-    warn "L'interface 'Réglages → Installation' affichera un placeholder."
+  # Le bundle est versionné dans le repo : Site/macos-app/release/VoiceBridge.app.zip
+  # (généré par Site/macos-app/build.sh --zip côté Mac).
+  local bundle="$APP_DIR/Site/macos-app/release/VoiceBridge.app.zip"
+  if [[ ! -f "$bundle" ]]; then
+    warn "release/VoiceBridge.app.zip absent du repo."
+    warn "Build local : Site/macos-app/build.sh --zip puis git push."
     return 0
   fi
 
-  step "Préparation du bundle avec l'URL serveur intégrée"
+  step "Patch du config.json embarqué (server_url = https://$DOMAIN)"
   local tmp_app="/tmp/VoiceBridge.app.build"
   rm -rf "$tmp_app"
   mkdir -p "$tmp_app"
-  unzip -q "$template" -d "$tmp_app"
+  unzip -q "$bundle" -d "$tmp_app"
 
+  # Le config.json embarqué dans le bundle est patché avec l'URL réelle du VPS.
   cat > "$tmp_app/VoiceBridge.app/Contents/Resources/config.json" <<EOF
 {
   "server_url": "https://$DOMAIN",
@@ -628,7 +631,7 @@ EOF
   cp "$tmp_app/VoiceBridge.app.zip" "$DATA_DIR/install/"
   rm -rf "$tmp_app"
   chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR/install"
-  ok "VoiceBridge.app.zip déposé dans $DATA_DIR/install/"
+  ok "VoiceBridge.app.zip déposé dans $DATA_DIR/install/ (config.json patché)"
 }
 
 # ---------------------------------------------------------------------------
