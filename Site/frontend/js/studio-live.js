@@ -37,9 +37,12 @@
   // (cas pathologique : audio_end jamais reçu). À ce stade on flush ce
   // qu'on a et tant pis si la suite est hachée.
   var MAX_BUFFER_MS = 6000;
+  var IDLE_FLUSH_MS = 4000;        // si plus aucun chunk depuis 4s mais audio_end pas reçu → flush quand même
   var pendingChunks = [];          // AudioBuffers en attente de scheduling
   var pendingDurationMs = 0;       // total des durées accumulées
   var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
+  var lastChunkAt = 0;             // timestamp ms du dernier chunk reçu (watchdog idle flush)
+  var idleFlushTimer = null;
   // Level meter (anneau pulsant rouge autour de liveMicZone)
   var levelAnalyser = null;
   var levelRaf = null;
@@ -125,45 +128,60 @@
     try {
       var ctx = ensurePlaybackCtx();
       var audioBuffer = decodePcmChunk(b64, ctx);
+      lastChunkAt = Date.now();
 
       if (hasStartedUtterance) {
-        // Phrase déjà en cours de lecture (cas du flush par MAX_BUFFER_MS,
-        // rare) → on enchaîne immédiatement. Risque de gap si la génération
-        // est plus lente que la lecture, mais on n'a pas mieux à ce stade.
+        // Phrase déjà en cours de lecture (flush déclenché par audio_end ou
+        // par MAX_BUFFER_MS) — on enchaîne au fil de l'eau. Risque de gap
+        // si la génération devient plus lente que la lecture.
         scheduleBuffer(ctx, audioBuffer);
         return;
       }
 
-      // Accumule sans jouer ; on flush sur audio_end (cas normal) ou si on
-      // dépasse MAX_BUFFER_MS (sécurité contre audio_end qui n'arrive jamais).
+      // Accumule sans jouer. On flush sur audio_end (cas normal) ou via le
+      // watchdog idle/MAX_BUFFER (sécurité si audio_end n'arrive pas).
       pendingChunks.push(audioBuffer);
       pendingDurationMs += audioBuffer.duration * 1000;
+      console.log('[live] +chunk dur=' + (audioBuffer.duration * 1000).toFixed(0) + 'ms total=' + pendingDurationMs.toFixed(0) + 'ms n=' + pendingChunks.length);
+
       if (pendingDurationMs >= MAX_BUFFER_MS) {
-        console.warn('Live: MAX_BUFFER_MS atteint avant audio_end — flush forcé');
+        console.warn('[live] MAX_BUFFER_MS atteint avant audio_end — flush forcé');
         flushPending(ctx);
+        return;
       }
+
+      // Watchdog : si plus aucun chunk pendant IDLE_FLUSH_MS, on flush
+      // par défaut (audio_end manquant ou serveur déconnecté).
+      if (idleFlushTimer) clearTimeout(idleFlushTimer);
+      idleFlushTimer = setTimeout(function () {
+        if (pendingChunks.length > 0 && playbackCtx) {
+          console.warn('[live] idle flush (' + IDLE_FLUSH_MS + 'ms sans chunk + audio_end manquant)');
+          flushPending(playbackCtx);
+        }
+      }, IDLE_FLUSH_MS);
     } catch (e) {
-      console.warn('enqueuePcmChunk failed', e);
+      console.warn('[live] enqueuePcmChunk failed', e);
     }
   }
 
   function flushPending(ctx) {
-    // Démarre la lecture en chaînant tous les chunks accumulés.
+    var n = pendingChunks.length;
+    var totalMs = pendingDurationMs.toFixed(0);
     while (pendingChunks.length > 0) {
       scheduleBuffer(ctx, pendingChunks.shift());
     }
     pendingDurationMs = 0;
     hasStartedUtterance = true;
+    if (idleFlushTimer) { clearTimeout(idleFlushTimer); idleFlushTimer = null; }
+    console.log('[live] flushed ' + n + ' chunks (' + totalMs + 'ms total)');
   }
 
   function onAudioEnd() {
-    // Cas nominal : on flush tout ce qui est accumulé. Lecture fluide
-    // garantie puisqu'on a maintenant l'intégralité de la phrase.
+    console.log('[live] audio_end reçu, pending=' + pendingChunks.length);
     if (pendingChunks.length > 0 && playbackCtx) {
       flushPending(playbackCtx);
     }
-    // Reset pour la prochaine phrase. setTimeout pour laisser le scheduler
-    // démarrer ses src.start() avant qu'on touche à hasStartedUtterance.
+    if (idleFlushTimer) { clearTimeout(idleFlushTimer); idleFlushTimer = null; }
     setTimeout(function () {
       hasStartedUtterance = false;
       pendingChunks = [];
