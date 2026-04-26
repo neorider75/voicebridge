@@ -496,6 +496,17 @@ phase6_models() {
   sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c \
     "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)"
 
+  # XTTS-v2 (Coqui) — engine TTS alternatif, bien plus naturel que NeuTTS
+  # Nano. Téléchargement par la lib TTS elle-même au premier load(), donc on
+  # fait un load à blanc ici pour pré-cacher (~3 Go dans ~/.local/share/tts/).
+  step "Pré-téléchargement Coqui XTTS-v2 (~3 Go)"
+  sudo -u "$SERVICE_USER" \
+    env "HF_HOME=$HF_CACHE_DIR" "HUGGINGFACE_HUB_CACHE=$HF_CACHE_DIR/hub" \
+        "TTS_HOME=$DATA_DIR/models/tts-cache" \
+    "$VENV_DIR/bin/python" -c \
+    "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')" \
+    || warn "XTTS-v2 download échoué — non bloquant, sera retenté à la 1re inférence"
+
   ok "Tous les modèles téléchargés"
 }
 

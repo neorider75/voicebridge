@@ -32,6 +32,7 @@ MODEL_NEUTTS_FR_Q4 = "neutts_fr_q4"
 MODEL_NEUTTS_EN_Q4 = "neutts_en_q4"
 MODEL_NEUTTS_FR_Q8 = "neutts_fr_q8"
 MODEL_NEUTTS_EN_Q8 = "neutts_en_q8"
+MODEL_XTTS_V2 = "xtts_v2"  # Coqui XTTS-v2 (multilingue, ~1.7B params)
 MODEL_KYUTAI = "kyutai"
 MODEL_DEEPFAKE_V2 = "deepfake_detection_v2"
 MODEL_SILERO_VAD = "silero_vad"
@@ -41,6 +42,7 @@ ALL_MODEL_KEYS = (
     MODEL_NEUTTS_EN_Q4,
     MODEL_NEUTTS_FR_Q8,
     MODEL_NEUTTS_EN_Q8,
+    MODEL_XTTS_V2,
     MODEL_KYUTAI,
     MODEL_DEEPFAKE_V2,
     MODEL_SILERO_VAD,

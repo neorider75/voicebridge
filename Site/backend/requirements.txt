@@ -27,6 +27,11 @@ llama-cpp-python>=0.2.50
 # NeuCodec : versions 0.0.x sur PyPI (pas encore 0.1). Tiré en dépendance
 # transitive par neutts mais explicite ici pour le cas où.
 neucodec>=0.0.4
+# Coqui XTTS-v2 — engine TTS alternatif pour le clonage haute qualité
+# (multilingue FR+EN+ES+DE+13 autres). Plus gros et plus lent que NeuTTS
+# Nano, mais clonage nettement plus naturel. La maintenance officielle
+# Coqui est arrêtée ; on utilise le fork "coqui-tts" maintenu par Idiap.
+coqui-tts>=0.24
 # Kyutai STT + détection deepfake (modèles transformers)
 # Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
 transformers>=4.53

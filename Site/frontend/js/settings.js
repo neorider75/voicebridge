@@ -176,8 +176,9 @@
         });
       });
     }
-    bindGroup('default-retention', 'default_retention', null);
-    bindGroup('model-unload',      'model_unload_after_minutes', function (v) { return parseInt(v, 10); });
+    bindGroup('default-retention',    'default_retention', null);
+    bindGroup('model-unload',         'model_unload_after_minutes', function (v) { return parseInt(v, 10); });
+    bindGroup('default-tts-engine',   'default_tts_engine', null);
   }
 
   function syncSettingsFromServer() {
@@ -191,6 +192,7 @@
       }
       selectGroup('default-retention', s.default_retention);
       selectGroup('model-unload', s.model_unload_after_minutes);
+      selectGroup('default-tts-engine', s.default_tts_engine || 'neutts');
     });
   }
 

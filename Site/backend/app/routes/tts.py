@@ -56,6 +56,9 @@ class GeneratePayload(BaseModel):
     format: str = Field(default="wav")  # "wav" | "mp3"
     quality: str = Field(default="high")  # "normal" | "high"
     retention: str = Field(default="session")  # "session" | "24h" | "48h"
+    # Engine TTS : "neutts" (NeuTTS Nano, défaut, rapide) ou "xtts"
+    # (Coqui XTTS-v2, plus naturel, 5-10x plus lent à inférer).
+    engine: str | None = Field(default=None)
 
 
 def _require_ml() -> None:
@@ -77,6 +80,21 @@ def _validate(payload: GeneratePayload) -> None:
     if payload.retention not in ("session", "24h", "48h"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
             "error": "invalid_retention", "message": "retention doit être session, 24h ou 48h"})
+    if payload.engine is not None and payload.engine not in ("neutts", "xtts"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+            "error": "invalid_engine", "message": "engine doit être neutts ou xtts"})
+
+
+def _resolve_engine(payload: GeneratePayload) -> str:
+    """Détermine quel engine TTS utiliser. Si payload.engine est fourni
+    explicitement, on l'honore. Sinon on retombe sur le default_tts_engine
+    de la config (default = neutts si non set)."""
+    if payload.engine in ("neutts", "xtts"):
+        return payload.engine
+    cfg_default = config.get("default_tts_engine", "neutts")
+    if cfg_default not in ("neutts", "xtts"):
+        cfg_default = "neutts"
+    return cfg_default
 
 
 def _to_wav_bytes(wav_data) -> bytes:
@@ -97,6 +115,9 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
 
     Ne retourne jamais le MP3 ; la conversion MP3 se fait dans la route, après
     écriture WAV temp.
+
+    Dispatch sur l'engine choisi : NeuTTS (rapide, défaut) ou XTTS-v2
+    (plus naturel, plus lent).
     """
     voice_id = files.safe_id(payload.voice_id)
     voice = voices_store.get(voice_id)
@@ -104,8 +125,7 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={
             "error": "voice_not_found", "message": "Voix introuvable"})
 
-    # Voix créée mais encore en cours d'encodage en arrière-plan → on bloque
-    # avec un message clair plutôt que de rendre un 500 sur fichier .pt absent.
+    # Voix en cours d'encodage en arrière-plan ou échec.
     voice_status = voice.get("status", "ready")
     if voice_status == "encoding":
         raise HTTPException(status.HTTP_409_CONFLICT, detail={
@@ -118,11 +138,26 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
                        + (voice.get("error_message") or "raison inconnue")
                        + ". Supprimez-la et recréez-la."})
 
+    engine = _resolve_engine(payload)
+    log.info("tts.generate engine=%s voice_id=%s lang=%s quality=%s",
+             engine, voice_id, voice.get("language"), payload.quality)
+
+    if engine == "xtts":
+        wav_data = _synthesize_xtts(payload, voice, voice_id)
+    else:
+        wav_data = _synthesize_neutts(payload, voice, voice_id)
+
+    wav_bytes = _to_wav_bytes(wav_data)
+    return None, wav_bytes, voice["name"]
+
+
+def _synthesize_neutts(payload: GeneratePayload, voice: dict, voice_id: str):
+    """Pipeline NeuTTS : ref_codes (.pt) + ref_text (.txt) → infer."""
     encoded = voices_store.encoded_path(voice_id)
     if not encoded.exists():
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
             "error": "ref_codes_missing",
-            "message": "ref_codes (.pt) introuvables, voix à ré-encoder"})
+            "message": "ref_codes (.pt) introuvables — la voix doit être ré-encodée pour NeuTTS"})
     try:
         ref_codes = torch.load(encoded, weights_only=False)
     except Exception as exc:  # noqa: BLE001
@@ -132,25 +167,19 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
 
     ref_text = voices_store.read_ref_text(voice_id)
     if not ref_text:
-        # Sans texte de référence, NeuTTS phonémise "" → liste vide → IndexError
-        # OU pire : il prépend un texte arbitraire au prompt et le génère en
-        # plus du texte demandé (l'utilisateur entend "blabla [son texte]"
-        # avec une voix qui ne ressemble à rien).
-        # On refuse plutôt que de générer du contenu trompeur. Les voix créées
-        # avant l'introduction du champ ref_text doivent être supprimées et
-        # recréées (le frontend envoie désormais REF_TEXT[lang] auto pour les
-        # voix recordées, et propose un textarea pour les uploads).
         raise HTTPException(status.HTTP_409_CONFLICT, detail={
             "error": "ref_text_missing",
             "message": (
                 "Cette voix a été créée sans texte de référence — la synthèse "
-                "produirait un audio incorrect. Supprimez la voix et recréez-la "
-                "(en mode Enregistrement, le texte est automatiquement sauvé)."
+                "NeuTTS produirait un audio incorrect. Supprimez la voix et "
+                "recréez-la (en mode Enregistrement, le texte est sauvé "
+                "automatiquement) — ou utilisez l'engine XTTS qui n'en a pas "
+                "besoin."
             ),
         })
 
     try:
-        wav_data = tts_model.infer(
+        return tts_model.infer(
             text=payload.text,
             ref_codes=ref_codes,
             ref_text=ref_text,
@@ -162,8 +191,34 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
             "error": "model_error", "message": str(exc)})
 
-    wav_bytes = _to_wav_bytes(wav_data)
-    return None, wav_bytes, voice["name"]
+
+def _synthesize_xtts(payload: GeneratePayload, voice: dict, voice_id: str):
+    """Pipeline XTTS-v2 : pas de pré-encodage, on lit directement le WAV."""
+    from ..models import tts_xtts  # noqa: WPS433  (lazy : coqui-tts est lourd)
+
+    wav_path = voices_store.wav_path(voice_id)
+    if not wav_path.exists():
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
+            "error": "voice_wav_missing",
+            "message": "WAV de référence introuvable pour cette voix"})
+
+    try:
+        return tts_xtts.infer(
+            text=payload.text,
+            voice_wav_path=wav_path,
+            language=voice["language"],
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
+            "error": "xtts_wav_missing", "message": str(exc)})
+    except RuntimeError as exc:
+        log.exception("XTTS.infer a échoué")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "model_error", "message": str(exc)})
+    except Exception as exc:  # noqa: BLE001
+        log.exception("XTTS unexpected error")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "xtts_failed", "message": str(exc)})
 
 
 def _wav_duration_seconds(wav_bytes: bytes) -> float:

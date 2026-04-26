@@ -155,11 +155,10 @@ def _make_loader(model_key: str):
         # Override possible via env VB_NEUTTS_TEMPERATURE.
         try:
             temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.1"))
-            # top_k 150 (vs 50 défaut NeuTTS) : on ouvre largement le pool de
-            # candidats au sampling → plus de diversité prosodique. Combiné
-            # avec temperature 1.1 modéré, on évite la dérive d'identité tout
-            # en cassant le côté monocorde.
-            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "150"))
+            # top_k 120 (vs 50 défaut NeuTTS) : compromis entre diversité
+            # prosodique et stabilité d'identité. 150 testé donnait un peu
+            # trop de variation, 100 trop plat → 120 médiane.
+            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "120"))
             if _patch_infer_ggml_temperature(instance, temp, topk):
                 log.info("NeuTTS expressivité : temperature=%.2f top_k=%d (%s)",
                          temp, topk, model_key)

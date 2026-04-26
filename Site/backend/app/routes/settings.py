@@ -35,6 +35,7 @@ async def get_settings():
     return {
         "default_retention": cfg.get("default_retention", "session"),
         "model_unload_after_minutes": cfg.get("model_unload_after_minutes", 15),
+        "default_tts_engine": cfg.get("default_tts_engine", "neutts"),
         "domain": cfg.get("domain", ""),
     }
 
@@ -42,6 +43,7 @@ async def get_settings():
 class SettingsUpdate(BaseModel):
     default_retention: str | None = Field(default=None, pattern="^(session|24h|48h)$")
     model_unload_after_minutes: int | None = Field(default=None, ge=5, le=240)
+    default_tts_engine: str | None = Field(default=None, pattern="^(neutts|xtts)$")
 
 
 @router.put("")
@@ -51,6 +53,8 @@ async def update_settings(payload: SettingsUpdate):
         updates["default_retention"] = payload.default_retention
     if payload.model_unload_after_minutes is not None:
         updates["model_unload_after_minutes"] = payload.model_unload_after_minutes
+    if payload.default_tts_engine is not None:
+        updates["default_tts_engine"] = payload.default_tts_engine
     if updates:
         config.set_many(updates)
         log.info("settings updated keys=%s", list(updates.keys()))

@@ -82,19 +82,28 @@
 
       <div class="grid-2">
         <div class="field">
-          <label>Qualité</label>
+          <label>Moteur TTS</label>
+          <div class="radio-group" data-name="engine">
+            <button class="radio-option selected" data-value="neutts">NeuTTS Nano <span style="text-transform:none;font-weight:400;color:var(--text3);font-size:0.7rem">(rapide)</span></button>
+            <button class="radio-option" data-value="xtts">XTTS-v2 <span style="text-transform:none;font-weight:400;color:var(--text3);font-size:0.7rem">(plus naturel, plus lent)</span></button>
+          </div>
+          <div class="hint" style="margin-top:0.3rem">XTTS-v2 (~1.7B params) clone plus fidèlement mais l'inférence prend ~30-60s sur CPU. NeuTTS recommandé pour les essais rapides.</div>
+        </div>
+        <div class="field">
+          <label>Qualité (NeuTTS uniquement)</label>
           <div class="radio-group" data-name="quality">
             <button class="radio-option" data-value="normal">Normale (Q4)</button>
             <button class="radio-option selected" data-value="high">Haute qualité (Q8)</button>
           </div>
         </div>
-        <div class="field">
-          <label>Conserver le fichier</label>
-          <div class="radio-group" data-name="retention">
-            <button class="radio-option selected" data-value="session">Session uniquement</button>
-            <button class="radio-option" data-value="24h">24h</button>
-            <button class="radio-option" data-value="48h">48h</button>
-          </div>
+      </div>
+
+      <div class="field">
+        <label>Conserver le fichier</label>
+        <div class="radio-group" data-name="retention">
+          <button class="radio-option selected" data-value="session">Session uniquement</button>
+          <button class="radio-option" data-value="24h">24h</button>
+          <button class="radio-option" data-value="48h">48h</button>
         </div>
       </div>
 

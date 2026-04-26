@@ -102,12 +102,16 @@
       var format = readRadio('format') || 'wav';
       var quality = readRadio('quality') || 'high';
       var retention = readRadio('retention') || 'session';
+      var engine = readRadio('engine') || 'neutts';
 
       var btn = $('btnGenerate');
       btn.disabled = true;
-      btn.textContent = '⏳ Génération…';
+      btn.textContent = engine === 'xtts' ? '⏳ Génération XTTS… (~30-60s)' : '⏳ Génération…';
 
-      var payload = { text: text, voice_id: voiceId, format: format, quality: quality, retention: retention };
+      var payload = {
+        text: text, voice_id: voiceId, format: format,
+        quality: quality, retention: retention, engine: engine,
+      };
 
       // Pour rétention "session" : binaire direct. Pour 24h/48h : JSON.
       fetch('/api/tts/generate', {

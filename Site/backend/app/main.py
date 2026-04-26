@@ -24,6 +24,7 @@ from .limiter import limiter
 from .models import detection as detection_module
 from .models import stt as stt_module
 from .models import tts as tts_module
+from .models import tts_xtts as tts_xtts_module
 from .models import vad as vad_module
 from .routes import auth as r_auth
 from .routes import detection as r_detection
@@ -86,6 +87,11 @@ try:
     tts_module.register_loaders()
 except Exception:  # noqa: BLE001
     log.warning("register_loaders TTS impossible (deps ML manquantes ?)")
+
+try:
+    tts_xtts_module.register_loaders()
+except Exception:  # noqa: BLE001
+    log.warning("register_loaders XTTS impossible (coqui-tts manquant ?)")
 
 try:
     stt_module.register_loaders()
