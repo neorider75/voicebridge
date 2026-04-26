@@ -432,11 +432,18 @@
       } else if (currentSource === 'upload') {
         var input = $('fileInput');
         if (!input.files.length) { VB.notify('warning', 'Choisissez un fichier'); return; }
-        fd.append('audio_file', input.files[0]);
-        // Pour les uploads, l'utilisateur peut typer la transcription dans le
-        // champ optionnel — sinon le serveur retombe sur un fallback générique.
         var uploadRef = $('uploadRefText');
-        if (uploadRef && uploadRef.value.trim()) fd.append('ref_text', uploadRef.value.trim());
+        var refText = uploadRef ? uploadRef.value.trim() : '';
+        if (!refText) {
+          // Sans ref_text, NeuTTS plantera ou produira de l'audio dégradé au
+          // 1er TTS. On bloque ici plutôt que créer une voix inutilisable.
+          VB.notify('warning',
+            'La transcription est vide. Attendez l\'auto-transcription ou tapez le texte que dit l\'audio.');
+          if (uploadRef) uploadRef.focus();
+          return;
+        }
+        fd.append('audio_file', input.files[0]);
+        fd.append('ref_text', refText);
       }
 
       startSubmitAnimation();
