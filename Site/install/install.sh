@@ -366,6 +366,7 @@ phase4_system() {
     build-essential cmake pkg-config \
     libopenblas-dev libblas-dev liblapack-dev \
     ffmpeg \
+    espeak-ng \
     nginx certbot python3-certbot-nginx \
     ufw fail2ban \
     git curl wget unzip \
@@ -516,11 +517,12 @@ try:
     from neutts import NeuTTS  # type: ignore
 except ImportError:
     from neuttsair.neutts import NeuTTSAir as NeuTTS  # type: ignore
-# Le paramètre ``language`` (code eSpeak) est requis quand on passe un chemin
-# local au lieu d'un repo HuggingFace ID Neuphonic.
+# Le paramètre ``language`` (code eSpeak ISO 639-3 + variante régionale) est
+# requis quand on passe un chemin local au lieu d'un repo HF ID Neuphonic.
+# eSpeak refuse "fr" tout court → utiliser "fr-fr", "en-us", etc.
 mapping = {
-    "juliette": (DATA / "models/neutts-nano-fr-q4", "fr"),
-    "dave":     (DATA / "models/neutts-nano-en-q4", "en"),
+    "juliette": (DATA / "models/neutts-nano-fr-q4", "fr-fr"),
+    "dave":     (DATA / "models/neutts-nano-en-q4", "en-us"),
 }
 for voice, (backbone, lang) in mapping.items():
     wav = DATA / f"voices/{voice}.wav"

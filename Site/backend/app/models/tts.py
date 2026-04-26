@@ -43,14 +43,21 @@ def _NeuTTSClass() -> type:
 
 
 # ---------------------------------------------------------------------------
-# Mapping : clé manager → (chemin backbone local, langue, qualité)
+# Mapping : clé manager → (chemin backbone local, code eSpeak, qualité)
 # ---------------------------------------------------------------------------
+#
+# ``espeak_lang`` est le code eSpeak (ISO 639-3 + variante régionale) requis
+# par NeuTTS quand on passe un chemin local. eSpeak refuse "fr" tout court →
+# il faut "fr-fr", "en-us", etc.
+#
+# Côté API métier, on continue de manipuler "fr"/"en" (langue logique
+# stockée dans voices/metadata.json). La conversion se fait UNIQUEMENT ici.
 
 _BACKBONE_PATHS = {
-    mgr.MODEL_NEUTTS_FR_Q4: ("neutts-nano-fr-q4", "fr", "normal"),
-    mgr.MODEL_NEUTTS_EN_Q4: ("neutts-nano-en-q4", "en", "normal"),
-    mgr.MODEL_NEUTTS_FR_Q8: ("neutts-nano-fr-q8", "fr", "high"),
-    mgr.MODEL_NEUTTS_EN_Q8: ("neutts-nano-en-q8", "en", "high"),
+    mgr.MODEL_NEUTTS_FR_Q4: ("neutts-nano-fr-q4", "fr-fr", "normal"),
+    mgr.MODEL_NEUTTS_EN_Q4: ("neutts-nano-en-q4", "en-us", "normal"),
+    mgr.MODEL_NEUTTS_FR_Q8: ("neutts-nano-fr-q8", "fr-fr", "high"),
+    mgr.MODEL_NEUTTS_EN_Q8: ("neutts-nano-en-q8", "en-us", "high"),
 }
 
 
