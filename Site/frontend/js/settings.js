@@ -38,32 +38,78 @@
       // Stockage
       $('diskText').textContent = s.storage.used_gb + ' / ' + s.storage.total_gb + ' Go';
       $('diskBar').style.width = (s.storage.percent || 0) + '%';
-      // Modèles : nombre chargés / total + détail
-      var loaded = 0, total = 0;
-      var lines = [];
-      Object.keys(s.models).forEach(function (k) {
-        total += 1;
-        var v = s.models[k];
-        if (v === 'loaded') loaded += 1;
-        var color = v === 'loaded' ? 'var(--success)' : 'var(--text3)';
-        lines.push('<div><span style="color:' + color + '">●</span> ' + k + ' : ' + v + '</div>');
-      });
-      var summary = $('modelsSummary');
-      if (loaded === 0) {
-        summary.textContent = 'Veille (' + total + ' inactifs)';
-        summary.style.color = 'var(--text3)';
-      } else if (loaded === total) {
-        summary.textContent = 'Tous chargés (' + loaded + ')';
-        summary.style.color = 'var(--success)';
-      } else {
-        summary.textContent = loaded + ' / ' + total + ' chargés';
-        summary.style.color = 'var(--warning)';
-      }
-      $('modelsList').innerHTML = lines.join('');
+      // Modèles : nombre chargés / total + détail (avec bouton ⏏ par ligne loaded)
+      renderModelsList(s.models);
       lastRefreshAt = Date.now();
       tickRefreshAge();
     }).catch(function () {}).finally(function () {
       if (btn) { btn.style.opacity = ''; btn.disabled = false; }
+    });
+  }
+
+  function renderModelsList(models) {
+    var loaded = 0, total = 0;
+    var list = $('modelsList');
+    list.innerHTML = '';
+    Object.keys(models).forEach(function (k) {
+      total += 1;
+      var v = models[k];
+      var isLoaded = v === 'loaded';
+      if (isLoaded) loaded += 1;
+
+      var row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'space-between';
+      row.style.gap = '0.5rem';
+
+      var left = document.createElement('span');
+      var dotColor = isLoaded ? 'var(--success)' : 'var(--text3)';
+      left.innerHTML = '<span style="color:' + dotColor + '">●</span> ' + k + ' : ' + v;
+      row.appendChild(left);
+
+      if (isLoaded) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-icon';
+        btn.title = 'Décharger ce modèle';
+        btn.textContent = '⏏';
+        btn.style.cssText = 'background:transparent;border:1px solid var(--border);color:var(--text2);' +
+          'border-radius:4px;padding:0 0.4rem;font-size:0.75rem;line-height:1.4;cursor:pointer;font-family:inherit';
+        btn.addEventListener('click', function () { unloadModel(k, btn); });
+        row.appendChild(btn);
+      }
+
+      list.appendChild(row);
+    });
+
+    var summary = $('modelsSummary');
+    if (loaded === 0) {
+      summary.textContent = 'Veille (' + total + ' inactifs)';
+      summary.style.color = 'var(--text3)';
+    } else if (loaded === total) {
+      summary.textContent = 'Tous chargés (' + loaded + ')';
+      summary.style.color = 'var(--success)';
+    } else {
+      summary.textContent = loaded + ' / ' + total + ' chargés';
+      summary.style.color = 'var(--warning)';
+    }
+  }
+
+  function unloadModel(key, btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+    VB.api.post('/api/system/unload', { key: key }).then(function (r) {
+      if (r.was_loaded) {
+        VB.notify('success', key + ' déchargé');
+      } else {
+        VB.notify('info', key + ' n\'était pas chargé');
+      }
+      refreshServerState();
+    }).catch(function (e) {
+      VB.notify('error', e.message || 'Échec du déchargement');
+      btn.disabled = false;
+      btn.textContent = '⏏';
     });
   }
 
@@ -80,14 +126,27 @@
     });
     $('btnWarm').addEventListener('click', function () {
       var btn = $('btnWarm');
+      var profiles = [];
+      if ($('warmProfileTts').checked) profiles.push('tts');
+      if ($('warmProfileLive').checked) profiles.push('live');
+      if (!profiles.length) {
+        VB.notify('warning', 'Cochez au moins un profil (TTS ou Live)');
+        return;
+      }
       btn.disabled = true; btn.textContent = '⏳ Préchauffage…';
       $('warmStatus').textContent = '';
       VB.api.post('/api/system/prechauffage', {
         language: $('warmLang').value,
+        profiles: profiles,
         voice_id: $('warmVoice').value || undefined,
       }).then(function (r) {
-        $('warmStatus').textContent = '✅ Terminé en ' + r.duration_ms + ' ms';
-        VB.notify('success', 'Modèles préchauffés');
+        var newCount = (r.newly_loaded || []).length;
+        var totalLoaded = r.loaded_count || 0;
+        var summary = newCount === 0
+          ? 'Déjà chargé (' + totalLoaded + '/' + r.total_count + ')'
+          : '+' + newCount + ' chargé(s) · ' + totalLoaded + '/' + r.total_count + ' au total';
+        $('warmStatus').textContent = '✅ ' + summary + ' en ' + r.duration_ms + ' ms';
+        VB.notify('success', summary);
         refreshServerState();
       }).catch(function (e) {
         VB.notify('error', e.message || 'Échec');

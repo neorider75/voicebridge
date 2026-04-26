@@ -78,12 +78,32 @@
           <div class="hint" style="margin-top:0.6rem">
             💡 <strong>loaded</strong> = chargé en RAM, prêt avec latence minimale.
             <strong>unloaded</strong> = sur disque seulement, +3-5 s au premier appel.
-            Utilisez « Préchauffer » ci-dessous pour forcer le chargement.
+            Utilisez « Préchauffer » ci-dessous pour charger, ou ⏏ pour décharger un modèle individuel.
           </div>
         </div>
 
         <div class="card">
           <div class="card-title">Préchauffage</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+            Chargez en RAM uniquement ce dont vous avez besoin pour économiser de la mémoire.
+          </div>
+          <label style="font-size:0.7rem;letter-spacing:0.05em;color:var(--text3);text-transform:uppercase;font-weight:600;display:block;margin-bottom:0.4rem">Profils</label>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.85rem">
+            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem">
+              <input type="checkbox" id="warmProfileTts" checked style="margin-top:0.2rem">
+              <span>
+                <strong>TTS fichier</strong> — qualité haute (NeuTTS Q8)
+                <span style="display:block;font-size:0.7rem;color:var(--text3);margin-top:0.1rem">≈ 3 Go RAM · pour générer un audio depuis du texte</span>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem">
+              <input type="checkbox" id="warmProfileLive" style="margin-top:0.2rem">
+              <span>
+                <strong>Live</strong> — voix clonée en direct (NeuTTS Q4 + Kyutai STT + Silero VAD)
+                <span style="display:block;font-size:0.7rem;color:var(--text3);margin-top:0.1rem">≈ 6-7 Go RAM · pour parler dans Teams/Zoom avec votre voix clonée</span>
+              </span>
+            </label>
+          </div>
           <div class="grid-2" style="margin-bottom:0.75rem">
             <div class="field" style="margin:0">
               <label for="warmLang">Langue</label>
