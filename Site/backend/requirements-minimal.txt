@@ -1,0 +1,25 @@
+# Dépendances minimales pour tester la livraison 1 (login + sécurité + Nginx)
+# sans télécharger ni compiler les modèles ML.
+#
+# Une fois que la livraison 2+ est déployée, utilise plutôt requirements.txt
+# qui surchaperonne ce fichier (idempotent : pip install ne réinstalle pas
+# ce qui est déjà à jour).
+
+# --- Web framework ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+websockets>=12
+python-multipart>=0.0.9
+pydantic>=2
+
+# --- Sécurité (V1 obligatoire) ---
+passlib[bcrypt]>=1.7
+bcrypt>=4.0,<4.1
+itsdangerous>=2.1
+slowapi>=0.1.9
+fastapi-csrf-protect>=0.3.4
+python-magic>=0.4.27
+
+# --- Système ---
+psutil>=5.9
+APScheduler>=3.10

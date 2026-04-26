@@ -53,6 +53,33 @@ EMAIL=""
 USER_PASSWORD=""
 API_TOKEN=""
 
+# Flags
+MINIMAL=0
+for arg in "$@"; do
+  case "$arg" in
+    --minimal)
+      MINIMAL=1
+      ;;
+    -h|--help)
+      cat <<EOF
+Usage : sudo ./install.sh [--minimal]
+
+  --minimal   N'installe que la livraison 1 du POC (login + sécurité +
+              Nginx/SSL + systemd) en sautant le téléchargement des modèles
+              ML et la compilation de llama-cpp-python. Utile pour valider
+              rapidement le déploiement avant les livraisons suivantes.
+              Pour compléter l'installation plus tard, relancer le script
+              SANS ce flag (idempotent).
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Argument inconnu : $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
 # ---------------------------------------------------------------------------
 # Helpers d'affichage
 # ---------------------------------------------------------------------------
@@ -266,12 +293,16 @@ phase5_app_code() {
 
   step "Installation des dépendances Python"
   sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip
-  sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements.txt"
-
-  step "Recompilation llama-cpp-python avec OpenBLAS"
-  sudo -u "$SERVICE_USER" \
-    CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
-    "$VENV_DIR/bin/pip" install llama-cpp-python --force-reinstall --no-cache-dir
+  if (( MINIMAL )); then
+    warn "Mode --minimal : seulement les deps légères (login + sécurité + Nginx)."
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements-minimal.txt"
+  else
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements.txt"
+    step "Recompilation llama-cpp-python avec OpenBLAS"
+    sudo -u "$SERVICE_USER" \
+      CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
+      "$VENV_DIR/bin/pip" install llama-cpp-python --force-reinstall --no-cache-dir
+  fi
   ok "Dépendances Python installées"
 }
 
@@ -289,6 +320,11 @@ hf_download() {
 
 phase6_models() {
   banner "Phase 6 / 14 — Téléchargement des modèles ML (10-15 min)"
+
+  if (( MINIMAL )); then
+    warn "Mode --minimal : phase 6 sautée. Relance sans --minimal pour télécharger les modèles."
+    return 0
+  fi
 
   sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --quiet huggingface-hub
 
@@ -313,6 +349,16 @@ phase6_models() {
 
 phase7_default_voices() {
   banner "Phase 7 / 14 — Voix par défaut (Juliette + Dave)"
+
+  if (( MINIMAL )); then
+    warn "Mode --minimal : phase 7 sautée."
+    # On crée tout de même un metadata.json vide pour que /api/voices ne crashe pas.
+    if [[ ! -f "$DATA_DIR/voices/metadata.json" ]]; then
+      echo '{"voices": []}' > "$DATA_DIR/voices/metadata.json"
+      chown "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR/voices/metadata.json"
+    fi
+    return 0
+  fi
 
   local samples_dir="/tmp/neutts-air-samples"
   step "Récupération des samples NeuTTS officiels"
