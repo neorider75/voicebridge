@@ -161,7 +161,14 @@ async def create_voice(
 
     try:
         audio.validate_upload(tmp_path, MAX_VOICE_BYTES)
-        audio.to_wav_24k_mono(tmp_path, wav_dst)
+        # Conversion + trim 15s max : NeuTTS Air est entraîné sur des références
+        # de 3-15s, au-delà la qualité peut se dégrader. trim_first_voiced
+        # saute aussi le silence initial éventuel (utile si l'utilisateur a
+        # cliqué record puis a marqué une pause avant de parler).
+        full_wav_path = tmp_path.with_suffix(".full.wav")
+        audio.to_wav_24k_mono(tmp_path, full_wav_path)
+        audio.trim_first_voiced(full_wav_path, wav_dst, duration_seconds=15)
+        full_wav_path.unlink(missing_ok=True)
     except audio.AudioError as exc:
         wav_dst.unlink(missing_ok=True)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
