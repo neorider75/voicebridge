@@ -18,13 +18,13 @@ voix clonée dans Teams / Zoom / Meet via [BlackHole](https://existential.audio/
 │  │.app (rumps) │──┼─── PCM 16k ────►│  │  + WebSocket Live │   │
 │  └─────┬───────┘  │   binaire       │  │                   │   │
 │        │          │                 │  │  Modèles ML :     │   │
-│  ┌─────▼───────┐  │   WAV 24k       │  │  • NeuTTS Q4/Q8   │   │
-│  │ BlackHole   │◄─┼─── b64 ─────────┤  │  • NeuCodec       │   │
-│  │ → Teams/Zoom│  │                 │  │  • Kyutai 1B STT  │   │
-│  └─────────────┘  │                 │  │  • Silero VAD     │   │
-│                   │                 │  │  • Deepfake-V2    │   │
-│  ┌─────────────┐  │                 │  │  • Perth (WM)     │   │
-│  │ Navigateur  │◄─┼─── HTTPS ───────┤  └───────────────────┘   │
+│  ┌─────▼───────┐  │   WAV 24k       │  │  • NeuTTS Nano    │   │
+│  │ BlackHole   │◄─┼─── b64 ─────────┤  │  • XTTS-v2 (Coqui)│   │
+│  │ → Teams/Zoom│  │                 │  │  • NeuCodec       │   │
+│  └─────────────┘  │                 │  │  • Kyutai 1B STT  │   │
+│                   │                 │  │  • Silero VAD     │   │
+│  ┌─────────────┐  │                 │  │  • Deepfake-V2    │   │
+│  │ Navigateur  │◄─┼─── HTTPS ───────┤  │  • Perth (WM)     │   │
 │  │ (panel web) │  │                 │                           │
 │  └─────────────┘  │                 │  Nginx + Let's Encrypt    │
 └───────────────────┘                 └──────────────────────────┘
@@ -63,6 +63,63 @@ Durée : 15-30 min selon bande passante (téléchargement de ~5 Go de modèles M
 
 Le script est **reprenable** : si une phase plante, relancez-le et il
 saute les phases déjà complétées (cf. `/var/voicebridge/.install_state/`).
+
+## Moteurs TTS
+
+VoiceBridge embarque deux moteurs de clonage vocal qui cohabitent dans le
+même venv. À chaque génération depuis `/studio`, l'utilisateur choisit
+lequel utiliser via le radio « Moteur TTS » (et il y a un défaut
+configurable dans `/settings`).
+
+| Moteur | Taille | Qualité de clonage | Vitesse CPU | Langues |
+|---|---|---|---|---|
+| **NeuTTS Nano** (Q4/Q8 GGUF) | ~120 M | Bonne | Rapide (~1× temps réel) | FR + EN (modèles séparés) |
+| **XTTS-v2** (Coqui, FP16) | ~1.7 B | Très bonne, très naturelle | Lent (~5-10× temps réel sans GPU) | 17 langues sur le même modèle |
+
+NeuTTS est utilisé pour le **mode Live** (le streaming nécessite du quasi
+temps-réel). Pour le **TTS fichier**, XTTS-v2 est généralement préférable
+si la qualité prime sur la vitesse.
+
+Les deux moteurs partagent les **mêmes voix** : la création d'une voix
+sauve le WAV 24 kHz mono utilisable par l'un comme par l'autre. NeuTTS
+exige en plus un fichier `ref_codes.pt` pré-encodé (calculé automatiquement
+à la création) et un `ref_text.txt` (transcription de l'audio source).
+XTTS n'a pas ces prérequis : il lit directement le WAV à chaque inférence.
+
+### Paramètres ajustables (env vars dans `voicebridge.service`)
+
+Tous overrides via `Environment="VB_..."` dans
+`/etc/systemd/system/voicebridge.service`, suivi de `daemon-reload` +
+`restart`.
+
+**NeuTTS** (sampling) :
+
+| Variable | Défaut | Effet |
+|---|---|---|
+| `VB_NEUTTS_TEMPERATURE` | 1.1 | Diversité prosodique (0.8 = monotone, 1.3 = expressif mais peut dériver) |
+| `VB_NEUTTS_TOP_K` | 120 | Pool de candidats (50 = défaut Neuphonic, 150+ = très varié) |
+| `VB_NEUTTS_MAX_CONTEXT` | 4096 | Tokens max → durée audio max (~80 s à 50 tokens/s) |
+| `VB_TORCH_THREADS` | nproc | Threads PyTorch intra-op (= 4 sur ce VPS) |
+
+**XTTS-v2** (sampling) :
+
+| Variable | Défaut | Effet |
+|---|---|---|
+| `VB_XTTS_TEMPERATURE` | 0.7 | Diversité (0.5 = stable, 0.9 = très varié) |
+| `VB_XTTS_TOP_K` | 50 | Pool de candidats |
+| `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling |
+| `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
+| `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
+| `VB_XTTS_SPEED` | 1.0 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+
+### Caches modèles
+
+| Variable | Chemin |
+|---|---|
+| `HF_HOME` / `HUGGINGFACE_HUB_CACHE` | `/var/voicebridge/data/models/hf-cache/` (modèles HF : Kyutai, NeuTTS GGUF, NeuCodec) |
+| `TTS_HOME` | `/var/voicebridge/data/models/tts-cache/` (XTTS-v2, ~3 Go) |
+| `NUMBA_CACHE_DIR` | `/var/voicebridge/data/cache/numba/` (JIT librosa) |
+| `XDG_*_HOME` + `HOME` | `/var/voicebridge/data/cache/...` (catch-all libs Python) |
 
 ## Build de l'app macOS
 

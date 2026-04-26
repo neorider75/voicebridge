@@ -66,6 +66,20 @@ def register_loaders() -> None:
     mgr.manager.register_loader(mgr.MODEL_XTTS_V2, _load_xtts)
 
 
+def _read_env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     """Synthétise un WAV (np.ndarray float32 à 24 kHz mono).
 
@@ -76,6 +90,14 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
 
     Returns:
         np.ndarray float32 [-1, 1] mono à 24 kHz.
+
+    Paramètres ajustables via env vars (cf. README) :
+        VB_XTTS_TEMPERATURE       (défaut 0.7)  — diversité prosodique
+        VB_XTTS_TOP_K             (défaut 50)   — pool de candidats
+        VB_XTTS_TOP_P             (défaut 0.85) — nucleus sampling
+        VB_XTTS_LENGTH_PENALTY    (défaut 1.0)
+        VB_XTTS_REPETITION_PENALTY (défaut 2.0) — anti-répétitions
+        VB_XTTS_SPEED             (défaut 1.0)  — vitesse parole (0.7-1.3)
     """
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError(
@@ -85,10 +107,25 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         raise FileNotFoundError(f"voice wav introuvable : {voice_wav_path}")
 
     tts = mgr.manager.get(mgr.MODEL_XTTS_V2)
+
+    # Lecture des paramètres tunables au moment de l'inférence (pas au load
+    # du modèle) → permet de bouger via env var sans restart, ou plus tard
+    # via un payload UI sans redéploiement.
+    params = {
+        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.7),
+        "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
+        "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
+        "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
+        "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
+        "speed": _read_env_float("VB_XTTS_SPEED", 1.0),
+    }
+
+    log.debug("XTTS infer params: %s", params)
     wav = tts.tts(
         text=text,
         speaker_wav=str(voice_wav_path),
         language=language,
+        **params,
     )
     # `tts.tts()` peut retourner list[float] ou np.ndarray selon la version.
     # On normalise en np.ndarray float32.
