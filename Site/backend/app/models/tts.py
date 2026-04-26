@@ -261,9 +261,11 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
             log.warning("infer output (%d samples) shorter than expected ref prefix (%d) — pas de trim",
                         len(output), trim)
 
-    # 2e passe : silence de tête résiduel (mismatch token count, silence
-    # NeuTTS post-prompt, etc.) → on coupe jusqu'au 1er sample voicé.
-    output = _trim_leading_silence(output)
+    # On ne fait PAS de trim de silence supplémentaire ici : le détecteur
+    # d'énergie coupait parfois les premiers consonnes du 1er mot (h, s, f
+    # ont des attaques très douces). Mieux vaut laisser un petit silence
+    # résiduel que tronquer la voix. Si on observe régulièrement >300ms de
+    # silence, on retravaillera la calibration de SAMPLES_PER_REF_TOKEN.
     return output
 
 
