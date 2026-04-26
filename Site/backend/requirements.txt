@@ -19,10 +19,12 @@ fastapi-csrf-protect>=0.3.4
 python-magic>=0.4.27
 
 # --- ML / TTS / STT ---
-# NeuTTS (TTS + voice cloning + watermark Perth inclus)
-neuttsair>=0.1
+# NeuTTS (TTS + voice cloning + watermark Perth inclus). Le package PyPI
+# s'appelle bien "neutts" (et non "neuttsair") — neutts-air est un modèle
+# parmi d'autres dans le wrapper, sélectionné via backbone_repo.
+neutts>=0.1
 llama-cpp-python>=0.2.50
-# NeuCodec (déjà dépendance de neutts mais explicite)
+# NeuCodec (déjà dépendance transitive de neutts mais explicite)
 neucodec>=0.1
 # Kyutai STT + détection deepfake (modèles transformers)
 # Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
