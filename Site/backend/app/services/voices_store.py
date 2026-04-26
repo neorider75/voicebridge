@@ -68,6 +68,10 @@ def upsert(voice: dict[str, Any]) -> dict[str, Any]:
     if "created_at" not in voice:
         voice["created_at"] = _now_iso()
     voice.setdefault("protected", False)
+    # Statut : "encoding" pendant le pré-encodage (background task), "ready"
+    # quand utilisable, "failed" si l'encodage a échoué.
+    # Rétrocompat : les voix créées avant le statut sont considérées "ready".
+    voice.setdefault("status", "ready")
     with _lock:
         meta = _load()
         voices = meta.setdefault("voices", [])
@@ -79,6 +83,25 @@ def upsert(voice: dict[str, Any]) -> dict[str, Any]:
             voices.append(voice)
         _save(meta)
         return voice
+
+
+def patch(voice_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """Met à jour les champs ``updates`` de la voix, sans écraser le reste.
+
+    Utilisé par le background task d'encodage pour passer status=encoding →
+    status=ready (ou failed) à la fin du traitement, sans avoir à reconstruire
+    tout le payload.
+    """
+    with _lock:
+        meta = _load()
+        voices = meta.setdefault("voices", [])
+        for i, v in enumerate(voices):
+            if v["id"] == voice_id:
+                v.update(updates)
+                voices[i] = v
+                _save(meta)
+                return v
+        return None
 
 
 def delete(voice_id: str) -> bool:

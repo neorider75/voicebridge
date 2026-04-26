@@ -104,6 +104,20 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={
             "error": "voice_not_found", "message": "Voix introuvable"})
 
+    # Voix créée mais encore en cours d'encodage en arrière-plan → on bloque
+    # avec un message clair plutôt que de rendre un 500 sur fichier .pt absent.
+    voice_status = voice.get("status", "ready")
+    if voice_status == "encoding":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail={
+            "error": "voice_encoding",
+            "message": "Cette voix est en cours d'encodage — réessayez dans quelques secondes."})
+    if voice_status == "failed":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail={
+            "error": "voice_failed",
+            "message": "L'encodage de cette voix a échoué : "
+                       + (voice.get("error_message") or "raison inconnue")
+                       + ". Supprimez-la et recréez-la."})
+
     encoded = voices_store.encoded_path(voice_id)
     if not encoded.exists():
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={

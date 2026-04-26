@@ -118,13 +118,15 @@
     <button class="btn btn-primary" id="btnSubmit">✅ Ajouter la voix</button>
   </div>
 
-  <!-- Progression pendant l'upload + conversion ffmpeg + encode_reference NeuTTS -->
-  <div class="extract-progress" id="submitProgress" style="display:none">
+  <!-- Progression pendant l'upload + conversion ffmpeg + encode_reference NeuTTS.
+       Même structure et classes que la barre d'extraction par URL pour rester
+       cohérent visuellement. Affichée via .visible (toggle de classe). -->
+  <div class="extract-progress" id="submitProgress">
     <div class="progress-bar-wrap"><div class="progress-bar-fill" id="submitBar"></div></div>
     <div class="progress-step" id="submitStep">Préparation…</div>
   </div>
 
-  <!-- Carte de validation finale, affichée 1 s avant la redirection vers /voices -->
+  <!-- Carte de validation finale, affichée 1.2 s avant la redirection vers /voices -->
   <div id="submitDone" class="alert alert-success" style="display:none;margin-top:1rem;text-align:center">
     <div style="font-size:1.6rem;margin-bottom:0.25rem">✅</div>
     <div><strong>Voix créée avec succès</strong></div>

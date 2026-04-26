@@ -28,6 +28,7 @@ except ImportError:  # mode --minimal sans deps ML
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -73,6 +74,31 @@ def _require_ml() -> None:
         })
 
 
+def _encode_voice_background(voice_id: str, language: str, ref_text: str | None) -> None:
+    """Tâche d'arrière-plan : encode_reference (~30 s à froid) + ref_text + ready.
+
+    Lancée par FastAPI BackgroundTasks après l'envoi de la réponse HTTP. Tourne
+    dans le threadpool (fonction sync) → ne bloque pas l'event loop. Met à
+    jour le statut de la voix dans metadata.json à la fin (ready ou failed).
+    """
+    wav = store.wav_path(voice_id)
+    try:
+        codes = tts_model.encode_reference(wav, language)
+        store.encoded_path(voice_id).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(codes, store.encoded_path(voice_id))
+        if ref_text and ref_text.strip():
+            store.write_ref_text(voice_id, ref_text)
+        duration = int(audio.audio_duration_seconds(wav))
+        store.patch(voice_id, {"status": "ready", "duration_seconds": duration})
+        log.info("voice ready id=%s duration=%ds", voice_id, duration)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("voice encode_reference failed id=%s", voice_id)
+        store.patch(voice_id, {
+            "status": "failed",
+            "error_message": str(exc)[:300],  # tronqué pour metadata.json lisible
+        })
+
+
 # ---------------------------------------------------------------------------
 # GET liste
 # ---------------------------------------------------------------------------
@@ -106,6 +132,7 @@ async def voice_audio(voice_id: str):
 @limiter.limit("10/minute")
 async def create_voice(
     request: Request,
+    background_tasks: BackgroundTasks,
     name: str = Form(..., min_length=1, max_length=50),
     language: str = Form(...),
     audio_file: UploadFile = File(...),
@@ -113,13 +140,14 @@ async def create_voice(
 ):
     """Crée une voix depuis un audio uploadé (record/upload).
 
-    ``ref_text`` (optionnel) = transcription exacte de l'audio source. Si
-    fourni, il est sauvé à côté du WAV et utilisé par NeuTTS au moment de
-    l'inférence (cf. ``models.tts.infer``). Sans ref_text, NeuTTS phonémise
-    une chaîne vide et lève IndexError au moment de la génération TTS.
-    Le front envoie automatiquement le texte affiché à l'utilisateur en
-    mode "Enregistrement" (cf. ``voices-new.js`` REF_TEXT) ; en mode upload
-    c'est à l'utilisateur de le saisir s'il connaît la transcription.
+    Réponse asynchrone : on valide + convertit en WAV de manière synchrone
+    (rapide, ~1-2 s), on inscrit la voix en metadata avec ``status="encoding"``
+    et on retourne immédiatement. L'encodage NeuTTS (lent, ~30 s à froid)
+    tourne en background_task. Le front peut afficher la voix dans /voices
+    avec un badge "encodage en cours" et poller l'état.
+
+    ``ref_text`` (optionnel) = transcription exacte de l'audio source. Sans
+    ref_text, NeuTTS retombe sur un fallback générique (cf. routes/tts.py).
     """
     _require_ml()
     language = _validate_language(language)
@@ -141,33 +169,25 @@ async def create_voice(
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    # Pré-encodage ref_codes
-    try:
-        codes = tts_model.encode_reference(wav_dst, language)
-        store.encoded_path(voice_id).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(codes, store.encoded_path(voice_id))
-    except Exception as exc:  # noqa: BLE001
-        log.exception("encode_reference failed")
-        wav_dst.unlink(missing_ok=True)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
-            "error": "encode_failed", "message": str(exc)})
-
-    # Sauvegarde du ref_text (si fourni) — sinon le fichier .txt n'existe pas
-    # et read_ref_text() rendra "" → l'inférence retombera sur le fallback safe
-    # de routes/tts.py
-    if ref_text and ref_text.strip():
-        store.write_ref_text(voice_id, ref_text.strip())
-
-    duration = int(audio.audio_duration_seconds(wav_dst))
+    # Inscrit immédiatement dans metadata.json avec status="encoding".
+    # GET /api/voices la renverra avec ce statut → le front peut l'afficher
+    # tout de suite avec un badge "Encodage…".
     voice = store.upsert({
         "id": voice_id,
         "name": name,
         "language": language,
         "backbone": _backbone_label(language),
-        "duration_seconds": duration,
+        "duration_seconds": 0,  # mis à jour par le background task
+        "status": "encoding",
     })
-    log.info("voice created id=%s lang=%s duration=%ds has_ref_text=%s",
-             voice_id, language, duration, bool(ref_text and ref_text.strip()))
+
+    # encode_reference (~30 s à froid) + write ref_text → en background.
+    # FastAPI BackgroundTasks exécute les fonctions sync dans son threadpool,
+    # donc ça ne bloque pas l'event loop.
+    background_tasks.add_task(_encode_voice_background, voice_id, language, ref_text)
+
+    log.info("voice queued id=%s lang=%s has_ref_text=%s",
+             voice_id, language, bool(ref_text and ref_text.strip()))
     return voice
 
 
@@ -245,7 +265,11 @@ async def voice_preview(voice_id: str):
 
 
 @router.post("/{voice_id}/confirm")
-async def confirm_voice(voice_id: str):
+async def confirm_voice(voice_id: str, background_tasks: BackgroundTasks):
+    """Confirme l'extraction par URL : déplace le WAV preview vers son
+    emplacement final et lance encode_reference en background (même flux
+    asynchrone que POST /api/voices).
+    """
     _require_ml()
     voice_id = files.safe_id(voice_id)
     pending = _PENDING.pop(voice_id, None)
@@ -256,24 +280,20 @@ async def confirm_voice(voice_id: str):
     wav_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(pending["wav_path"]), wav_dst)
 
-    try:
-        codes = tts_model.encode_reference(wav_dst, pending["language"])
-        store.encoded_path(voice_id).parent.mkdir(parents=True, exist_ok=True)
-        torch.save(codes, store.encoded_path(voice_id))
-    except Exception as exc:  # noqa: BLE001
-        log.exception("encode_reference failed (confirm)")
-        wav_dst.unlink(missing_ok=True)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
-            "error": "encode_failed", "message": str(exc)})
-
-    duration = int(audio.audio_duration_seconds(wav_dst))
     voice = store.upsert({
         "id": voice_id,
         "name": pending["name"],
         "language": pending["language"],
         "backbone": _backbone_label(pending["language"]),
-        "duration_seconds": duration,
+        "duration_seconds": 0,
+        "status": "encoding",
     })
+
+    # Pas de ref_text pour les voix extraites par URL (on n'a pas la
+    # transcription du contenu). Le fallback safe de routes/tts.py prendra
+    # le relais à la première génération.
+    background_tasks.add_task(_encode_voice_background, voice_id, pending["language"], None)
+    log.info("voice from-url queued id=%s lang=%s", voice_id, pending["language"])
     return voice
 
 
