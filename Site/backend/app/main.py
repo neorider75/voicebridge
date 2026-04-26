@@ -21,6 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from . import auth as auth_mod
 from . import config
 from .limiter import limiter
+from .models import detection as detection_module
 from .models import stt as stt_module
 from .models import tts as tts_module
 from .models import vad as vad_module
@@ -79,6 +80,11 @@ try:
     vad_module.register_loaders()
 except Exception:  # noqa: BLE001
     log.warning("register_loaders VAD impossible (deps ML manquantes ?)")
+
+try:
+    detection_module.register_loaders()
+except Exception:  # noqa: BLE001
+    log.warning("register_loaders détection impossible (deps ML manquantes ?)")
 
 
 # ---------------------------------------------------------------------------
