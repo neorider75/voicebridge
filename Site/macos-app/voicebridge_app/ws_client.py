@@ -141,20 +141,36 @@ class WSClient:
         except json.JSONDecodeError:
             return
         ptype = payload.get("type")
-        if ptype == "audio_chunk":
+        if ptype == "audio_pcm":
+            # Streaming Live : chunks PCM 16-bit mono 24 kHz, à pousser tels
+            # quels dans le RawOutputStream BlackHole (qui est configuré au
+            # même format).
             data = payload.get("data") or ""
             try:
                 raw = base64.b64decode(data)
             except Exception:  # noqa: BLE001
                 return
-            # Le serveur envoie un WAV complet : on saute l'en-tête 44 octets pour
-            # ne jouer que les samples PCM 16-bit.
+            self.audio.play_response(raw)
+        elif ptype == "audio_end":
+            # Fin de la phrase synthétisée — rien à faire de spécial côté
+            # PyAudio (la queue se draine d'elle-même).
+            pass
+        elif ptype == "audio_chunk":
+            # Rétro-compat : ancien format WAV complet b64. On saute le header
+            # RIFF (44 octets) pour ne pousser que le PCM dans BlackHole.
+            data = payload.get("data") or ""
+            try:
+                raw = base64.b64decode(data)
+            except Exception:  # noqa: BLE001
+                return
             if raw[:4] == b"RIFF" and raw[8:12] == b"WAVE":
-                # Recherche du chunk "data"
                 idx = raw.find(b"data")
                 if idx > 0 and idx + 8 < len(raw):
                     raw = raw[idx + 8:]
             self.audio.play_response(raw)
+        elif ptype == "transcript":
+            # Texte transcrit — purement informatif côté app macOS.
+            pass
         elif ptype == "ready":
             self.on_state_change("ready")
         elif ptype == "error":

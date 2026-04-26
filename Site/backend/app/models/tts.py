@@ -110,7 +110,19 @@ def encode_reference(wav_path: Path, language: str) -> Any:
 
 
 def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
-    """Synthétise un WAV (np.ndarray ou bytes selon la version de NeuTTS)."""
+    """Synthétise un WAV complet (np.ndarray float32 à 24 kHz)."""
     key = model_key_for(language, quality)
     tts = mgr.manager.get(key)
     return tts.infer(text, ref_codes, ref_text)
+
+
+def infer_stream(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
+    """Generator : yield des chunks ``np.ndarray`` float32 24 kHz mono.
+
+    Cf. ``examples/basic_streaming_example.py`` du repo neutts-air. Permet
+    de commencer la lecture côté client avant la fin de la génération
+    (latence Live cible 0,6-1,4 s atteinte).
+    """
+    key = model_key_for(language, quality)
+    tts = mgr.manager.get(key)
+    yield from tts.infer_stream(text, ref_codes, ref_text)

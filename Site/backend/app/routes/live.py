@@ -13,23 +13,27 @@ Pipeline (côté serveur) :
     ↓ Perth watermark (auto)
     ↓ WS                          → audio_chunk JSON (WAV b64) au client
 
-Refacto AudioWorklet vs version V1 initiale :
-- AVANT : MediaRecorder webm 1 s + ffmpeg subprocess par chunk côté serveur
-- MAINTENANT : AudioWorklet PCM raw 100 ms + np.frombuffer en RAM
-- Gain net : suppression du timeslice 1 s + suppression du fork ffmpeg
-  par chunk (économie ~100 ms d'I/O et ~1 fork/s par client connecté)
+Optimisations latence Live (cible spec 0,6-1,4 s) :
 
-Latence end-to-end (ordre de grandeur, à mesurer en prod) :
-- silence flush 400 ms (attendre la fin de phrase)
-- transport client→serveur : <50 ms LAN, <200 ms internet
-- Kyutai STT : 200-500 ms selon longueur
-- NeuTTS Q4 infer SYNC : ~1× temps réel pour la durée parlée
-  → pour 2 s de phrase → ~2 s à générer
-- transport retour + décodage WAV client : 50-100 ms
+1. AudioWorklet PCM 16 kHz raw côté client (au lieu de MediaRecorder webm 1 s)
+   → suppression du timeslice 1 s + plus de subprocess ffmpeg côté serveur
 
-Total typique pour une phrase de 2 s : ~3-4 s.
-La cible spec 0,6-1,4 s nécessiterait NeuTTS streaming (méthode
-``infer_stream`` non implémentée — V1.1).
+2. NeuTTS ``infer_stream`` côté serveur (au lieu de ``infer`` synchrone)
+   → premier chunk audio envoyé au client ~50-150 ms après la fin du STT,
+     au lieu d'attendre la fin de toute la synthèse (~1× temps réel parlé)
+
+3. Côté client : chaque chunk décodé en AudioBuffer et scheduled sur
+   un AudioContext (pas de re-parsing WAV par chunk)
+
+Décomposition typique pour une phrase de 2 s :
+- silence flush  : ~400 ms (incompressible)
+- transport WS   : ~50-100 ms
+- Kyutai STT     : ~200-300 ms
+- NeuTTS premier chunk Q4 : ~50-150 ms
+- transport + scheduling client : ~50 ms
+
+→ premier mot audible côté interlocuteur après ~750-1000 ms,
+   dans la cible spec V1.
 
 Auth : cookie session OU Bearer token au handshake.
 """
@@ -40,6 +44,7 @@ import base64
 import io
 import json
 import logging
+import threading
 from collections import deque
 
 try:
@@ -177,8 +182,48 @@ async def stream(ws: WebSocket):
         await _send_json(ws, {"type": "ready"})
         return True
 
+    async def stream_tts_chunks(text: str) -> None:
+        """Lance ``tts.infer_stream`` dans un thread (bloquant) et pousse les
+        chunks dans une asyncio.Queue. Coroutine consume + ws.send_json."""
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+
+        def producer():
+            try:
+                for chunk_f32 in tts_model.infer_stream(
+                    text, ref_codes, ref_text, language, quality,
+                ):
+                    arr = np.asarray(chunk_f32)
+                    if arr.ndim > 1:
+                        arr = arr.squeeze()
+                    pcm = (arr * 32767.0).astype(np.int16).tobytes()
+                    asyncio.run_coroutine_threadsafe(queue.put(pcm), loop)
+            except Exception as exc:  # noqa: BLE001
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop)
+            asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+        threading.Thread(target=producer, daemon=True).start()
+
+        seq = 0
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                log.exception("TTS streaming failed: %s", item)
+                await _send_json(ws, {"type": "error", "message": f"TTS : {item}"})
+                return
+            await _send_json(ws, {
+                "type": "audio_pcm",
+                "data": base64.b64encode(item).decode("ascii"),
+                "sample_rate": TTS_SAMPLE_RATE,
+                "seq": seq,
+            })
+            seq += 1
+        await _send_json(ws, {"type": "audio_end", "seq": seq})
+
     async def flush_speech() -> None:
-        """Concat le buffer parlé, STT → TTS, renvoi du WAV au client."""
+        """Concat le buffer parlé, STT → TTS streaming, renvoi des chunks PCM."""
         nonlocal speech_buf, speech_count, silence_count, in_speech
         if not speech_buf:
             return
@@ -204,17 +249,8 @@ async def stream(ws: WebSocket):
         if not text:
             return
 
-        try:
-            wav = tts_model.infer(text, ref_codes, ref_text, language, quality)
-        except Exception as exc:  # noqa: BLE001
-            log.exception("TTS live failed")
-            await _send_json(ws, {"type": "error", "message": f"TTS : {exc}"})
-            return
-
-        wav_bytes = _wav_bytes_24k(wav)
-        b64 = base64.b64encode(wav_bytes).decode("ascii")
         await _send_json(ws, {"type": "transcript", "text": text})
-        await _send_json(ws, {"type": "audio_chunk", "data": b64, "sample_rate": TTS_SAMPLE_RATE})
+        await stream_tts_chunks(text)
 
     async def consume_pcm(pcm_chunk):
         """Empile ``pcm_chunk`` dans le carry, découpe en blocs de 512 samples

@@ -20,8 +20,11 @@
   var sourceNode = null;
   var stream = null;
   var sessionActive = false;
-  var pendingPlay = []; // file d'attente audio renvoyé par le serveur
-  var playing = false;
+  // Lecture streaming : on schedule chaque chunk PCM 24 kHz directement sur
+  // l'AudioContext (au lieu de file d'attente Blob WAV qui ajoute du delay).
+  var playbackCtx = null;
+  var nextPlayAt = 0;
+  var TTS_RATE = 24000;
 
   function loadVoices() {
     VB.api.get('/api/voices').then(function (d) {
@@ -54,38 +57,60 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  // ── Lecture séquentielle des audio_chunk (WAV b64 → Blob → audio.play) ──
+  // ── Lecture streaming des chunks PCM 24 kHz via Web Audio API ──
+  //
+  // Chaque audio_pcm reçu est :
+  //   1. décodé base64 → Int16Array → Float32Array normalisé [-1, 1]
+  //   2. emballé dans un AudioBuffer mono à 24 kHz
+  //   3. scheduled sur l'AudioContext de lecture, à la suite du précédent
+  //
+  // ``nextPlayAt`` accumule le moment de fin du dernier chunk → permet de
+  // schedule sans gap audible. Reset à 0 à la fin de la phrase (audio_end).
 
-  function enqueueWav(b64) {
+  function ensurePlaybackCtx() {
+    if (!playbackCtx) {
+      playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: TTS_RATE,
+        latencyHint: 'interactive',
+      });
+      nextPlayAt = playbackCtx.currentTime;
+    }
+    if (playbackCtx.state === 'suspended') {
+      playbackCtx.resume().catch(function () {});
+    }
+    return playbackCtx;
+  }
+
+  function enqueuePcmChunk(b64) {
     try {
+      var ctx = ensurePlaybackCtx();
       var raw = atob(b64);
       var bytes = new Uint8Array(raw.length);
       for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      var blob = new Blob([bytes], { type: 'audio/wav' });
-      pendingPlay.push(URL.createObjectURL(blob));
-      tryPlayNext();
+      // Décodage int16 little-endian
+      var int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      var f32 = new Float32Array(int16.length);
+      for (var j = 0; j < int16.length; j++) f32[j] = int16[j] / 32768;
+      var buffer = ctx.createBuffer(1, f32.length, TTS_RATE);
+      buffer.copyToChannel(f32, 0);
+      var src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      var startAt = Math.max(ctx.currentTime + 0.005, nextPlayAt);
+      src.start(startAt);
+      nextPlayAt = startAt + buffer.duration;
     } catch (e) {
-      console.warn('enqueueWav failed', e);
+      console.warn('enqueuePcmChunk failed', e);
     }
   }
 
-  function tryPlayNext() {
-    if (playing || pendingPlay.length === 0) return;
-    var url = pendingPlay.shift();
-    var audio = $('liveAudio');
-    audio.src = url;
-    playing = true;
-    audio.play().then(function () {
-      audio.onended = function () {
-        URL.revokeObjectURL(url);
-        playing = false;
-        tryPlayNext();
-      };
-    }).catch(function () {
-      URL.revokeObjectURL(url);
-      playing = false;
-      tryPlayNext();
-    });
+  function onAudioEnd() {
+    // La phrase est finie côté serveur. Au prochain chunk d'une nouvelle
+    // phrase, on resync sur currentTime (sinon le prochain start serait dans
+    // le passé si l'utilisateur a parlé bien plus tard).
+    setTimeout(function () {
+      if (playbackCtx) nextPlayAt = playbackCtx.currentTime;
+    }, 50);
   }
 
   // ── WebSocket ──
@@ -118,8 +143,10 @@
         startCapture();
       } else if (payload.type === 'transcript') {
         appendTranscript('🗣 ' + payload.text);
-      } else if (payload.type === 'audio_chunk') {
-        enqueueWav(payload.data);
+      } else if (payload.type === 'audio_pcm') {
+        enqueuePcmChunk(payload.data);
+      } else if (payload.type === 'audio_end') {
+        onAudioEnd();
       } else if (payload.type === 'error') {
         VB.notify('error', payload.message || 'Erreur');
         stop();
