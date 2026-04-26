@@ -86,11 +86,14 @@
 
   function ensurePlaybackCtx() {
     if (!playbackCtx) {
-      playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: TTS_RATE,
-        latencyHint: 'interactive',
-      });
+      // Idem start() : pas de sampleRate forcé pour ne pas casser Safari.
+      // Resampling auto à la lecture (le buffer indique 24 kHz, le contexte
+      // tourne au rate device).
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      playbackCtx = new Ctx({ latencyHint: 'interactive' });
       nextPlayAt = playbackCtx.currentTime;
+      console.log('[live] AudioContext (lazy) — rate=' + playbackCtx.sampleRate
+                + ' state=' + playbackCtx.state);
     }
     if (playbackCtx.state === 'suspended') {
       playbackCtx.resume().catch(function () {});
@@ -184,20 +187,27 @@
     // IMPORTANT : créer + resume le playbackCtx ICI dans la chaîne de user-
     // gesture (clic sur la zone micro). Si on attend la première chunk
     // WebSocket pour le créer, Safari le marque "suspended" et resume()
-    // échoue silencieusement → aucun audio ne sort. Chrome/Firefox plus
-    // tolérants mais on harmonise.
+    // échoue silencieusement → aucun audio ne sort.
+    //
+    // Pas de sampleRate forcé : Safari peut échouer silencieusement à créer
+    // un AudioContext à 24 kHz si le hardware ne le supporte pas. On laisse
+    // le contexte tourner au rate device (44.1 ou 48 kHz typiquement) et on
+    // signale juste à chaque AudioBuffer qu'il est en 24 kHz — le navigateur
+    // resamplera pour la sortie hardware.
     if (!playbackCtx) {
       try {
-        playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: TTS_RATE,
-          latencyHint: 'interactive',
-        });
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        playbackCtx = new Ctx({ latencyHint: 'interactive' });
+        console.log('[live] AudioContext created — rate=' + playbackCtx.sampleRate
+                  + ' state=' + playbackCtx.state);
       } catch (e) {
         console.warn('[live] AudioContext creation failed', e);
       }
     }
     if (playbackCtx && playbackCtx.state === 'suspended') {
-      playbackCtx.resume().catch(function (err) {
+      playbackCtx.resume().then(function () {
+        console.log('[live] playbackCtx resumed — state=' + playbackCtx.state);
+      }).catch(function (err) {
         console.warn('[live] playbackCtx.resume failed', err);
       });
     }
