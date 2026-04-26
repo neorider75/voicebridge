@@ -179,6 +179,8 @@ async def stream(ws: WebSocket):
         except Exception as exc:  # noqa: BLE001
             await _send_json(ws, {"type": "error", "message": f"VAD indisponible : {exc}"})
             return False
+        log.info("live: configured voice_id=%s lang=%s ref_text=%s",
+                 voice_id, language, "yes" if ref_text else "NO (will fallback)")
         await _send_json(ws, {"type": "ready"})
         return True
 
@@ -233,6 +235,9 @@ async def stream(ws: WebSocket):
         silence_count = 0
         in_speech = False
 
+        duration_s = len(audio) / VAD_SAMPLE_RATE
+        log.info("live: flush_speech %.2fs of audio (16k → 24k → STT)", duration_s)
+
         # Resample 16k → 24k (interp linéaire — qualité voix OK)
         ratio = TTS_SAMPLE_RATE / VAD_SAMPLE_RATE
         new_len = int(len(audio) * ratio)
@@ -240,17 +245,22 @@ async def stream(ws: WebSocket):
         x_new = np.linspace(0, 1, new_len, endpoint=False)
         audio_24k = np.interp(x_new, x_old, audio).astype(np.float32)
 
+        import time as _t
+        t0 = _t.time()
         try:
             text = stt_model.transcribe(audio_24k, TTS_SAMPLE_RATE)
         except Exception as exc:  # noqa: BLE001
             log.exception("STT live failed")
             await _send_json(ws, {"type": "error", "message": f"STT : {exc}"})
             return
+        log.info("live: STT done in %.2fs → text=%r", _t.time() - t0, (text or "")[:80])
         if not text:
             return
 
         await _send_json(ws, {"type": "transcript", "text": text})
+        t1 = _t.time()
         await stream_tts_chunks(text)
+        log.info("live: TTS streaming done in %.2fs", _t.time() - t1)
 
     async def consume_pcm(pcm_chunk):
         """Empile ``pcm_chunk`` dans le carry, découpe en blocs de 512 samples
