@@ -26,23 +26,19 @@
   var nextPlayAt = 0;
   var TTS_RATE = 24000;
 
-  // Stratégie "full-phrase buffer" : on accumule TOUS les chunks d'une phrase
-  // sans rien jouer, et on les flush d'un coup quand le serveur envoie
-  // `audio_end`. Garantit zéro gap, au prix d'une latence = durée de
-  // génération complète côté serveur. Choix imposé par les CPU plus lents
-  // que real-time pour NeuTTS Q4 (ex : 7-9s de génération pour 2-3s d'audio
-  // sur EPYC 4 cores) → impossible de streamer fluide sans risque de gap.
+  // Jitter buffer : on n'enchaîne pas chaque chunk au fil de l'eau (qui mène
+  // à des gaps si NeuTTS Q4 génère plus lentement que le temps réel sur CPU
+  // modeste). À la place, on accumule jusqu'à JITTER_BUFFER_MS de signal
+  // *avant* de commencer à jouer. Pendant la lecture, les chunks suivants
+  // sont scheduled bout-en-bout depuis nextPlayAt → zéro gap tant qu'ils
+  // arrivent avant la fin du buffer accumulé.
   //
-  // Un cap MAX_BUFFER_MS coupe court si l'on dépasse 6s d'audio bufferisé
-  // (cas pathologique : audio_end jamais reçu). À ce stade on flush ce
-  // qu'on a et tant pis si la suite est hachée.
-  var MAX_BUFFER_MS = 6000;
-  var IDLE_FLUSH_MS = 4000;        // si plus aucun chunk depuis 4s mais audio_end pas reçu → flush quand même
+  // Compromis : augmenter ce buffer = plus de latence perçue mais moins de
+  // hachage. 500 ms est tolérant pour un CPU lent. À ajuster selon le ressenti.
+  var JITTER_BUFFER_MS = 500;
   var pendingChunks = [];          // AudioBuffers en attente de scheduling
   var pendingDurationMs = 0;       // total des durées accumulées
   var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
-  var lastChunkAt = 0;             // timestamp ms du dernier chunk reçu (watchdog idle flush)
-  var idleFlushTimer = null;
   // Level meter (anneau pulsant rouge autour de liveMicZone)
   var levelAnalyser = null;
   var levelRaf = null;
@@ -128,60 +124,42 @@
     try {
       var ctx = ensurePlaybackCtx();
       var audioBuffer = decodePcmChunk(b64, ctx);
-      lastChunkAt = Date.now();
 
       if (hasStartedUtterance) {
-        // Phrase déjà en cours de lecture (flush déclenché par audio_end ou
-        // par MAX_BUFFER_MS) — on enchaîne au fil de l'eau. Risque de gap
-        // si la génération devient plus lente que la lecture.
+        // Phrase déjà en cours de lecture → on enchaîne immédiatement.
         scheduleBuffer(ctx, audioBuffer);
         return;
       }
 
-      // Accumule sans jouer. On flush sur audio_end (cas normal) ou via le
-      // watchdog idle/MAX_BUFFER (sécurité si audio_end n'arrive pas).
+      // On accumule jusqu'à atteindre JITTER_BUFFER_MS, puis on flush.
       pendingChunks.push(audioBuffer);
       pendingDurationMs += audioBuffer.duration * 1000;
-      console.log('[live] +chunk dur=' + (audioBuffer.duration * 1000).toFixed(0) + 'ms total=' + pendingDurationMs.toFixed(0) + 'ms n=' + pendingChunks.length);
-
-      if (pendingDurationMs >= MAX_BUFFER_MS) {
-        console.warn('[live] MAX_BUFFER_MS atteint avant audio_end — flush forcé');
+      if (pendingDurationMs >= JITTER_BUFFER_MS) {
         flushPending(ctx);
-        return;
       }
-
-      // Watchdog : si plus aucun chunk pendant IDLE_FLUSH_MS, on flush
-      // par défaut (audio_end manquant ou serveur déconnecté).
-      if (idleFlushTimer) clearTimeout(idleFlushTimer);
-      idleFlushTimer = setTimeout(function () {
-        if (pendingChunks.length > 0 && playbackCtx) {
-          console.warn('[live] idle flush (' + IDLE_FLUSH_MS + 'ms sans chunk + audio_end manquant)');
-          flushPending(playbackCtx);
-        }
-      }, IDLE_FLUSH_MS);
     } catch (e) {
-      console.warn('[live] enqueuePcmChunk failed', e);
+      console.warn('enqueuePcmChunk failed', e);
     }
   }
 
   function flushPending(ctx) {
-    var n = pendingChunks.length;
-    var totalMs = pendingDurationMs.toFixed(0);
+    // Démarre la lecture en chaînant tous les chunks accumulés. Les chunks
+    // qui arriveront ensuite sont scheduled directement (cf. enqueuePcmChunk).
     while (pendingChunks.length > 0) {
       scheduleBuffer(ctx, pendingChunks.shift());
     }
     pendingDurationMs = 0;
     hasStartedUtterance = true;
-    if (idleFlushTimer) { clearTimeout(idleFlushTimer); idleFlushTimer = null; }
-    console.log('[live] flushed ' + n + ' chunks (' + totalMs + 'ms total)');
   }
 
   function onAudioEnd() {
-    console.log('[live] audio_end reçu, pending=' + pendingChunks.length);
-    if (pendingChunks.length > 0 && playbackCtx) {
+    // Le serveur signale la fin de la phrase. Si on a accumulé des chunks
+    // sans atteindre JITTER_BUFFER_MS (utterance courte), on flush quand
+    // même pour ne pas garder les chunks en attente indéfiniment.
+    if (!hasStartedUtterance && pendingChunks.length > 0 && playbackCtx) {
       flushPending(playbackCtx);
     }
-    if (idleFlushTimer) { clearTimeout(idleFlushTimer); idleFlushTimer = null; }
+    // Reset pour la prochaine phrase : on ré-accumulera JITTER_BUFFER_MS.
     setTimeout(function () {
       hasStartedUtterance = false;
       pendingChunks = [];
