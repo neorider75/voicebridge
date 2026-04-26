@@ -45,7 +45,7 @@ cloné, **patche** le ``config.json`` embarqué pour pointer sur le bon
 → Le front web le sert ensuite à ``Réglages → Installation`` via
 ``GET /api/install/voicebridge-app``.
 
-> ℹ️ 24 Mo dans git c'est OK pour le POC. Si tu pousses des updates
+> ℹ️ 24 Mo dans git, OK pour la V1. Si tu pousses des updates
 > fréquentes, bascule sur Git LFS ou GitHub Releases pour garder le repo
 > léger.
 
@@ -65,7 +65,7 @@ Au premier lancement, macOS demande l'accès au micro. Si refusé :
 `Info.plist` contient `NSMicrophoneUsageDescription` (justification) et
 `LSUIElement: true` (cache l'app du dock).
 
-## Limitations POC
+## Limitations V1
 
 - **Pas de signature/notarization** : Gatekeeper affichera "Apple ne peut
   pas vérifier l'application" au premier lancement (clic-droit → Ouvrir).

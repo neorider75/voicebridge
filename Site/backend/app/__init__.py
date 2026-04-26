@@ -1,2 +1,2 @@
 """VoiceBridge backend (FastAPI)."""
-__version__ = "1.0.0-poc"
+__version__ = "1.0.0"

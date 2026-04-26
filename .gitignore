@@ -34,3 +34,6 @@ dist/
 # Données runtime (jamais dans le repo)
 # Le runtime vit sous /var/voicebridge/data/ sur le VPS
 config.local.json
+
+# CLAUDE.md (instructions internes Claude Code, non partagé)
+CLAUDE.md

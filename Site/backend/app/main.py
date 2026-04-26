@@ -60,7 +60,7 @@ log = logging.getLogger("voicebridge")
 # App + rate limiter
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="VoiceBridge", version="1.0.0-poc", docs_url=None, redoc_url=None)
+app = FastAPI(title="VoiceBridge", version="1.0.0", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -119,7 +119,7 @@ except Exception:  # noqa: BLE001
 # Middleware : headers de sécurité + auth
 # ---------------------------------------------------------------------------
 
-# TODO (avant POC en prod) : retirer 'unsafe-inline' de style-src en éclatant
+# TODO V1.1 : retirer 'unsafe-inline' de style-src en éclatant
 # tous les style="..." restants dans des fichiers CSS dédiés.
 CSP = (
     "default-src 'self'; "

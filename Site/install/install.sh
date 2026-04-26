@@ -85,7 +85,7 @@ Par défaut le script REPREND là où il s'est arrêté (sauf si --fresh).
 Les phases déjà complétées (cf. /var/voicebridge/.install_state/) sont
 sautées avec un message "déjà fait — skip".
 
-  --minimal     N'installe que la livraison 1 du POC (login + sécurité +
+  --minimal     N'installe que la livraison 1 (login + sécurité +
                 Nginx/SSL + systemd) en sautant le téléchargement des
                 modèles ML et la compilation de llama-cpp-python.
                 Pour compléter l'installation plus tard, relancer le
@@ -418,10 +418,10 @@ phase5_app_code() {
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements-minimal.txt"
   else
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements.txt"
-    # NB POC : la recompilation llama-cpp-python avec OpenBLAS échoue parfois
+    # NB : la recompilation llama-cpp-python avec OpenBLAS échoue parfois
     # selon la combinaison Ubuntu/CMake/llama.cpp (ggml-blas CMakeLists). Le
     # wheel par défaut a déjà les optimisations CPU x86_64 standard.
-    # → À ré-évaluer post-POC si la perf TTS Q8 est insuffisante :
+    # → À ré-évaluer si la perf TTS Q8 est insuffisante :
     #     CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
     #       pip install llama-cpp-python --force-reinstall --no-cache-dir
     #   nécessite : pkg-config + libblas-dev + liblapack-dev installés (déjà fait).

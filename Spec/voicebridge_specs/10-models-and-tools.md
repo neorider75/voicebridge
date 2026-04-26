@@ -49,7 +49,7 @@ CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
   pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-OpenBLAS peut accélérer ~10-20% l'inférence CPU. **Notre install POC
+OpenBLAS peut accélérer ~10-20% l'inférence CPU. **Notre install V1
 utilise le wheel pip standard** (la recompilation locale ggml-blas a
 parfois des incompatibilités CMake selon Ubuntu). À ré-évaluer si la
 synthèse Q8 est trop lente.

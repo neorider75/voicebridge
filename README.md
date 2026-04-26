@@ -77,7 +77,7 @@ Le bundle est versionné dans `Site/macos-app/release/VoiceBridge.app.zip`
 et déployé automatiquement par `install.sh` (phase 9) avec l'URL serveur
 patchée au moment du déploiement.
 
-Limitations POC : signature ad-hoc seulement (Gatekeeper "Apple ne peut
+Limitations V1 : signature ad-hoc seulement (Gatekeeper "Apple ne peut
 pas vérifier", clic-droit → Ouvrir au 1er lancement) ; build arm64
 uniquement (Apple Silicon M1/M2/M3/M4).
 
@@ -158,11 +158,11 @@ Documentation complète en français dans `Spec/voicebridge_specs/` :
 ## Contributing
 
 Ce projet est mono-utilisateur par conception (V1). Les PRs sont bienvenues
-mais le scope V1 est volontairement contraint à un POC fonctionnel — voir
+mais le scope V1 est volontairement contraint — voir
 `Spec/voicebridge_specs/03-features-v2-v3.md` pour la roadmap.
 
 Avant de proposer une PR :
-1. Lire `CLAUDE.md` (règles de travail) et les specs concernées
+1. Lire les specs concernées dans `Spec/voicebridge_specs/`
 2. Tester en local : `python3 -m compileall app/` côté backend, charge
    manuelle des pages côté frontend
 3. Le commit message doit décrire le **pourquoi** (pas juste le quoi)

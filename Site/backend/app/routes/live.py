@@ -13,7 +13,7 @@ Pipeline (côté serveur) :
     ↓ Perth watermark (auto)
     ↓ WS                          → audio_chunk JSON (WAV b64) au client
 
-Différence avec la version POC initiale :
+Différence avec la version V1 initiale :
 - AVANT : MediaRecorder webm 1 s + ffmpeg subprocess par chunk côté serveur
   → latence ~1,5-2 s
 - MAINTENANT : AudioWorklet PCM raw 100 ms + np.frombuffer en RAM

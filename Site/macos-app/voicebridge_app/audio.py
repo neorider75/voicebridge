@@ -107,7 +107,7 @@ class AudioPipeline:
             if self._paused.is_set():
                 # Bypass : envoie le micro réel direct dans BlackHole.
                 # Resample 16k → 24k brutalement (zero-stuff x1.5) — peu propre
-                # mais latence minimale. À améliorer post-POC.
+                # mais latence minimale (à raffiner en V1.1).
                 self._out_queue.put(self._upsample_16k_to_24k(data_bytes))
             else:
                 try:
