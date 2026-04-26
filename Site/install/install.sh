@@ -481,10 +481,14 @@ phase6_models() {
 
   # Tout télécharger dans le cache HF standard ($HF_CACHE_DIR/hub).
   # Les libs Python résolvent ensuite par repo ID, sans connaître le chemin disque.
+  # FR : nano (seule famille FR officielle Neuphonic)
   hf_download neuphonic/neutts-nano-french-q4-gguf
-  hf_download neuphonic/neutts-nano-q4-gguf
   hf_download neuphonic/neutts-nano-french-q8-gguf
-  hf_download neuphonic/neutts-nano-q8-gguf
+  # EN : air (0.7B, dédié au voice cloning chez Neuphonic — 3.5x plus gros que
+  # nano EN, qualité de clonage nettement supérieure cf. doc HF)
+  hf_download neuphonic/neutts-air-q4-gguf
+  hf_download neuphonic/neutts-air-q8-gguf
+  # Codec audio commun
   hf_download neuphonic/neucodec
   hf_download kyutai/stt-1b-en_fr-trfs
   hf_download MelodyMachine/Deepfake-audio-detection-V2
