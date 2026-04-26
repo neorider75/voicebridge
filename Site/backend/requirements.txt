@@ -31,10 +31,17 @@ neucodec>=0.0.4
 # (multilingue FR+EN+ES+DE+13 autres). Plus gros et plus lent que NeuTTS
 # Nano, mais clonage nettement plus naturel. La maintenance officielle
 # Coqui est arrêtée ; on utilise le fork "coqui-tts" maintenu par Idiap.
-coqui-tts>=0.24
+# Pin <0.27 : la version 0.27 force transformers >=4.57, incompatible
+# avec neutts qui exige ~=4.56.1. 0.26.2 supporte XTTS-v2 et permet de
+# rester sur transformers 4.56.x.
+coqui-tts>=0.24,<0.27
 # Kyutai STT + détection deepfake (modèles transformers)
-# Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
-transformers>=4.53
+# Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53.
+# Pin en <5.0 car coqui-tts >=0.27 force transformers >=4.57 ce qui casse
+# neutts (qui exige ~=4.56.1). On reste sur la branche 4.x compatible
+# avec les deux engines.
+transformers>=4.53,<5.0
+huggingface-hub>=0.30,<1.0
 # accelerate est exigé par transformers dès qu'on passe device_map=... à
 # from_pretrained() (cf. KyutaiSpeechToTextForConditionalGeneration).
 accelerate>=0.30
