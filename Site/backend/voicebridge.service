@@ -6,9 +6,10 @@ After=network.target
 Type=simple
 User=voicebridge
 Group=voicebridge
-WorkingDirectory=/var/voicebridge/app
+WorkingDirectory=/var/voicebridge/app/Site/backend
 Environment="PATH=/var/voicebridge/venv/bin"
 Environment="VB_DATA_DIR=/var/voicebridge/data"
+Environment="VB_FRONTEND_DIR=/var/voicebridge/app/Site/frontend"
 ExecStart=/var/voicebridge/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=10
