@@ -109,11 +109,48 @@ def encode_reference(wav_path: Path, language: str) -> Any:
     return tts.encode_reference(str(wav_path))
 
 
+# Constantes de trim (cf. infer ci-dessous)
+NEUCODEC_TOKENS_PER_SECOND = 50      # NeuCodec produit 50 tokens audio par seconde
+NEUTTS_OUTPUT_SAMPLE_RATE = 24000    # Sortie NeuTTS Air = 24 kHz mono
+SAMPLES_PER_REF_TOKEN = NEUTTS_OUTPUT_SAMPLE_RATE // NEUCODEC_TOKENS_PER_SECOND  # 480
+
+
 def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
-    """Synthétise un WAV complet (np.ndarray float32 à 24 kHz)."""
+    """Synthétise un WAV complet (np.ndarray float32 à 24 kHz).
+
+    **Workaround NeuTTS Air GGML** : le backend GGML construit un prompt qui
+    contient le texte combiné ``ref_text + input_text`` côté texte mais
+    seulement les ``ref_codes`` côté speech. Le modèle ré-émet alors l'audio
+    de la référence avant de continuer sur ``input_text`` — l'utilisateur
+    entend "blabla de référence + son texte" au lieu de juste son texte.
+
+    La version streaming (``_infer_stream_ggml``) gère ça en pré-remplissant
+    ``token_cache`` avec ref_codes et en démarrant le décodage à
+    ``n_decoded_tokens = len(ref_codes)``. La version non-streaming
+    (``_infer_ggml``) ne fait pas ce skip → on le fait nous-mêmes ici en
+    coupant les premiers ``len(ref_codes) × 480`` samples (= durée du ref
+    audio à 24 kHz).
+    """
     key = model_key_for(language, quality)
     tts = mgr.manager.get(key)
-    return tts.infer(text, ref_codes, ref_text)
+    output = tts.infer(text, ref_codes, ref_text)
+
+    try:
+        # ref_codes peut être tensor torch ou ndarray ; les deux supportent len()
+        ref_token_count = int(len(ref_codes))
+    except TypeError:
+        ref_token_count = 0
+
+    if ref_token_count > 0 and hasattr(output, "__len__"):
+        trim = ref_token_count * SAMPLES_PER_REF_TOKEN
+        if len(output) > trim:
+            log.info("trimming %d samples (%.2fs) of ref audio prefix from infer output",
+                     trim, trim / NEUTTS_OUTPUT_SAMPLE_RATE)
+            output = output[trim:]
+        else:
+            log.warning("infer output (%d samples) shorter than expected ref prefix (%d) — pas de trim",
+                        len(output), trim)
+    return output
 
 
 def infer_stream(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
