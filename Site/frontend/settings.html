@@ -123,24 +123,153 @@
 
   <!-- ── Installation ── -->
   <div class="studio-content" data-section="install">
+
+    <!-- Étape 1 : BlackHole -->
     <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Configuration de l'app macOS</h2>
-      <ol style="padding-left:1.25rem;line-height:1.8;font-size:0.85rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">1</div>
+        <h2 style="font-size:0.95rem;font-weight:700">Installer BlackHole 2ch</h2>
+      </div>
+      <p class="hint" style="margin-bottom:1rem">
+        Pilote audio virtuel gratuit (open source). C'est lui qui permet à
+        Teams/Zoom/Meet de "voir" la voix clonée comme un micro.
+      </p>
+
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
         <li>
-          <strong>Périphérique virtuel :</strong>
-          <a href="https://existential.audio/blackhole/" target="_blank" rel="noopener" style="color:var(--accent2)">📥 Télécharger BlackHole</a>
-          (Mac, gratuit)
+          Ouvrez la page officielle :
+          <a href="https://existential.audio/blackhole/" target="_blank" rel="noopener" style="color:var(--accent2)">existential.audio/blackhole</a>
         </li>
-        <li><strong>Application VoiceBridge :</strong>
-          <a href="/api/install/voicebridge-app" download style="color:var(--accent2)">📥 Télécharger VoiceBridge.app</a>
-        </li>
-        <li><strong>Configuration Teams :</strong>
-          <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2);margin-top:0.3rem">
-            Teams → Paramètres → Périphériques → Microphone → BlackHole 2ch
+        <li>Choisissez la variante <strong>BlackHole 2ch</strong> (gratuite).</li>
+        <li>Saisissez votre email — un lien de téléchargement vous sera envoyé (instantané).</li>
+        <li>Téléchargez le <strong><code>.pkg</code></strong> (~ 1 Mo) et double-cliquez dessus.</li>
+        <li>Si l'installateur ne s'ouvre pas (Gatekeeper) : <em>clic-droit → Ouvrir</em>.</li>
+        <li>Suivez les instructions. À la fin, BlackHole apparaît dans :
+          <div class="code-block" style="margin-top:0.4rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.7rem;font-family:'DM Mono',monospace;font-size:0.72rem;color:var(--accent2)">
+            🍎 → Réglages Système → Son → onglet Sortie / Entrée → "BlackHole 2ch"
           </div>
         </li>
-        <li><strong>Clé API :</strong> copiez-la depuis l'onglet API ci-dessus et collez-la dans VoiceBridge → Préférences.</li>
+        <li>
+          <strong>Vérification :</strong> ouvrez Audio MIDI Setup
+          (<code>/Applications/Utilities/Audio MIDI Setup.app</code>) et confirmez
+          que <em>BlackHole 2ch</em> est listé. Pas besoin de configuration manuelle.
+        </li>
       </ol>
+
+      <div class="alert alert-info" style="margin-top:1rem">
+        💡 Alternative en ligne de commande (si vous avez Homebrew) :
+        <code style="background:var(--surface3);padding:0.1rem 0.3rem;border-radius:4px">brew install --cask blackhole-2ch</code>
+      </div>
+    </div>
+
+    <!-- Étape 2 : VoiceBridge.app -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">2</div>
+        <h2 style="font-size:0.95rem;font-weight:700">Installer VoiceBridge.app</h2>
+      </div>
+      <p class="hint" style="margin-bottom:1rem">
+        Application menu bar qui capture votre micro, l'envoie à
+        <code>voice.neorider.fr</code> et joue la voix clonée dans BlackHole.
+        L'URL du serveur est <strong>déjà intégrée</strong> dans le bundle.
+      </p>
+
+      <a href="/api/install/voicebridge-app" download class="btn btn-primary" style="text-decoration:none;margin-bottom:1rem">
+        📥 Télécharger VoiceBridge.app
+      </a>
+
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
+        <li>Décompressez le <code>.zip</code> téléchargé.</li>
+        <li>Glissez <strong>VoiceBridge.app</strong> dans <code>/Applications</code>.</li>
+        <li>
+          <strong>Premier lancement</strong> : <em>clic-droit → Ouvrir</em>
+          (Gatekeeper affichera "Apple ne peut pas vérifier", c'est normal pour
+          une app non notarisée — confirmez "Ouvrir"). macOS s'en souvient pour
+          les fois suivantes.
+        </li>
+        <li>
+          macOS demande l'accès au micro → <strong>Autoriser</strong>.
+          Si refusé : <em>Réglages Système → Confidentialité → Microphone</em>.
+        </li>
+        <li>
+          Les <strong>Préférences</strong> s'ouvrent automatiquement avec l'URL
+          déjà remplie. Collez votre <strong>clé API</strong> (cf. onglet API
+          ci-dessus) et cliquez <em>Tester + enregistrer</em>.
+        </li>
+        <li>
+          L'icône <strong>🟢</strong> apparaît dans la barre des menus en haut
+          à droite — vous êtes connecté.
+        </li>
+      </ol>
+
+      <div class="alert alert-warning" style="margin-top:1rem">
+        ⚠️ Architecture supportée : <strong>Apple Silicon (M1/M2/M3/M4)</strong>.
+        Les Mac Intel ne sont pas couverts par ce build POC.
+      </div>
+    </div>
+
+    <!-- Étape 3 : Configurer Teams/Zoom -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">3</div>
+        <h2 style="font-size:0.95rem;font-weight:700">Configurer Teams / Zoom / Meet</h2>
+      </div>
+      <p class="hint" style="margin-bottom:0.75rem">
+        Dites à votre app de visio d'utiliser BlackHole comme micro à la place
+        de votre micro physique. VoiceBridge fait passer la voix clonée par là.
+      </p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.5rem">
+        <div>
+          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Microsoft Teams</div>
+          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+            … → Paramètres → Périphériques → Microphone → BlackHole 2ch
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Zoom</div>
+          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+            ⚙ → Audio → Microphone → BlackHole 2ch
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Google Meet</div>
+          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+            ⋮ → Paramètres → Audio → Microphone → BlackHole 2ch
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">macOS (système)</div>
+          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+            🍎 → Réglages Système → Son → Entrée → BlackHole 2ch
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info" style="margin-top:1rem">
+        💡 Pour vérifier que tout fonctionne : Photo Booth → enregistrement vidéo,
+        ou Mémo vocal → enregistrement. Vous devriez entendre votre voix clonée
+        au lieu de votre voix réelle.
+      </div>
+    </div>
+
+    <!-- Étape 4 : check final -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">✓</div>
+        <h2 style="font-size:0.95rem;font-weight:700">Vérifier la chaîne complète</h2>
+      </div>
+
+      <ul style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
+        <li>VoiceBridge.app affiche 🟢 dans la barre des menus</li>
+        <li>Cliquer dessus → <em>Voix : juliette</em> (ou la voix par défaut configurée)</li>
+        <li>Lancer un appel test (vous-même sur Teams + un autre compte)</li>
+        <li>Parler → la voix arrive dans Teams en cloné, latence ~0,7 à 1,5 s</li>
+        <li>
+          Pour <strong>désactiver temporairement</strong> (zéro latence, voix
+          réelle) : cliquer sur l'icône menu bar → <em>⏸ Mettre en pause</em>.
+        </li>
+      </ul>
     </div>
   </div>
 </main>
