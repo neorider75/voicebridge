@@ -119,7 +119,31 @@ select:focus, input:focus {
 }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--glow); }
 .btn-primary:active { transform: translateY(0); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-primary:disabled { opacity: 0.85; cursor: not-allowed; transform: none; }
+
+/* Bouton-barre-de-progression : pendant une opération longue, le bouton
+   reste affiché mais sa moitié gauche se remplit progressivement (variable
+   --progress de 0 à 100 %). Utilise une superposition de gradient :
+     - une couleur "remplie" (accent) jusqu'à --progress
+     - une couleur "vide" (translucide) ensuite
+   La transition est gérée par un requestAnimationFrame côté JS. */
+.btn-progress {
+  --progress: 0%;
+  position: relative;
+  background-image: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.18) var(--progress),
+    rgba(255, 255, 255, 0) var(--progress),
+    rgba(255, 255, 255, 0) 100%
+  ),
+  linear-gradient(135deg, var(--accent), var(--accent2));
+  background-blend-mode: overlay, normal;
+  transition: background-image 0.05s linear;
+  /* Désactivé visuellement mais on garde le style brillant */
+  opacity: 1;
+}
+.btn-progress:disabled { opacity: 1; }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 4px; }

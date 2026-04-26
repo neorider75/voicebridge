@@ -12,6 +12,35 @@
   var MAX_CHARS = 5000;
   var voices = [];
 
+  // Bouton-barre-de-progression : transforme un .btn en barre qui se remplit
+  // de 0 à 95 % linéairement sur `durationMs` puis stagne. Le caller appelle
+  // la fonction stop() retournée à la fin (succès ou erreur) pour finaliser
+  // (saute à 100% puis nettoie après 300ms). Utilise la classe CSS
+  // `.btn-progress` + variable `--progress` (cf. base.css).
+  function startBtnProgress(btn, durationMs) {
+    btn.classList.add('btn-progress');
+    btn.style.setProperty('--progress', '0%');
+    var start = Date.now();
+    var raf = null;
+    var stopped = false;
+    function tick() {
+      if (stopped) return;
+      var t = Math.min(0.95, (Date.now() - start) / durationMs);
+      btn.style.setProperty('--progress', (t * 100).toFixed(1) + '%');
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return function stop() {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      btn.style.setProperty('--progress', '100%');
+      setTimeout(function () {
+        btn.classList.remove('btn-progress');
+        btn.style.removeProperty('--progress');
+      }, 300);
+    };
+  }
+
   // ── Sub-tabs (le switch TTS/STT est géré par studio-stt.js) ──
   function bindStudioTabs() {
     // Notification "disponible plus tard" pour les onglets disabled (Live)
@@ -127,6 +156,9 @@
       var btn = $('btnGenerate');
       btn.disabled = true;
       btn.textContent = engine === 'xtts' ? '⏳ Génération XTTS… (~30-60s)' : '⏳ Génération…';
+      // Barre de progression dans le bouton (linear tween 0→95% sur la durée
+      // attendue, puis saut à 100% quand la réponse arrive).
+      var stopProgress = startBtnProgress(btn, engine === 'xtts' ? 45000 : 12000);
 
       var payload = {
         text: text, voice_id: voiceId, format: format,
@@ -170,6 +202,7 @@
       }).catch(function (e) {
         VB.notify('error', e.message || 'Erreur de génération');
       }).finally(function () {
+        if (stopProgress) stopProgress();
         btn.disabled = false;
         btn.textContent = '🎙 Générer';
       });
