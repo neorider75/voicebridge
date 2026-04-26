@@ -180,6 +180,13 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     except ImportError:
         pass  # numpy n'est pas dispo (très improbable)
 
+    # Compression des silences entre phrases : XTTS surdose souvent les
+    # pauses (1-2s entre deux phrases). On cap chaque pause à MAX_PAUSE_S
+    # tout en préservant les pauses naturelles plus courtes.
+    max_pause_s = _read_env_float("VB_XTTS_MAX_PAUSE_S", 0.4)
+    if max_pause_s > 0:
+        wav = _compress_silences(wav, max_pause_s, threshold_db=40)
+
     # Pitch shift post-traitement (XTTS n'expose pas de knob direct sur la
     # hauteur de la voix — elle est dictée par le speaker_wav). Si l'audio
     # généré sonne un poil aigu/grave par rapport à la voix d'origine, on
@@ -200,3 +207,51 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
             log.warning("pitch_shift failed: %s", exc)
 
     return wav
+
+
+def _compress_silences(wav, max_pause_s: float, threshold_db: float = 40):
+    """Plafonne la durée des silences dans `wav` à `max_pause_s` (en secondes).
+
+    Utilise librosa.effects.split pour détecter les segments non-silencieux,
+    puis reconstruit l'audio avec des pauses inter-segments capées :
+        pause_finale = min(pause_originale, max_pause_s)
+
+    Conserve donc les pauses courtes naturelles (virgules, respirations
+    < max_pause_s) intactes — seules les pauses longues (entre phrases,
+    fins de paragraphe) sont raccourcies.
+
+    threshold_db : seuil au-dessus du peak en dB pour considérer comme
+    "voix" (40 = standard pour la voix humaine).
+    """
+    try:
+        import librosa  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return wav
+    arr = np.asarray(wav, dtype=np.float32)
+    if arr.ndim > 1:
+        arr = arr.squeeze()
+    if arr.size == 0:
+        return wav
+    intervals = librosa.effects.split(arr, top_db=threshold_db)
+    if len(intervals) <= 1:
+        return wav  # rien à compacter (un seul segment ou aucun)
+    max_pause_samples = int(max_pause_s * XTTS_OUTPUT_SAMPLE_RATE)
+    parts = []
+    last_end = 0
+    saved_total = 0
+    for i, (start, end) in enumerate(intervals):
+        if i > 0:
+            pause_len = start - last_end
+            kept = min(pause_len, max_pause_samples)
+            saved_total += pause_len - kept
+            # On utilise le silence original tronqué (peut contenir un peu
+            # de bruit ambiant cohérent), pas un zero-fill (qui sonne mort).
+            parts.append(arr[last_end:last_end + kept])
+        parts.append(arr[start:end])
+        last_end = end
+    out = np.concatenate(parts) if parts else arr
+    if saved_total > 0:
+        log.info("compressed silences: saved %.2fs (%d intervals)",
+                 saved_total / XTTS_OUTPUT_SAMPLE_RATE, len(intervals) - 1)
+    return out
