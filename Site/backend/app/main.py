@@ -23,6 +23,7 @@ from . import config
 from .limiter import limiter
 from .models import stt as stt_module
 from .models import tts as tts_module
+from .models import vad as vad_module
 from .routes import auth as r_auth
 from .routes import detection as r_detection
 from .routes import live as r_live
@@ -73,6 +74,11 @@ try:
     stt_module.register_loaders()
 except Exception:  # noqa: BLE001
     log.warning("register_loaders STT impossible (deps ML manquantes ?)")
+
+try:
+    vad_module.register_loaders()
+except Exception:  # noqa: BLE001
+    log.warning("register_loaders VAD impossible (deps ML manquantes ?)")
 
 
 # ---------------------------------------------------------------------------

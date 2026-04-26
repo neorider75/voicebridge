@@ -42,7 +42,7 @@
   <div class="studio-tabs" role="tablist">
     <button class="studio-tab active" data-tab="tts">🗣 Lire un texte</button>
     <button class="studio-tab" data-tab="stt">📝 Transcrire ma voix</button>
-    <button class="studio-tab disabled" title="Disponible en livraison 4">📡 Parler en direct</button>
+    <button class="studio-tab" data-tab="live">📡 Parler en direct</button>
   </div>
 
   <!-- ── ÉTAPE 1 : Texte ── -->
@@ -216,6 +216,70 @@
       <button class="btn btn-primary" id="sttBtnDownload">⬇ Télécharger</button>
     </section>
   </div>
+
+  <!-- ══════════════ LIVE ══════════════ -->
+  <div class="studio-content" data-tab="live">
+
+    <!-- Step 1 : Configuration -->
+    <section class="step" data-step="live-1">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-title">Configuration</div>
+      </div>
+
+      <div id="liveModelsAlert" class="alert alert-warning" style="display:none">
+        ⚠️ Modèles non chargés — latence +3 à 5 s au premier appel
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="liveVoiceSelect">Voix</label>
+          <select id="liveVoiceSelect"></select>
+        </div>
+        <div class="field">
+          <label for="liveLang">Langue source</label>
+          <select id="liveLang">
+            <option value="fr">🇫🇷 Français</option>
+            <option value="en">🇬🇧 Anglais</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Sortie audio</label>
+        <div class="radio-group" data-name="live-output">
+          <button class="radio-option selected" data-value="browser">Navigateur</button>
+          <button class="radio-option" data-value="blackhole" title="Nécessite VoiceBridge.app + BlackHole">BlackHole (Teams/Zoom)</button>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        💡 Le mode Live ne génère aucun fichier · Un buffer de 5 s assure la
+        continuité en cas de micro-coupure réseau.
+      </div>
+    </section>
+
+    <!-- Step 2 : Session live -->
+    <section class="step" data-step="live-2">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Session live</div>
+      </div>
+
+      <div class="mic-zone" id="liveMicZone">
+        <div class="mic-zone-icon">🎤</div>
+        <div class="mic-zone-label" id="liveMicLabel">Cliquez pour démarrer</div>
+      </div>
+
+      <div id="liveStatus" style="margin-top:0.75rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text3)">
+        Inactif
+      </div>
+
+      <div id="liveTranscript" style="margin-top:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;font-size:0.85rem;min-height:50px;max-height:200px;overflow-y:auto"></div>
+
+      <audio id="liveAudio" autoplay style="width:100%;margin-top:0.75rem"></audio>
+    </section>
+  </div>
 </main>
 
 <script src="/js/theme.js"></script>
@@ -224,5 +288,6 @@
 <script src="/js/header.js"></script>
 <script src="/js/studio.js"></script>
 <script src="/js/studio-stt.js"></script>
+<script src="/js/studio-live.js"></script>
 </body>
 </html>
