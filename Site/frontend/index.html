@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+</head>
+<body>
+  <header style="padding:1rem 2rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+    <div style="display:flex;align-items:center;gap:0.6rem;font-size:1.1rem;font-weight:700">
+      <div style="width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent3));border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff">🎤</div>
+      <span>VoiceBridge</span>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <button class="theme-toggle" data-theme-toggle title="Changer de thème">🌙</button>
+      <button class="btn btn-primary" id="logoutBtn" style="padding:0.4rem 0.9rem;font-size:0.75rem">Déconnexion</button>
+    </div>
+  </header>
+
+  <main style="max-width:920px;margin:0 auto;padding:2rem">
+    <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-0.03em;margin-bottom:0.4rem">Bienvenue</h1>
+    <p style="color:var(--text3);font-family:'DM Mono',monospace;font-size:0.78rem;margin-bottom:2rem">
+      POC livraison 1 / 7 — login + sécurité opérationnels
+    </p>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Statut serveur</h2>
+      <div id="status" style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text2);line-height:1.7">
+        <span style="color:var(--text3)">Chargement…</span>
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem;padding:1rem;border:1px dashed var(--border2);border-radius:10px;color:var(--text3);font-size:0.78rem">
+      Les pages <em>Studio</em>, <em>Mes voix</em>, <em>Live</em>, <em>Détection</em>, <em>Réglages</em>
+      seront livrées sur les prochaines itérations (livraisons 2 à 6).
+    </div>
+  </main>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/index.js"></script>
+</body>
+</html>

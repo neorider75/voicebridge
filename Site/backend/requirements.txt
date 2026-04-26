@@ -1,0 +1,45 @@
+# VoiceBridge backend — Python 3.11 strict
+# Toutes les versions sont des minimums ; pip installe la dernière compatible.
+
+# --- Web framework ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+websockets>=12
+python-multipart>=0.0.9
+pydantic>=2
+
+# --- Sécurité (V1 obligatoire) ---
+passlib[bcrypt]>=1.7
+# passlib 1.7 est incompatible avec bcrypt >= 4.1 (AttributeError __about__).
+# Pin temporaire jusqu'à passlib 1.8 (toujours pas sorti en avril 2026).
+bcrypt>=4.0,<4.1
+itsdangerous>=2.1
+slowapi>=0.1.9
+fastapi-csrf-protect>=0.3.4
+python-magic>=0.4.27
+
+# --- ML / TTS / STT ---
+# NeuTTS (TTS + voice cloning + watermark Perth inclus)
+neuttsair>=0.1
+llama-cpp-python>=0.2.50
+# NeuCodec (déjà dépendance de neutts mais explicite)
+neucodec>=0.1
+# Kyutai STT + détection deepfake (modèles transformers)
+transformers>=4.40
+torch>=2.2
+torchaudio>=2.2
+onnxruntime>=1.17
+# VAD
+silero-vad>=4.0
+
+# --- Audio / utils ---
+soundfile>=0.12
+ffmpeg-python>=0.2
+yt-dlp>=2024.1
+
+# --- Système / scheduling ---
+psutil>=5.9
+APScheduler>=3.10
+
+# --- Dev / CI (optionnel — décommenter pour audits) ---
+# pip-audit>=2.7

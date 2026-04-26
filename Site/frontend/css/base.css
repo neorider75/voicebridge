@@ -1,0 +1,127 @@
+/* VoiceBridge — base.css
+ * Variables, reset, typographie, thèmes clair/sombre.
+ * Extrait fidèle de Spec/voicebridge_v8.html (sections THEMES, BODY, BUTTONS).
+ */
+
+[data-theme="dark"] {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --surface2: #1a1a24;
+  --surface3: #22222f;
+  --border: #2a2a3a;
+  --border2: #333345;
+  --accent: #6c63ff;
+  --accent2: #a78bfa;
+  --accent3: #38bdf8;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --text: #f0f0f8;
+  --text2: #9898b8;
+  --text3: #5a5a7a;
+  --glow: rgba(108,99,255,0.15);
+  --shadow: rgba(0,0,0,0.5);
+  --header-bg: rgba(10,10,15,0.88);
+}
+
+[data-theme="light"] {
+  --bg: #f4f4f9;
+  --surface: #ffffff;
+  --surface2: #f0f0f6;
+  --surface3: #e8e8f0;
+  --border: #dddde8;
+  --border2: #c8c8d8;
+  --accent: #5b52ee;
+  --accent2: #7c6ee8;
+  --accent3: #0ea5e9;
+  --success: #10b981;
+  --warning: #d97706;
+  --danger: #ef4444;
+  --text: #1a1a2e;
+  --text2: #4a4a6a;
+  --text3: #8a8aaa;
+  --glow: rgba(91,82,238,0.08);
+  --shadow: rgba(0,0,0,0.1);
+  --header-bg: rgba(244,244,249,0.92);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.3s, color 0.3s;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(108,99,255,0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(56,189,248,0.03) 0%, transparent 50%);
+  pointer-events: none; z-index: 0;
+  transition: opacity 0.3s;
+}
+[data-theme="light"] body::before { opacity: 0.5; }
+
+.theme-toggle {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+.theme-toggle:hover { border-color: var(--border2); }
+
+/* ── Champs ── */
+.field { margin-bottom: 1rem; }
+
+label {
+  display: block; font-size: 0.7rem; font-weight: 700;
+  color: var(--text3); text-transform: uppercase;
+  letter-spacing: 0.07em; margin-bottom: 0.4rem;
+}
+
+select, input[type="text"], input[type="password"], input[type="url"] {
+  width: 100%; padding: 0.6rem 0.9rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text);
+  font-family: 'Syne', sans-serif; font-size: 0.85rem;
+  outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none; -webkit-appearance: none;
+}
+select:focus, input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.1);
+}
+
+/* ── Boutons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.6rem 1.2rem; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 700;
+  font-family: 'Syne', sans-serif;
+  cursor: pointer; transition: all 0.2s; border: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white;
+  box-shadow: 0 4px 16px var(--glow);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--glow); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }

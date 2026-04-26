@@ -1,0 +1,24 @@
+[Unit]
+Description=VoiceBridge FastAPI service
+After=network.target
+
+[Service]
+Type=simple
+User=voicebridge
+Group=voicebridge
+WorkingDirectory=/var/voicebridge/app
+Environment="PATH=/var/voicebridge/venv/bin"
+Environment="VB_DATA_DIR=/var/voicebridge/data"
+ExecStart=/var/voicebridge/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=10
+
+# Durcissement
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/voicebridge/data
+
+[Install]
+WantedBy=multi-user.target

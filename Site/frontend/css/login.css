@@ -1,0 +1,49 @@
+/* VoiceBridge — login.css
+ * Styles spécifiques à la page de connexion, fidèles à la maquette.
+ */
+
+.login-page {
+  display: flex; min-height: 100vh;
+  align-items: center; justify-content: center; flex-direction: column;
+  position: relative; z-index: 10;
+}
+
+.login-box {
+  width: 100%; max-width: 370px; padding: 2.5rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: 0 20px 60px var(--shadow);
+}
+
+.login-logo { text-align: center; margin-bottom: 2rem; }
+
+.login-logo-icon {
+  width: 52px; height: 52px;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; margin: 0 auto 0.75rem;
+  color: white;
+}
+
+.login-title {
+  font-size: 1.3rem; font-weight: 800; letter-spacing: -0.03em;
+}
+
+.login-sub {
+  font-size: 0.75rem; color: var(--text3); margin-top: 0.2rem;
+}
+
+.login-error {
+  display: none;
+  margin-top: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--danger);
+  font-family: 'DM Mono', monospace;
+  text-align: center;
+}
+.login-error.visible { display: block; }
+
+.theme-toggle-fixed {
+  position: absolute;
+  top: 1.25rem; right: 1.25rem;
+}
