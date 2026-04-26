@@ -19,7 +19,13 @@ Environment="TTS_HOME=/var/voicebridge/data/models/tts-cache"
 # Sans NUMBA_CACHE_DIR, librosa @jit(cache=True) crashe au boot de NeuTTS.
 Environment="NUMBA_CACHE_DIR=/var/voicebridge/data/cache/numba"
 Environment="XDG_CACHE_HOME=/var/voicebridge/data/cache"
+Environment="XDG_DATA_HOME=/var/voicebridge/data/cache/xdg-data"
+Environment="XDG_CONFIG_HOME=/var/voicebridge/data/cache/xdg-config"
 Environment="MPLCONFIGDIR=/var/voicebridge/data/cache/matplotlib"
+# HOME redirigé : certaines libs ignorent XDG_* et écrivent direct dans
+# ~/.local/.. sans passer par XDG. Un HOME pointant vers data/cache permet
+# de capter ces écritures aussi.
+Environment="HOME=/var/voicebridge/data/cache/home"
 # Threading PyTorch / NumPy : par défaut PyTorch utilise toutes les cores
 # disponibles, mais BLAS (OpenBLAS, MKL) peut prendre 1 thread par défaut sur
 # certains setups → goulot fp32. On force tout à 4 (= nproc du VPS).
