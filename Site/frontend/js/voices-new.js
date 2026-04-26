@@ -281,7 +281,25 @@
         credentials: 'same-origin',
         body: fd,
       }).then(function (r) {
-        if (!r.ok) return r.json().then(function (d) { throw new Error(d.message || 'Erreur ' + r.status); });
+        if (!r.ok) {
+          // Réponse non-OK : le body peut être JSON ({"detail": {"message": ...}})
+          // ou plain text ("Internal Server Error" sur exception non capturée).
+          // Fallback robuste pour ne pas re-déclencher un JSON.parse SyntaxError
+          // sur du texte brut (Safari renvoie un message cryptique sinon).
+          return r.text().then(function (raw) {
+            var msg = 'Erreur ' + r.status;
+            try {
+              var d = JSON.parse(raw);
+              msg = (d && d.detail && d.detail.message)
+                || (d && d.message)
+                || (d && d.detail && typeof d.detail === 'string' ? d.detail : null)
+                || msg;
+            } catch (e) {
+              if (raw && raw.length < 200) msg = msg + ' · ' + raw;
+            }
+            throw new Error(msg);
+          });
+        }
         return r.json();
       }).then(function () { done(); })
         .catch(function (e) { VB.notify('error', e.message || 'Création impossible'); });
