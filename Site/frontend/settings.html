@@ -49,7 +49,13 @@
       <div class="settings-panel active" data-panel="server">
 
         <div class="card">
-          <div class="card-title">État du serveur</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div class="card-title" style="margin-bottom:0">État du serveur</div>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <span id="serverRefreshAge" style="font-size:0.65rem;color:var(--text3);font-family:'DM Mono',monospace"></span>
+              <button class="icon-btn" id="btnRefreshServer" title="Rafraîchir maintenant" style="width:28px;height:28px">🔄</button>
+            </div>
+          </div>
           <div style="margin-bottom:0.9rem">
             <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.25rem">
               <span style="color:var(--text3)">RAM</span>
@@ -69,6 +75,11 @@
             <span id="modelsSummary" style="color:var(--text3);font-weight:600">…</span>
           </div>
           <div id="modelsList" style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text3);line-height:1.55"></div>
+          <div class="hint" style="margin-top:0.6rem">
+            💡 <strong>loaded</strong> = chargé en RAM, prêt avec latence minimale.
+            <strong>unloaded</strong> = sur disque seulement, +3-5 s au premier appel.
+            Utilisez « Préchauffer » ci-dessous pour forcer le chargement.
+          </div>
         </div>
 
         <div class="card">

@@ -19,7 +19,18 @@
   }
 
   // ── Server state polling ──
+  var lastRefreshAt = 0;
+
+  function tickRefreshAge() {
+    var el = $('serverRefreshAge');
+    if (!el || !lastRefreshAt) return;
+    var ago = Math.max(0, Math.round((Date.now() - lastRefreshAt) / 1000));
+    el.textContent = ago === 0 ? 'à l\'instant' : 'il y a ' + ago + ' s';
+  }
+
   function refreshServerState() {
+    var btn = $('btnRefreshServer');
+    if (btn) { btn.style.opacity = '0.5'; btn.disabled = true; }
     VB.api.get('/api/system/status').then(function (s) {
       // RAM
       $('ramText').textContent = s.ram.used_gb + ' / ' + s.ram.total_gb + ' Go';
@@ -49,7 +60,11 @@
         summary.style.color = 'var(--warning)';
       }
       $('modelsList').innerHTML = lines.join('');
-    }).catch(function () {});
+      lastRefreshAt = Date.now();
+      tickRefreshAge();
+    }).catch(function () {}).finally(function () {
+      if (btn) { btn.style.opacity = ''; btn.disabled = false; }
+    });
   }
 
   // ── Préchauffage ──
@@ -168,6 +183,9 @@
     bindNav();
     refreshServerState();
     setInterval(refreshServerState, 5000);
+    setInterval(tickRefreshAge, 1000);  // met à jour le compteur "il y a X s"
+    var btnR = $('btnRefreshServer');
+    if (btnR) btnR.addEventListener('click', refreshServerState);
     bindWarm();
     bindRadioGroupsSettings();
     syncSettingsFromServer();
