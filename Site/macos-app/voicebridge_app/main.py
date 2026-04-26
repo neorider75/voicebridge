@@ -58,6 +58,8 @@ class VoiceBridgeApp(rumps.App):
         self.ws: WSClient | None = None
 
         # ── Menu items ──
+        # voice_item est un PARENT de sous-menu : la liste des voix
+        # disponibles est peuplée par _refresh_voice_submenu() (fetch HTTP).
         self.voice_item = rumps.MenuItem(f"Voix : {self.voice_id}")
         self.pause_item = rumps.MenuItem("⏸ Mettre en pause", callback=self._toggle_pause)
         self.preferences_item = rumps.MenuItem("Préférences…", callback=self._open_preferences)
@@ -79,6 +81,7 @@ class VoiceBridgeApp(rumps.App):
             self._open_preferences(None)
         else:
             self._start_pipeline()
+            self._refresh_voice_submenu()
 
     # ── Callbacks UI ────────────────────────────────────────────────
 
@@ -120,10 +123,75 @@ class VoiceBridgeApp(rumps.App):
         if self._test_connection():
             rumps.alert("Connexion OK", "La clé est valide. Le pipeline démarre.")
             self._start_pipeline()
+            self._refresh_voice_submenu()
         else:
             rumps.alert("Connexion impossible",
                         "Vérifiez l'URL et la clé API. L'app reste en mode déconnecté.")
             self._set_status(ICON_DISCONNECTED)
+
+    # ── Sous-menu Voix ─────────────────────────────────────────────
+
+    def _fetch_voices(self) -> list:
+        """GET /api/voices → liste des voix actuelles avec status."""
+        if not self.server_url or not self.api_token:
+            return []
+        try:
+            url = self.server_url.rstrip("/") + "/api/voices"
+            req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
+            with urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                return data.get("voices", []) if isinstance(data, dict) else []
+        except Exception as exc:  # noqa: BLE001
+            log.warning("fetch voices failed: %s", exc)
+            return []
+
+    def _refresh_voice_submenu(self, _sender=None) -> None:
+        """Reconstruit le sous-menu Voix avec la liste fraîche du serveur."""
+        # Vide le submenu existant
+        for k in list(self.voice_item.keys()):
+            del self.voice_item[k]
+        # Action "Rafraîchir" en premier (utile si l'utilisateur vient
+        # d'ajouter une voix côté web).
+        refresh = rumps.MenuItem("🔄 Rafraîchir la liste", callback=self._refresh_voice_submenu)
+        self.voice_item["__refresh"] = refresh
+        self.voice_item["__sep1"] = None  # séparateur
+        voices = self._fetch_voices()
+        if not voices:
+            self.voice_item["__none"] = rumps.MenuItem("(aucune voix disponible)")
+            return
+        for v in voices:
+            # Skip les voix non prêtes (encoding en cours, ou failed)
+            status = v.get("status", "ready")
+            if status != "ready":
+                disabled_label = ("⏳ " if status == "encoding" else "❌ ") + v.get("name", v.get("id", "?"))
+                self.voice_item["__sk_" + v.get("id", "x")] = rumps.MenuItem(disabled_label)
+                continue
+            flag = "🇫🇷 " if v.get("language") == "fr" else "🇬🇧 "
+            mark = "✓ " if v.get("id") == self.voice_id else "    "
+            label = mark + flag + v.get("name", v.get("id", "?"))
+            cb = self._make_voice_select_cb(
+                v["id"], v.get("language", "fr"), v.get("name", v["id"])
+            )
+            self.voice_item[v["id"]] = rumps.MenuItem(label, callback=cb)
+
+    def _make_voice_select_cb(self, voice_id: str, language: str, name: str):
+        """Factory pour fixer le voice_id dans la closure (sinon Python late
+        binding ferait que toutes les entrées sélectionneraient la dernière)."""
+        def _cb(_sender) -> None:
+            self.voice_id = voice_id
+            self.language = language
+            cfg.kr_set("default_voice", voice_id)
+            self.voice_item.title = f"Voix : {name}"
+            if self.ws:
+                self.ws.set_voice(voice_id, language)
+            log.info("voice changed to id=%s lang=%s", voice_id, language)
+            # Reconstruit pour rafraîchir la coche ✓
+            self._refresh_voice_submenu()
+            try:
+                rumps.notification("VoiceBridge", "Voix active", name)
+            except Exception:  # noqa: BLE001
+                pass
+        return _cb
 
     def _test_connection(self) -> bool:
         try:
