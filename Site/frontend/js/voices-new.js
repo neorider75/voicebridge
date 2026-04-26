@@ -170,6 +170,75 @@
   function showUploadPreview(file) {
     $('uploadName').textContent = file.name + ' · ' + Math.round(file.size / 1024) + ' Ko';
     $('uploadName').style.display = 'block';
+    // Auto-transcription via Kyutai pour pré-remplir le textarea ref_text.
+    // L'utilisateur peut corriger avant de soumettre.
+    autoTranscribeUpload(file);
+  }
+
+  // Anime une barre de progression linéairement en attendant la réponse
+  // serveur. La transcription Kyutai prend ~10 s pour ~10 s d'audio sur
+  // CPU (à froid +30 s pour le 1er chargement). On va à 95% en 30 s puis
+  // on attend la réponse réelle.
+  var uploadTranscribeTween = null;
+  function startUploadTranscribeAnim() {
+    var bar = $('uploadTranscribeBar');
+    var step = $('uploadTranscribeStep');
+    var prog = $('uploadTranscribeProgress');
+    prog.classList.add('visible');
+    bar.style.width = '0%';
+    step.textContent = 'Transcription Kyutai en cours… (peut prendre ~10-30 s)';
+    var start = Date.now();
+    var DURATION = 30000;
+    if (uploadTranscribeTween) cancelAnimationFrame(uploadTranscribeTween);
+    function tick() {
+      var t = Math.min(0.95, (Date.now() - start) / DURATION);
+      bar.style.width = (t * 100).toFixed(1) + '%';
+      uploadTranscribeTween = requestAnimationFrame(tick);
+    }
+    tick();
+  }
+  function endUploadTranscribeAnim(success, label) {
+    if (uploadTranscribeTween) { cancelAnimationFrame(uploadTranscribeTween); uploadTranscribeTween = null; }
+    var bar = $('uploadTranscribeBar');
+    var step = $('uploadTranscribeStep');
+    var prog = $('uploadTranscribeProgress');
+    bar.style.width = '100%';
+    step.textContent = label || (success ? '✅ Transcrit — vérifiez le texte ci-dessous' : '⚠️ Transcription impossible — tapez le texte à la main');
+    // Cache la barre après 2 s pour laisser respirer
+    setTimeout(function () {
+      prog.classList.remove('visible');
+      bar.style.width = '0%';
+    }, 2000);
+  }
+
+  function autoTranscribeUpload(file) {
+    var lang = $('langSelect').value;
+    startUploadTranscribeAnim();
+    var fd = new FormData();
+    fd.append('audio', file);
+    fd.append('language', lang);
+    fetch('/api/stt/transcribe', { method: 'POST', credentials: 'same-origin', body: fd })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (raw) {
+            var msg = 'Erreur ' + r.status;
+            try {
+              var d = JSON.parse(raw);
+              msg = (d && d.detail && d.detail.message) || (d && d.message) || msg;
+            } catch (e) { /* nop */ }
+            throw new Error(msg);
+          });
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        $('uploadRefText').value = data.text || '';
+        endUploadTranscribeAnim(true);
+      })
+      .catch(function (e) {
+        endUploadTranscribeAnim(false, '⚠️ ' + (e.message || 'Transcription impossible'));
+        VB.notify('warning', 'Auto-transcription échouée — saisissez la transcription à la main si possible');
+      });
   }
 
   // ── Source : URL (SSE) ──

@@ -86,10 +86,15 @@
       <input type="file" id="fileInput" accept="audio/*" style="display:none">
       <div id="uploadName" style="display:none;margin-top:0.75rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--accent2)"></div>
     </div>
+    <!-- Barre de progression de l'auto-transcription Kyutai après sélection du fichier -->
+    <div class="extract-progress" id="uploadTranscribeProgress">
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="uploadTranscribeBar"></div></div>
+      <div class="progress-step" id="uploadTranscribeStep">Transcription auto en cours…</div>
+    </div>
     <div class="field" style="margin-top:1rem">
-      <label for="uploadRefText">Transcription <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400">(optionnel mais recommandé)</span></label>
-      <textarea id="uploadRefText" rows="2" placeholder="Ce que dit l'audio uploadé, mot pour mot. Aide NeuTTS à mieux cloner la voix." style="width:100%;padding:0.6rem 0.9rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
-      <div class="hint" style="margin-top:0.3rem">Sans transcription, le clonage utilisera un texte générique — la qualité sera moindre.</div>
+      <label for="uploadRefText">Transcription <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400">(auto-rempli, modifiable)</span></label>
+      <textarea id="uploadRefText" rows="3" placeholder="Sélectionnez un fichier pour l'auto-transcription, ou tapez à la main ce que dit l'audio." style="width:100%;padding:0.6rem 0.9rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
+      <div class="hint" style="margin-top:0.3rem">💡 Vérifiez et corrigez si Kyutai s'est trompé. Sans transcription correcte, le clonage est dégradé.</div>
     </div>
   </section>
 
