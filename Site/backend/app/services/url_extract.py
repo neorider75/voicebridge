@@ -91,19 +91,26 @@ def extract(url: str, work_dir: Path) -> Generator[tuple[str, int], None, Path]:
     if cookies_args:
         log.info("yt-dlp : utilisation du fichier cookies %s", cookies_args[1])
 
+    # Bypass anti-bot YouTube : on essaye d'abord sans cookies en utilisant
+    # des player_clients alternatifs (tv_embedded + web_safari), qui ne
+    # déclenchent souvent pas la vérification "you're not a bot". Si
+    # l'utilisateur a déposé un cookies.txt, on l'ajoute par sécurité.
+    yt_dlp_base = [
+        yt_dlp, "-q", "--no-warnings",
+        "-f", "bestaudio",
+        "-x", "--audio-format", "m4a",
+        "-o", str(raw_audio),
+        "--extractor-args", "youtube:player_client=tv_embedded,web_safari,android",
+        "--user-agent",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        *cookies_args,
+        url,
+    ]
+
     yield ("download", 5)
     try:
-        subprocess.run(
-            [
-                yt_dlp, "-q", "--no-warnings",
-                "-f", "bestaudio",
-                "-x", "--audio-format", "m4a",
-                "-o", str(raw_audio),
-                *cookies_args,
-                url,
-            ],
-            check=True, timeout=120, capture_output=True,
-        )
+        subprocess.run(yt_dlp_base, check=True, timeout=120, capture_output=True)
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode(errors='replace')
         raise UrlExtractError(_translate_yt_dlp_error(stderr)) from exc
