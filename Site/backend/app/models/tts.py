@@ -53,10 +53,15 @@ def _NeuTTSClass() -> type:
 # par voicebridge.service). Pas de re-download → résolution immédiate.
 
 _BACKBONE_REPOS = {
+    # FR : nano (0.2B) — seule famille publiée par Neuphonic en français
     mgr.MODEL_NEUTTS_FR_Q4: ("neuphonic/neutts-nano-french-q4-gguf", "fr", "normal"),
-    mgr.MODEL_NEUTTS_EN_Q4: ("neuphonic/neutts-nano-q4-gguf",        "en", "normal"),
     mgr.MODEL_NEUTTS_FR_Q8: ("neuphonic/neutts-nano-french-q8-gguf", "fr", "high"),
-    mgr.MODEL_NEUTTS_EN_Q8: ("neuphonic/neutts-nano-q8-gguf",        "en", "high"),
+    # EN : air (0.7B, 3.5x plus gros) — le modèle officiellement conçu pour le
+    # voice cloning par Neuphonic. Bien meilleure fidélité que nano sur les
+    # voix anglaises. La famille nano-en (neutts-nano-q*-gguf) reste dispo
+    # mais Air est strictement supérieur à RAM équivalente côté qualité.
+    mgr.MODEL_NEUTTS_EN_Q4: ("neuphonic/neutts-air-q4-gguf", "en", "normal"),
+    mgr.MODEL_NEUTTS_EN_Q8: ("neuphonic/neutts-air-q8-gguf", "en", "high"),
 }
 
 CODEC_REPO = "neuphonic/neucodec"
@@ -149,10 +154,11 @@ def _make_loader(model_key: str):
         # Override possible via env VB_NEUTTS_TEMPERATURE.
         try:
             temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.1"))
-            # top_k 100 (vs 50 défaut NeuTTS) ouvre un peu le pool de candidats
-            # à chaque token → plus de diversité prosodique sans pousser
-            # temperature (qui dévie l'identité). Combo qui marche en pratique.
-            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "100"))
+            # top_k 150 (vs 50 défaut NeuTTS) : on ouvre largement le pool de
+            # candidats au sampling → plus de diversité prosodique. Combiné
+            # avec temperature 1.1 modéré, on évite la dérive d'identité tout
+            # en cassant le côté monocorde.
+            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "150"))
             if _patch_infer_ggml_temperature(instance, temp, topk):
                 log.info("NeuTTS expressivité : temperature=%.2f top_k=%d (%s)",
                          temp, topk, model_key)
