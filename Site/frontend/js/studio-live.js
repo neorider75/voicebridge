@@ -34,8 +34,13 @@
   // arrivent avant la fin du buffer accumulé.
   //
   // Compromis : augmenter ce buffer = plus de latence perçue mais moins de
-  // hachage. 500 ms est tolérant pour un CPU lent. À ajuster selon le ressenti.
-  var JITTER_BUFFER_MS = 500;
+  // hachage. Sur un CPU plus lent que real-time pour NeuTTS Q4, il faut
+  // beaucoup de buffer pour ne pas underrun :
+  //   500 ms : OK courtes phrases, hache sur les longues
+  //   1000 ms : OK la plupart du temps, latence visible
+  //   1500 ms : très tolérant, latence forte
+  // À ajuster selon hardware. Sur un GPU on pourrait redescendre à 100-200 ms.
+  var JITTER_BUFFER_MS = 1000;
   var pendingChunks = [];          // AudioBuffers en attente de scheduling
   var pendingDurationMs = 0;       // total des durées accumulées
   var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
