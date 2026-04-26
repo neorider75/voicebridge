@@ -53,15 +53,16 @@ def _NeuTTSClass() -> type:
 # par voicebridge.service). Pas de re-download → résolution immédiate.
 
 _BACKBONE_REPOS = {
-    # FR : nano (0.2B) — seule famille publiée par Neuphonic en français
+    # FR : nano-french (0.2B) — seule famille publiée par Neuphonic en FR
     mgr.MODEL_NEUTTS_FR_Q4: ("neuphonic/neutts-nano-french-q4-gguf", "fr", "normal"),
     mgr.MODEL_NEUTTS_FR_Q8: ("neuphonic/neutts-nano-french-q8-gguf", "fr", "high"),
-    # EN : air (0.7B, 3.5x plus gros) — le modèle officiellement conçu pour le
-    # voice cloning par Neuphonic. Bien meilleure fidélité que nano sur les
-    # voix anglaises. La famille nano-en (neutts-nano-q*-gguf) reste dispo
-    # mais Air est strictement supérieur à RAM équivalente côté qualité.
-    mgr.MODEL_NEUTTS_EN_Q4: ("neuphonic/neutts-air-q4-gguf", "en", "normal"),
-    mgr.MODEL_NEUTTS_EN_Q8: ("neuphonic/neutts-air-q8-gguf", "en", "high"),
+    # EN : nano (0.2B) — c'est ce qui a été utilisé pour la démo officielle
+    # (NeuTTS-Nano-V4.mp4 sur le repo). Air (0.7B) existe et supporte aussi
+    # le cloning, mais on reste sur nano-en pour matcher la baseline
+    # démontrée publiquement par Neuphonic. Pour switcher sur Air :
+    #   neuphonic/neutts-air-q4-gguf / neutts-air-q8-gguf
+    mgr.MODEL_NEUTTS_EN_Q4: ("neuphonic/neutts-nano-q4-gguf", "en", "normal"),
+    mgr.MODEL_NEUTTS_EN_Q8: ("neuphonic/neutts-nano-q8-gguf", "en", "high"),
 }
 
 CODEC_REPO = "neuphonic/neucodec"
