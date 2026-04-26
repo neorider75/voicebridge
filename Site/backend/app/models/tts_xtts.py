@@ -92,12 +92,14 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         np.ndarray float32 [-1, 1] mono à 24 kHz.
 
     Paramètres ajustables via env vars (cf. README) :
-        VB_XTTS_TEMPERATURE       (défaut 0.7)  — diversité prosodique
+        VB_XTTS_TEMPERATURE       (défaut 0.8)  — diversité prosodique
         VB_XTTS_TOP_K             (défaut 50)   — pool de candidats
         VB_XTTS_TOP_P             (défaut 0.85) — nucleus sampling
         VB_XTTS_LENGTH_PENALTY    (défaut 1.0)
         VB_XTTS_REPETITION_PENALTY (défaut 2.0) — anti-répétitions
-        VB_XTTS_SPEED             (défaut 1.0)  — vitesse parole (0.7-1.3)
+        VB_XTTS_SPEED             (défaut 1.05) — vitesse parole (0.7-1.3)
+        VB_XTTS_PITCH_SHIFT       (défaut 0)    — semi-tons de shift post-process
+                                                  (négatif = plus grave, ex -1.5)
     """
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError(
@@ -112,12 +114,16 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     # du modèle) → permet de bouger via env var sans restart, ou plus tard
     # via un payload UI sans redéploiement.
     params = {
-        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.7),
+        # 0.65 = défaut Coqui. 0.8 = un cran d'expressivité (testé safe par
+        # défaut, retour utilisateur "manque d'émotion").
+        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.8),
         "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
-        "speed": _read_env_float("VB_XTTS_SPEED", 1.0),
+        # Légère accélération par défaut (1.0 = vitesse de la ref ; 1.05 =
+        # +5%, suffisant pour casser l'effet "trop posé" sans déformer).
+        "speed": _read_env_float("VB_XTTS_SPEED", 1.05),
     }
 
     log.debug("XTTS infer params: %s", params)
@@ -137,4 +143,24 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
             wav = wav.astype(np.float32)
     except ImportError:
         pass  # numpy n'est pas dispo (très improbable)
+
+    # Pitch shift post-traitement (XTTS n'expose pas de knob direct sur la
+    # hauteur de la voix — elle est dictée par le speaker_wav). Si l'audio
+    # généré sonne un poil aigu/grave par rapport à la voix d'origine, on
+    # peut compenser avec un shift en demi-tons via librosa.
+    # 0 = pas de shift (défaut). -1 = un demi-ton plus grave. -2 = deux demi-tons.
+    pitch_shift = _read_env_float("VB_XTTS_PITCH_SHIFT", 0.0)
+    if abs(pitch_shift) > 0.05:
+        try:
+            import librosa  # type: ignore
+            import numpy as np  # type: ignore
+            wav = librosa.effects.pitch_shift(
+                np.asarray(wav, dtype=np.float32),
+                sr=XTTS_OUTPUT_SAMPLE_RATE,
+                n_steps=pitch_shift,
+            )
+            log.debug("XTTS pitch shifted by %.2f semitones", pitch_shift)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("pitch_shift failed: %s", exc)
+
     return wav

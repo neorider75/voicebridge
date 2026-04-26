@@ -101,16 +101,17 @@ Tous overrides via `Environment="VB_..."` dans
 | `VB_NEUTTS_MAX_CONTEXT` | 4096 | Tokens max → durée audio max (~80 s à 50 tokens/s) |
 | `VB_TORCH_THREADS` | nproc | Threads PyTorch intra-op (= 4 sur ce VPS) |
 
-**XTTS-v2** (sampling) :
+**XTTS-v2** (sampling + post-traitement) :
 
 | Variable | Défaut | Effet |
 |---|---|---|
-| `VB_XTTS_TEMPERATURE` | 0.7 | Diversité (0.5 = stable, 0.9 = très varié) |
+| `VB_XTTS_TEMPERATURE` | 0.8 | Diversité prosodique (0.5 = stable, 0.9 = très expressif) |
 | `VB_XTTS_TOP_K` | 50 | Pool de candidats |
 | `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling |
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
-| `VB_XTTS_SPEED` | 1.0 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+| `VB_XTTS_SPEED` | 1.05 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+| `VB_XTTS_PITCH_SHIFT` | 0 | Pitch shift post-process (semi-tons, négatif = plus grave, ex -1.5) |
 
 ### Caches modèles
 
