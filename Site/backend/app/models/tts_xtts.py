@@ -130,16 +130,15 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
         "speed": _read_env_float("VB_XTTS_SPEED", 1.05),
+        # gpt_cond_len = secondes de réf utilisées par le speaker encoder.
+        # Défaut Coqui interne ~6s. Notre WAV est trimé à 15s, donc 10s
+        # laisse une marge confortable et améliore la capture d'identité
+        # sans risquer le pad-up qui dégrade l'audio (testé avec 30 :
+        # étouffé/entrecoupé).
+        "gpt_cond_len": _read_env_int("VB_XTTS_GPT_COND_LEN", 10),
     }
-    # NB : on NE passe PAS gpt_cond_len / max_ref_len par défaut. Bumper
-    # gpt_cond_len à 30 alors que notre WAV de réf est trimé à 15s a produit
-    # un audio "étouffé + entrecoupé" (le modèle pad/répète mal le ref).
-    # Les défauts internes Coqui (gpt_cond_len=6, max_ref_len=10) sont
-    # calibrés pour donner un résultat propre quelle que soit la taille du
-    # WAV source. Si l'utilisateur veut explicitement bumper, il peut via
-    # env vars qui sont injectées seulement si setées.
-    if "VB_XTTS_GPT_COND_LEN" in os.environ:
-        params["gpt_cond_len"] = _read_env_int("VB_XTTS_GPT_COND_LEN", 6)
+    # gpt_cond_chunk_len et max_ref_len : on laisse les défauts Coqui
+    # (calibrés pour marcher), override possible via env vars.
     if "VB_XTTS_GPT_COND_CHUNK_LEN" in os.environ:
         params["gpt_cond_chunk_len"] = _read_env_int("VB_XTTS_GPT_COND_CHUNK_LEN", 4)
     if "VB_XTTS_MAX_REF_LEN" in os.environ:
