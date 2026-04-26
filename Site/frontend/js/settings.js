@@ -1,17 +1,18 @@
 // VoiceBridge — settings.js : Serveur / API / Sécurité / Installation.
+// Layout sidebar gauche + panneaux droite (cf. maquette voicebridge_v8.html).
 
 (function () {
   function $(id) { return document.getElementById(id); }
   function $$(sel, r) { return Array.prototype.slice.call((r || document).querySelectorAll(sel)); }
 
-  function bindTabs() {
-    $$('.studio-tab').forEach(function (tab) {
-      tab.addEventListener('click', function () {
-        var target = tab.getAttribute('data-section');
-        $$('.studio-tab').forEach(function (t) { t.classList.remove('active'); });
-        tab.classList.add('active');
-        $$('.studio-content').forEach(function (c) {
-          c.classList.toggle('active', c.getAttribute('data-section') === target);
+  function bindNav() {
+    $$('.settings-nav-item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var target = item.getAttribute('data-panel');
+        $$('.settings-nav-item').forEach(function (i) { i.classList.remove('active'); });
+        item.classList.add('active');
+        $$('.settings-panel').forEach(function (p) {
+          p.classList.toggle('active', p.getAttribute('data-panel') === target);
         });
       });
     });
@@ -20,25 +21,39 @@
   // ── Server state polling ──
   function refreshServerState() {
     VB.api.get('/api/system/status').then(function (s) {
-      var html = '';
-      function row(k, v) { return '<div><span style="color:var(--text3)">' + k + ' :</span> <span>' + v + '</span></div>'; }
-      html += row('Statut', s.status);
-      html += row('Uptime', Math.round(s.uptime_seconds / 60) + ' min');
-      html += row('RAM', s.ram.used_gb + ' / ' + s.ram.total_gb + ' Go (' + s.ram.percent + '%)');
-      html += row('Stockage', s.storage.used_gb + ' / ' + s.storage.total_gb + ' Go (' + s.storage.percent + '%)');
-      html += '<div style="margin-top:0.6rem;color:var(--text3)">Modèles :</div>';
+      // RAM
+      $('ramText').textContent = s.ram.used_gb + ' / ' + s.ram.total_gb + ' Go';
+      $('ramBar').style.width = (s.ram.percent || 0) + '%';
+      // Stockage
+      $('diskText').textContent = s.storage.used_gb + ' / ' + s.storage.total_gb + ' Go';
+      $('diskBar').style.width = (s.storage.percent || 0) + '%';
+      // Modèles : nombre chargés / total + détail
+      var loaded = 0, total = 0;
+      var lines = [];
       Object.keys(s.models).forEach(function (k) {
+        total += 1;
         var v = s.models[k];
+        if (v === 'loaded') loaded += 1;
         var color = v === 'loaded' ? 'var(--success)' : 'var(--text3)';
-        html += '<div style="padding-left:0.5rem"><span style="color:' + color + '">●</span> ' + k + ' : ' + v + '</div>';
+        lines.push('<div><span style="color:' + color + '">●</span> ' + k + ' : ' + v + '</div>');
       });
-      $('serverState').innerHTML = html;
+      var summary = $('modelsSummary');
+      if (loaded === 0) {
+        summary.textContent = 'Veille (' + total + ' inactifs)';
+        summary.style.color = 'var(--text3)';
+      } else if (loaded === total) {
+        summary.textContent = 'Tous chargés (' + loaded + ')';
+        summary.style.color = 'var(--success)';
+      } else {
+        summary.textContent = loaded + ' / ' + total + ' chargés';
+        summary.style.color = 'var(--warning)';
+      }
+      $('modelsList').innerHTML = lines.join('');
     }).catch(function () {});
   }
 
   // ── Préchauffage ──
   function bindWarm() {
-    // Charge les voix dans le sélecteur
     VB.api.get('/api/voices').then(function (d) {
       var sel = $('warmVoice');
       (d.voices || []).forEach(function (v) {
@@ -67,7 +82,7 @@
     });
   }
 
-  // ── Settings PUT (rétention + déchargement) ──
+  // ── Rétention + déchargement (PUT /api/settings) ──
   function bindRadioGroupsSettings() {
     function bindGroup(name, key, valueParser) {
       var group = document.querySelector('.radio-group[data-name="' + name + '"]');
@@ -150,7 +165,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    bindTabs();
+    bindNav();
     refreshServerState();
     setInterval(refreshServerState, 5000);
     bindWarm();

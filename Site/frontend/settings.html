@@ -7,7 +7,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/app.css">
-  <link rel="stylesheet" href="/css/studio.css">
 </head>
 <body>
 
@@ -33,243 +32,207 @@
   <h1 class="page-title">Réglages</h1>
   <p class="page-sub">Serveur · API · Sécurité · Installation</p>
 
-  <!-- Sidebar tabs -->
-  <div class="studio-tabs" role="tablist" style="margin-bottom:1.5rem">
-    <button class="studio-tab active" data-section="server">Serveur</button>
-    <button class="studio-tab" data-section="api">API</button>
-    <button class="studio-tab" data-section="security">Sécurité</button>
-    <button class="studio-tab" data-section="install">Installation</button>
-  </div>
+  <div class="settings-layout">
 
-  <!-- ── Serveur ── -->
-  <div class="studio-content active" data-section="server">
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">État du serveur</h2>
-      <div id="serverState" style="font-family:'DM Mono',monospace;font-size:0.78rem;line-height:1.7"></div>
+    <!-- Sidebar gauche -->
+    <div class="settings-nav">
+      <button class="settings-nav-item active" data-panel="server">Serveur</button>
+      <button class="settings-nav-item" data-panel="api">API</button>
+      <button class="settings-nav-item" data-panel="security">Sécurité</button>
+      <button class="settings-nav-item" data-panel="install">Installation</button>
     </div>
 
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Préchauffage</h2>
-      <div class="grid-2">
-        <div class="field">
-          <label for="warmLang">Langue</label>
-          <select id="warmLang"><option value="fr">🇫🇷 Français</option><option value="en">🇬🇧 Anglais</option></select>
-        </div>
-        <div class="field">
-          <label for="warmVoice">Voix (optionnel)</label>
-          <select id="warmVoice"><option value="">Aucune (préchauffe juste les modèles)</option></select>
-        </div>
-      </div>
-      <button class="btn btn-primary" id="btnWarm">🚀 Préchauffer</button>
-      <div id="warmStatus" class="hint" style="margin-top:0.6rem"></div>
-    </div>
+    <!-- Panneaux à droite -->
+    <div>
 
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Rétention par défaut (TTS et STT)</h2>
-      <p class="hint" style="margin-bottom:0.75rem">Valeur appliquée à toutes les générations. Modifiable au cas par cas dans le Studio.</p>
-      <div class="radio-group" data-name="default-retention">
-        <button class="radio-option" data-value="session">Session uniquement</button>
-        <button class="radio-option" data-value="24h">24h</button>
-        <button class="radio-option" data-value="48h">48h</button>
-      </div>
-      <div class="hint" style="margin-top:0.5rem">Le mode Live ne génère jamais de fichier · Buffer 5 s en RAM gère les micro-coupures.</div>
-    </div>
+      <!-- ────────── Serveur ────────── -->
+      <div class="settings-panel active" data-panel="server">
 
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Déchargement automatique</h2>
-      <p class="hint" style="margin-bottom:0.75rem">Après inactivité de :</p>
-      <div class="radio-group" data-name="model-unload">
-        <button class="radio-option" data-value="15">15 min</button>
-        <button class="radio-option" data-value="30">30 min</button>
-        <button class="radio-option" data-value="60">1 h</button>
-      </div>
-    </div>
-
-    <div class="card" style="opacity:0.55">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <h2 style="font-size:0.95rem;font-weight:700">Mode intensif</h2>
-        <span style="background:var(--accent);color:#fff;font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:10px;font-weight:700">V2</span>
-      </div>
-      <p class="hint">Programmez des sessions avec préchauffage automatique et déchargement étendu. Disponible en V2.</p>
-    </div>
-  </div>
-
-  <!-- ── API ── -->
-  <div class="studio-content" data-section="api">
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:0.6rem">Clé API</h2>
-      <p class="hint" style="margin-bottom:1rem">Utilisée par l'application VoiceBridge pour s'authentifier au serveur.</p>
-      <div style="font-family:'DM Mono',monospace;font-size:0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.85rem;margin-bottom:0.5rem" id="apiKeyMasked">…</div>
-      <div class="hint" id="apiKeyDate"></div>
-      <button class="btn btn-secondary" id="btnRegenKey" style="margin-top:1rem">🔄 Générer une nouvelle clé</button>
-      <div id="apiKeyResult" style="display:none;margin-top:1rem">
-        <div class="alert alert-warning">⚠️ Copiez maintenant · Ne sera plus affichée · Ancienne clé révoquée</div>
-        <div style="font-family:'DM Mono',monospace;font-size:0.95rem;background:var(--surface3);border:1px solid var(--accent);border-radius:6px;padding:0.7rem 0.85rem" id="apiKeyClear"></div>
-        <button class="btn btn-secondary" id="btnCopyKey" style="margin-top:0.6rem">📋 Copier</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Sécurité ── -->
-  <div class="studio-content" data-section="security">
-    <div class="card">
-      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Mot de passe</h2>
-      <div class="field"><label>Mot de passe actuel</label><input type="password" id="pwCurrent" placeholder="••••••••••••" autocomplete="current-password"></div>
-      <div class="field"><label>Nouveau mot de passe</label><input type="password" id="pwNew" placeholder="••••••••••••" autocomplete="new-password"></div>
-      <div class="field"><label>Confirmer</label><input type="password" id="pwConfirm" placeholder="••••••••••••" autocomplete="new-password"></div>
-      <button class="btn btn-primary" id="btnChangePw">✅ Mettre à jour</button>
-    </div>
-  </div>
-
-  <!-- ── Installation ── -->
-  <div class="studio-content" data-section="install">
-
-    <!-- Étape 1 : BlackHole -->
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">1</div>
-        <h2 style="font-size:0.95rem;font-weight:700">Installer BlackHole 2ch</h2>
-      </div>
-      <p class="hint" style="margin-bottom:1rem">
-        Pilote audio virtuel gratuit (open source). C'est lui qui permet à
-        Teams/Zoom/Meet de "voir" la voix clonée comme un micro.
-      </p>
-
-      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
-        <li>
-          Ouvrez la page officielle :
-          <a href="https://existential.audio/blackhole/" target="_blank" rel="noopener" style="color:var(--accent2)">existential.audio/blackhole</a>
-        </li>
-        <li>Choisissez la variante <strong>BlackHole 2ch</strong> (gratuite).</li>
-        <li>Saisissez votre email — un lien de téléchargement vous sera envoyé (instantané).</li>
-        <li>Téléchargez le <strong><code>.pkg</code></strong> (~ 1 Mo) et double-cliquez dessus.</li>
-        <li>Si l'installateur ne s'ouvre pas (Gatekeeper) : <em>clic-droit → Ouvrir</em>.</li>
-        <li>Suivez les instructions. À la fin, BlackHole apparaît dans :
-          <div class="code-block" style="margin-top:0.4rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.7rem;font-family:'DM Mono',monospace;font-size:0.72rem;color:var(--accent2)">
-            🍎 → Réglages Système → Son → onglet Sortie / Entrée → "BlackHole 2ch"
+        <div class="card">
+          <div class="card-title">État du serveur</div>
+          <div style="margin-bottom:0.9rem">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.25rem">
+              <span style="color:var(--text3)">RAM</span>
+              <span style="font-family:'DM Mono',monospace;font-size:0.7rem" id="ramText">… / … Go</span>
+            </div>
+            <div class="metric-bar"><div class="metric-fill" id="ramBar" style="width:0%"></div></div>
           </div>
-        </li>
-        <li>
-          <strong>Vérification :</strong> ouvrez Audio MIDI Setup
-          (<code>/Applications/Utilities/Audio MIDI Setup.app</code>) et confirmez
-          que <em>BlackHole 2ch</em> est listé. Pas besoin de configuration manuelle.
-        </li>
-      </ol>
+          <div style="margin-bottom:0.9rem">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.25rem">
+              <span style="color:var(--text3)">Stockage</span>
+              <span style="font-family:'DM Mono',monospace;font-size:0.7rem" id="diskText">… / … Go</span>
+            </div>
+            <div class="metric-bar"><div class="metric-fill" id="diskBar" style="width:0%"></div></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.5rem">
+            <span style="color:var(--text3)">Modèles</span>
+            <span id="modelsSummary" style="color:var(--text3);font-weight:600">…</span>
+          </div>
+          <div id="modelsList" style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text3);line-height:1.55"></div>
+        </div>
 
-      <div class="alert alert-info" style="margin-top:1rem">
-        💡 Alternative en ligne de commande (si vous avez Homebrew) :
-        <code style="background:var(--surface3);padding:0.1rem 0.3rem;border-radius:4px">brew install --cask blackhole-2ch</code>
-      </div>
-    </div>
+        <div class="card">
+          <div class="card-title">Préchauffage</div>
+          <div class="grid-2" style="margin-bottom:0.75rem">
+            <div class="field" style="margin:0">
+              <label for="warmLang">Langue</label>
+              <select id="warmLang"><option value="fr">🇫🇷 Français</option><option value="en">🇬🇧 Anglais</option></select>
+            </div>
+            <div class="field" style="margin:0">
+              <label for="warmVoice">Voix (optionnel)</label>
+              <select id="warmVoice"><option value="">Aucune (préchauffe juste les modèles)</option></select>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="btnWarm">🚀 Préchauffer</button>
+          <div id="warmStatus" class="hint" style="margin-top:0.6rem"></div>
+        </div>
 
-    <!-- Étape 2 : VoiceBridge.app -->
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">2</div>
-        <h2 style="font-size:0.95rem;font-weight:700">Installer VoiceBridge.app</h2>
-      </div>
-      <p class="hint" style="margin-bottom:1rem">
-        Application menu bar qui capture votre micro, l'envoie à
-        <code>voice.neorider.fr</code> et joue la voix clonée dans BlackHole.
-        L'URL du serveur est <strong>déjà intégrée</strong> dans le bundle.
-      </p>
+        <div class="card">
+          <div class="card-title">Rétention des fichiers audio <span style="font-size:0.65rem;color:var(--text3)">(TTS et STT uniquement)</span></div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">Valeur par défaut appliquée à toutes les générations. Modifiable pour chaque génération depuis le Studio.</div>
+          <div class="radio-group" data-name="default-retention">
+            <button class="radio-option" data-value="session">Session uniquement <span style="opacity:0.6;font-size:0.7rem">(non conservé)</span></button>
+            <button class="radio-option" data-value="24h">24h</button>
+            <button class="radio-option" data-value="48h">48h</button>
+          </div>
+          <div class="hint" style="margin-top:0.5rem">Le mode Live ne génère jamais de fichier · Un buffer de 5 s en RAM gère les micro-coupures réseau.</div>
+        </div>
 
-      <a href="/api/install/voicebridge-app" download class="btn btn-primary" style="text-decoration:none;margin-bottom:1rem">
-        📥 Télécharger VoiceBridge.app
-      </a>
-
-      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
-        <li>Décompressez le <code>.zip</code> téléchargé.</li>
-        <li>Glissez <strong>VoiceBridge.app</strong> dans <code>/Applications</code>.</li>
-        <li>
-          <strong>Premier lancement</strong> : <em>clic-droit → Ouvrir</em>
-          (Gatekeeper affichera "Apple ne peut pas vérifier", c'est normal pour
-          une app non notarisée — confirmez "Ouvrir"). macOS s'en souvient pour
-          les fois suivantes.
-        </li>
-        <li>
-          macOS demande l'accès au micro → <strong>Autoriser</strong>.
-          Si refusé : <em>Réglages Système → Confidentialité → Microphone</em>.
-        </li>
-        <li>
-          Les <strong>Préférences</strong> s'ouvrent automatiquement avec l'URL
-          déjà remplie. Collez votre <strong>clé API</strong> (cf. onglet API
-          ci-dessus) et cliquez <em>Tester + enregistrer</em>.
-        </li>
-        <li>
-          L'icône <strong>🟢</strong> apparaît dans la barre des menus en haut
-          à droite — vous êtes connecté.
-        </li>
-      </ol>
-
-      <div class="alert alert-warning" style="margin-top:1rem">
-        ⚠️ Architecture supportée : <strong>Apple Silicon (M1/M2/M3/M4)</strong>.
-        Les Mac Intel ne sont pas couverts par ce build POC.
-      </div>
-    </div>
-
-    <!-- Étape 3 : Configurer Teams/Zoom -->
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">3</div>
-        <h2 style="font-size:0.95rem;font-weight:700">Configurer Teams / Zoom / Meet</h2>
-      </div>
-      <p class="hint" style="margin-bottom:0.75rem">
-        Dites à votre app de visio d'utiliser BlackHole comme micro à la place
-        de votre micro physique. VoiceBridge fait passer la voix clonée par là.
-      </p>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.5rem">
-        <div>
-          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Microsoft Teams</div>
-          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
-            … → Paramètres → Périphériques → Microphone → BlackHole 2ch
+        <div class="card">
+          <div class="card-title">Déchargement automatique des modèles</div>
+          <div class="radio-group" data-name="model-unload">
+            <button class="radio-option" data-value="15">15 min</button>
+            <button class="radio-option" data-value="30">30 min</button>
+            <button class="radio-option" data-value="60">1 h</button>
           </div>
         </div>
-        <div>
-          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Zoom</div>
-          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
-            ⚙ → Audio → Microphone → BlackHole 2ch
-          </div>
+
+        <div class="card" style="opacity:0.45;pointer-events:none;position:relative">
+          <div style="position:absolute;top:0.75rem;right:0.75rem;background:var(--accent);color:white;font-size:0.62rem;font-weight:700;padding:0.2rem 0.5rem;border-radius:20px;letter-spacing:0.04em">V2</div>
+          <div class="card-title">Mode Intensif</div>
+          <div style="font-size:0.75rem;color:var(--text3);line-height:1.5">Programmez des sessions avec préchauffage automatique et déchargement étendu. Disponible en version 2.</div>
         </div>
-        <div>
-          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Google Meet</div>
-          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
-            ⋮ → Paramètres → Audio → Microphone → BlackHole 2ch
-          </div>
-        </div>
-        <div>
-          <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">macOS (système)</div>
-          <div class="code-block" style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
-            🍎 → Réglages Système → Son → Entrée → BlackHole 2ch
+      </div>
+
+      <!-- ────────── API ────────── -->
+      <div class="settings-panel" data-panel="api">
+        <div class="card">
+          <div class="card-title">Clé API</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">Utilisée par l'application VoiceBridge pour s'authentifier au serveur.</div>
+          <label>Clé active</label>
+          <div style="font-family:'DM Mono',monospace;font-size:0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.85rem;margin-bottom:0.4rem" id="apiKeyMasked">…</div>
+          <div style="font-size:0.68rem;color:var(--text3);font-family:'DM Mono',monospace;margin:0.4rem 0 1rem" id="apiKeyDate"></div>
+          <button class="btn btn-secondary" id="btnRegenKey">🔄 Générer une nouvelle clé</button>
+          <div id="apiKeyResult" style="display:none;margin-top:1rem">
+            <div class="alert alert-success" style="margin-bottom:0.75rem">✅ Nouvelle clé générée</div>
+            <div style="font-family:'DM Mono',monospace;font-size:0.95rem;background:var(--surface3);border:1px solid var(--success);border-radius:6px;padding:0.7rem 0.85rem" id="apiKeyClear"></div>
+            <button class="btn btn-secondary" id="btnCopyKey" style="margin-top:0.6rem">📋 Copier</button>
+            <div class="hint" style="margin-top:0.5rem;color:var(--warning)">⚠️ Copiez maintenant · Ne sera plus affichée · Ancienne clé révoquée</div>
           </div>
         </div>
       </div>
 
-      <div class="alert alert-info" style="margin-top:1rem">
-        💡 Pour vérifier que tout fonctionne : Photo Booth → enregistrement vidéo,
-        ou Mémo vocal → enregistrement. Vous devriez entendre votre voix clonée
-        au lieu de votre voix réelle.
-      </div>
-    </div>
-
-    <!-- Étape 4 : check final -->
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <div style="width:24px;height:24px;border-radius:50%;background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700">✓</div>
-        <h2 style="font-size:0.95rem;font-weight:700">Vérifier la chaîne complète</h2>
+      <!-- ────────── Sécurité ────────── -->
+      <div class="settings-panel" data-panel="security">
+        <div class="card">
+          <div class="card-title">Mot de passe</div>
+          <div class="field"><label>Mot de passe actuel</label><input type="password" id="pwCurrent" placeholder="••••••••••••" autocomplete="current-password"></div>
+          <div class="field"><label>Nouveau mot de passe</label><input type="password" id="pwNew" placeholder="••••••••••••" autocomplete="new-password"></div>
+          <div class="field"><label>Confirmer</label><input type="password" id="pwConfirm" placeholder="••••••••••••" autocomplete="new-password"></div>
+          <button class="btn btn-primary" id="btnChangePw">✅ Mettre à jour</button>
+        </div>
       </div>
 
-      <ul style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
-        <li>VoiceBridge.app affiche 🟢 dans la barre des menus</li>
-        <li>Cliquer dessus → <em>Voix : juliette</em> (ou la voix par défaut configurée)</li>
-        <li>Lancer un appel test (vous-même sur Teams + un autre compte)</li>
-        <li>Parler → la voix arrive dans Teams en cloné, latence ~0,7 à 1,5 s</li>
-        <li>
-          Pour <strong>désactiver temporairement</strong> (zéro latence, voix
-          réelle) : cliquer sur l'icône menu bar → <em>⏸ Mettre en pause</em>.
-        </li>
-      </ul>
+      <!-- ────────── Installation ────────── -->
+      <div class="settings-panel" data-panel="install">
+
+        <div class="card">
+          <div class="card-title">1. Installer BlackHole 2ch</div>
+          <p class="hint" style="margin-bottom:1rem">
+            Pilote audio virtuel gratuit (open source). C'est lui qui permet à
+            Teams/Zoom/Meet de "voir" la voix clonée comme un micro.
+          </p>
+          <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
+            <li>Ouvrez <a href="https://existential.audio/blackhole/" target="_blank" rel="noopener" style="color:var(--accent2)">existential.audio/blackhole</a>.</li>
+            <li>Choisissez <strong>BlackHole 2ch</strong> (gratuit) → saisissez votre email → recevez le lien.</li>
+            <li>Téléchargez le <strong><code>.pkg</code></strong> (~ 1 Mo) et double-cliquez. Si bloqué : clic-droit → Ouvrir.</li>
+            <li>Suivez l'installateur. À la fin, BlackHole apparaît dans :
+              <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.7rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2);margin-top:0.4rem">
+                🍎 → Réglages Système → Son → onglet Sortie / Entrée
+              </div>
+            </li>
+          </ol>
+          <div class="alert alert-info" style="margin-top:1rem">
+            💡 Alternative Homebrew : <code style="background:var(--surface3);padding:0.1rem 0.3rem;border-radius:4px">brew install --cask blackhole-2ch</code>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">2. Installer VoiceBridge.app</div>
+          <p class="hint" style="margin-bottom:1rem">
+            Application menu bar qui capture votre micro et joue la voix clonée
+            dans BlackHole. <strong>L'URL du serveur est déjà intégrée.</strong>
+          </p>
+          <a href="/api/install/voicebridge-app" download class="btn btn-primary" style="text-decoration:none;margin-bottom:1rem">
+            📥 Télécharger VoiceBridge.app
+          </a>
+          <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
+            <li>Décompressez le <code>.zip</code> et glissez l'app dans <code>/Applications</code>.</li>
+            <li><strong>Premier lancement :</strong> clic-droit → Ouvrir (Gatekeeper, une seule fois).</li>
+            <li>macOS demande l'accès au micro → <strong>Autoriser</strong>.</li>
+            <li>Préférences s'ouvrent avec l'URL pré-remplie. Collez la clé API (onglet API ci-contre).</li>
+            <li>Icône <strong>🟢</strong> dans la barre des menus = connecté.</li>
+          </ol>
+          <div class="alert alert-warning" style="margin-top:1rem">
+            ⚠️ Architecture supportée : <strong>Apple Silicon (M1/M2/M3/M4)</strong> uniquement dans ce build POC.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">3. Configurer Teams / Zoom / Meet</div>
+          <p class="hint" style="margin-bottom:0.75rem">
+            Microphone à choisir dans votre app de visio :
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+            <div>
+              <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Microsoft Teams</div>
+              <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+                … → Paramètres → Périphériques → Microphone → BlackHole 2ch
+              </div>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Zoom</div>
+              <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+                ⚙ → Audio → Microphone → BlackHole 2ch
+              </div>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">Google Meet</div>
+              <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+                ⋮ → Paramètres → Audio → Microphone → BlackHole 2ch
+              </div>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:0.78rem;margin-bottom:0.25rem">macOS (système)</div>
+              <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.6rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2)">
+                🍎 → Réglages Système → Son → Entrée → BlackHole 2ch
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">✓ Vérifier la chaîne complète</div>
+          <ul style="padding-left:1.25rem;line-height:1.7;font-size:0.82rem">
+            <li>VoiceBridge.app affiche 🟢 dans la barre des menus.</li>
+            <li>Clic dessus → <em>Voix : juliette</em> (ou la voix par défaut configurée).</li>
+            <li>Lancer un appel test (vous-même sur Teams + un autre compte).</li>
+            <li>Parler → la voix arrive en cloné, latence ~0,7 à 1,5 s.</li>
+            <li>Pour <strong>désactiver temporairement</strong> (zéro latence, voix réelle) : clic icône menu bar → <em>⏸ Mettre en pause</em>.</li>
+          </ul>
+        </div>
+      </div>
+
     </div>
   </div>
 </main>

@@ -110,8 +110,60 @@ main {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.card-title {
+  font-size: 0.7rem; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 1rem;
+}
+
+/* ── SETTINGS layout (sidebar + panel) ── */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 700px) {
+  .settings-layout { grid-template-columns: 1fr; }
+}
+
+.settings-nav {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; height: fit-content;
+}
+
+.settings-nav-item {
+  padding: 0.75rem 1rem; font-size: 0.78rem; font-weight: 600;
+  color: var(--text3); cursor: pointer;
+  border-bottom: 1px solid var(--border); transition: all 0.15s;
+  background: none; border-left: 2px solid transparent;
+  border-right: none; border-top: none; text-align: left;
+  font-family: 'Syne', sans-serif;
+}
+.settings-nav-item:last-child { border-bottom: none; }
+.settings-nav-item:hover { color: var(--text2); background: var(--surface2); }
+.settings-nav-item.active {
+  color: var(--accent2);
+  background: rgba(108,99,255,0.07);
+  border-left-color: var(--accent);
+}
+
+.settings-panel { display: none; }
+.settings-panel.active { display: block; }
+
+/* Barre de progression utilisée par l'état serveur (RAM, Stockage) */
+.metric-bar {
+  background: var(--surface3); border-radius: 4px;
+  height: 5px; margin-top: 0.35rem; overflow: hidden;
+}
+.metric-fill {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--accent3));
+  transition: width 0.3s;
 }
 
 .alert {
