@@ -8,6 +8,12 @@ Pipeline :
 
 Les étapes sont yieldées sous forme d'événements ``(step, percent)`` afin de
 streamer la progression côté frontend (SSE).
+
+Cookies YouTube : depuis fin 2024, YouTube bloque les requêtes anonymes de
+yt-dlp (« Sign in to confirm you're not a bot »). Si un fichier
+``data/yt-dlp-cookies.txt`` existe sur le serveur, il est passé à yt-dlp
+via ``--cookies``. À l'utilisateur de le déposer (export depuis Firefox
+extension « cookies.txt » ou Chrome « Get cookies.txt LOCALLY »).
 """
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ import subprocess
 from collections.abc import Generator
 from pathlib import Path
 
+from .. import config
 from . import audio
 
 log = logging.getLogger("voicebridge.url_extract")
@@ -37,6 +44,39 @@ def _ensure_yt_dlp() -> str:
     return path
 
 
+def _cookies_arg() -> list[str]:
+    """Retourne ``["--cookies", path]`` si un fichier cookies est présent
+    sur le serveur, sinon liste vide. yt-dlp exige des cookies pour la
+    plupart des vidéos YouTube depuis fin 2024.
+    """
+    p = config.DATA_DIR / "yt-dlp-cookies.txt"
+    if p.exists() and p.stat().st_size > 0:
+        return ["--cookies", str(p)]
+    return []
+
+
+def _translate_yt_dlp_error(stderr: str) -> str:
+    """Convertit les stderr yt-dlp les plus courantes en messages
+    actionnables côté UI."""
+    msg = stderr.strip()
+    low = msg.lower()
+    if "sign in to confirm you're not a bot" in low or "use --cookies" in low:
+        return (
+            "YouTube bloque les requêtes anonymes (anti-bot). Solution : "
+            "exportez vos cookies YouTube depuis votre navigateur (extension "
+            "« Get cookies.txt LOCALLY ») et déposez le fichier sur le serveur "
+            "à l'emplacement /var/voicebridge/data/yt-dlp-cookies.txt "
+            "(chmod 600, owner voicebridge:voicebridge). "
+            "Alternative : utilisez une autre source (upload direct, ou URL "
+            "non-YouTube)."
+        )
+    if "video unavailable" in low or "private video" in low:
+        return "Vidéo indisponible ou privée — choisissez une autre URL."
+    if "unsupported url" in low:
+        return "URL non supportée par yt-dlp."
+    return f"yt-dlp a échoué : {msg[:300]}"
+
+
 def extract(url: str, work_dir: Path) -> Generator[tuple[str, int], None, Path]:
     """Renvoie le chemin du WAV trimé.
 
@@ -47,6 +87,10 @@ def extract(url: str, work_dir: Path) -> Generator[tuple[str, int], None, Path]:
     yt_dlp = _ensure_yt_dlp()
     raw_audio = work_dir / "raw.m4a"
 
+    cookies_args = _cookies_arg()
+    if cookies_args:
+        log.info("yt-dlp : utilisation du fichier cookies %s", cookies_args[1])
+
     yield ("download", 5)
     try:
         subprocess.run(
@@ -55,14 +99,16 @@ def extract(url: str, work_dir: Path) -> Generator[tuple[str, int], None, Path]:
                 "-f", "bestaudio",
                 "-x", "--audio-format", "m4a",
                 "-o", str(raw_audio),
+                *cookies_args,
                 url,
             ],
             check=True, timeout=120, capture_output=True,
         )
     except subprocess.CalledProcessError as exc:
-        raise UrlExtractError(f"yt-dlp a échoué : {exc.stderr.decode(errors='replace')}") from exc
+        stderr = exc.stderr.decode(errors='replace')
+        raise UrlExtractError(_translate_yt_dlp_error(stderr)) from exc
     except subprocess.TimeoutExpired as exc:
-        raise UrlExtractError("yt-dlp a dépassé le timeout") from exc
+        raise UrlExtractError("yt-dlp a dépassé le timeout (120 s)") from exc
     yield ("download", 40)
 
     if not raw_audio.exists():
