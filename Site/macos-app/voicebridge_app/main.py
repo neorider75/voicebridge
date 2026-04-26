@@ -10,20 +10,32 @@ Architecture :
 - Thread WebSocket : asyncio + websockets
 
 L'app est sans dock (Info.plist LSUIElement: true), uniquement menu bar.
+
+Imports : on utilise des imports **plats** (sibling modules) au lieu de
+``from .`` parce que PyInstaller lance ``main.py`` comme script standalone
+et non comme membre du package ``voicebridge_app`` — les imports relatifs
+lèveraient ImportError au démarrage du bundle.
 """
 from __future__ import annotations
 
 import json
 import logging
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 import rumps  # type: ignore
 
-from . import __version__
-from . import audio as audio_mod
-from . import config as cfg
-from .ws_client import WSClient
+# Ajout du répertoire de main.py dans sys.path pour que les imports plats
+# (audio, config, ws_client) résolvent en mode dev (python main.py) comme
+# en mode bundle (PyInstaller flatten déjà mais on sécurise).
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+import audio as audio_mod  # noqa: E402
+import config as cfg  # noqa: E402
+from ws_client import WSClient  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("voicebridge.app")

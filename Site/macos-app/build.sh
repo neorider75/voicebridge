@@ -45,6 +45,10 @@ pyinstaller \
   --name VoiceBridge \
   --osx-bundle-identifier com.voicebridge.app \
   --add-data "voicebridge_app/config.json:." \
+  --paths voicebridge_app \
+  --hidden-import audio \
+  --hidden-import config \
+  --hidden-import ws_client \
   --hidden-import rumps \
   --hidden-import websockets \
   --hidden-import keyring \
