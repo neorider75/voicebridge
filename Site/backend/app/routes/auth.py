@@ -38,7 +38,8 @@ def _client_ip(request: Request) -> str:
 
 @router.post("/login")
 @limiter.limit("5/15minute")
-async def login(request: Request, payload: LoginPayload, response: Response):
+async def login(request: Request, payload: LoginPayload, response: Response):  # noqa: D401
+    # ``request`` est requis en première position pour slowapi.
     ip = _client_ip(request)
     ua = request.headers.get("user-agent", "-")
 

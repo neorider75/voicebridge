@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Studio</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/studio.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo">
+      <span class="logo-icon">🎤</span>
+      <span>VoiceBridge</span>
+    </a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge" title="État du serveur">
+        <span class="status-dot"></span>
+        <span class="status-label">…</span>
+      </button>
+      <button class="theme-toggle" data-theme-toggle title="Changer de thème">🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Studio</h1>
+  <p class="page-sub">Synthétiser, transcrire, parler en direct</p>
+
+  <div class="studio-tabs" role="tablist">
+    <button class="studio-tab active" data-tab="tts">🗣 Lire un texte</button>
+    <button class="studio-tab disabled" title="Disponible en livraison 3">📝 Transcrire ma voix</button>
+    <button class="studio-tab disabled" title="Disponible en livraison 4">📡 Parler en direct</button>
+  </div>
+
+  <!-- ── ÉTAPE 1 : Texte ── -->
+  <div class="studio-content active" data-tab="tts">
+    <section class="step done" data-step="1">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-title">Texte à lire</div>
+      </div>
+      <div class="field">
+        <textarea id="ttsText" placeholder="Saisissez le texte à synthétiser…" maxlength="5000"></textarea>
+        <div class="text-counter" id="ttsCounter">0 / 5000</div>
+        <div class="hint">💡 Utilisez ? ! ... pour varier l'intonation · Les MAJUSCULES accentuent un mot</div>
+      </div>
+    </section>
+
+    <!-- ── ÉTAPE 2 : Génération ── -->
+    <section class="step locked" data-step="2">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Génération</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="voiceSelect">Voix</label>
+          <select id="voiceSelect"></select>
+        </div>
+        <div class="field">
+          <label>Format</label>
+          <div class="radio-group" data-name="format">
+            <button class="radio-option selected" data-value="wav">WAV</button>
+            <button class="radio-option" data-value="mp3">MP3</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>Qualité</label>
+          <div class="radio-group" data-name="quality">
+            <button class="radio-option" data-value="normal">Normale (Q4)</button>
+            <button class="radio-option selected" data-value="high">Haute qualité (Q8)</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Conserver le fichier</label>
+          <div class="radio-group" data-name="retention">
+            <button class="radio-option selected" data-value="session">Session uniquement</button>
+            <button class="radio-option" data-value="24h">24h</button>
+            <button class="radio-option" data-value="48h">48h</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btnGenerate">🎙 Générer</button>
+    </section>
+
+    <!-- ── ÉTAPE 3 : Résultat ── -->
+    <section class="step locked" data-step="3">
+      <div class="step-header">
+        <div class="step-number">3</div>
+        <div class="step-title">Résultat</div>
+      </div>
+
+      <div class="alert" id="resultNotice"></div>
+      <div class="audio-player-wrap">
+        <audio id="resultAudio" controls preload="none"></audio>
+      </div>
+      <button class="btn btn-primary" id="btnDownload">⬇ Télécharger</button>
+    </section>
+  </div>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/studio.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+/* VoiceBridge — studio.css : styles spécifiques au Studio (TTS / STT / Live). */
+
+.studio-tabs {
+  display: flex; gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px; margin-bottom: 2rem;
+}
+
+.studio-tab {
+  flex: 1; padding: 0.6rem 0.75rem;
+  border-radius: 9px;
+  font-size: 0.78rem; font-weight: 600;
+  color: var(--text3); cursor: pointer;
+  transition: all 0.2s; text-align: center;
+  background: none; border: none;
+  font-family: 'Syne', sans-serif;
+}
+.studio-tab:hover:not(.disabled) { color: var(--text2); }
+.studio-tab.active {
+  background: var(--surface3); color: var(--text);
+  border: 1px solid var(--border2);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.studio-tab.disabled { opacity: 0.4; cursor: not-allowed; }
+
+.studio-content { display: none; }
+.studio-content.active { display: block; }
+
+/* ── STEPS ── */
+.step { margin-bottom: 1.5rem; transition: opacity 0.3s; }
+.step.locked { opacity: 0.3; pointer-events: none; user-select: none; }
+
+.step-header {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-bottom: 1rem; padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.step-number {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--surface3); border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-family: 'DM Mono', monospace;
+  color: var(--text3); flex-shrink: 0;
+}
+.step.done .step-number {
+  background: rgba(52,211,153,0.15);
+  border-color: var(--success); color: var(--success);
+}
+
+.step-title {
+  font-size: 0.73rem; font-weight: 700;
+  color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.step.done .step-title { color: var(--success); }
+
+/* ── CHARACTER COUNTER ── */
+.text-counter {
+  text-align: right;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text3);
+  margin-top: 0.3rem;
+}
+.text-counter.warn { color: var(--warning); }
+
+/* ── AUDIO PLAYER WRAP ── */
+.audio-player-wrap {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.audio-player-wrap audio { width: 100%; }
+
+.btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+@media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }

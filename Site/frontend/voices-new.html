@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Ajouter une voix</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/voices.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo">
+      <span class="logo-icon">🎤</span>
+      <span>VoiceBridge</span>
+    </a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <div class="breadcrumb">
+    <a href="/voices">Mes voix</a>
+    <span>›</span>
+    <span class="current">Ajouter une voix</span>
+  </div>
+
+  <h1 class="page-title">Ajouter une voix</h1>
+  <p class="page-sub">Lisez le texte de référence, importez un fichier ou collez une URL</p>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="voiceName">Nom (max 50 caractères)</label>
+      <input type="text" id="voiceName" maxlength="50" placeholder="ex : JC en français">
+    </div>
+    <div class="field">
+      <label for="langSelect">Langue</label>
+      <select id="langSelect">
+        <option value="fr">🇫🇷 Français</option>
+        <option value="en">🇬🇧 Anglais</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="source-tabs">
+    <button class="source-tab active" data-source="record">🎤 Enregistrer</button>
+    <button class="source-tab" data-source="upload">📁 Importer un fichier</button>
+    <button class="source-tab" data-source="url">🔗 Extraire depuis une URL</button>
+  </div>
+
+  <!-- Source : enregistrer -->
+  <section class="source-content active" data-source="record">
+    <label>Texte de référence (à lire à voix haute)</label>
+    <div class="ref-text-box" id="refText"></div>
+    <div class="hint" style="margin-bottom:1rem">💡 Parlez naturellement · Durée recommandée : 10 à 15 secondes</div>
+
+    <div class="mic-zone" id="micZone">
+      <div class="mic-zone-icon">🎤</div>
+      <div class="mic-zone-label" id="micLabel">Cliquez pour démarrer l'enregistrement</div>
+    </div>
+    <div id="micPreviewWrap" class="audio-player-wrap" style="display:none;margin-top:0.75rem">
+      <audio id="micPreview" controls></audio>
+    </div>
+  </section>
+
+  <!-- Source : upload -->
+  <section class="source-content" data-source="upload">
+    <div class="drop-zone" id="dropZone">
+      <div style="font-size:2rem;margin-bottom:0.5rem">📁</div>
+      <div style="font-size:0.85rem;color:var(--text2)">Glissez-déposez ici ou cliquez pour sélectionner</div>
+      <div class="hint" style="margin-top:0.4rem">WAV, MP3, M4A, OGG · max 10 Mo</div>
+      <input type="file" id="fileInput" accept="audio/*" style="display:none">
+      <div id="uploadName" style="display:none;margin-top:0.75rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--accent2)"></div>
+    </div>
+  </section>
+
+  <!-- Source : URL -->
+  <section class="source-content" data-source="url">
+    <label for="urlInput">URL de la vidéo / audio</label>
+    <div class="url-input-row">
+      <input type="url" id="urlInput" placeholder="https://youtube.com/watch?v=…">
+      <button class="btn btn-primary" id="btnExtract">🔗 Extraire</button>
+    </div>
+    <div class="hint">Plateformes supportées : YouTube, Vimeo, Dailymotion, Twitter/X, LinkedIn et 1000+ via yt-dlp</div>
+
+    <div class="extract-progress" id="extractProgress">
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="extractBar"></div></div>
+      <div class="progress-step" id="extractStep">…</div>
+      <div id="extractPreviewWrap" class="audio-player-wrap" style="display:none;margin-top:0.75rem">
+        <audio id="extractPreview" controls></audio>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <div class="btn-row" style="display:flex;gap:0.5rem">
+    <button class="btn btn-secondary" id="btnCancel">Annuler</button>
+    <button class="btn btn-primary" id="btnSubmit">✅ Ajouter la voix</button>
+  </div>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/voices-new.js"></script>
+</body>
+</html>

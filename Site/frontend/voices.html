@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Mes voix</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/voices.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo">
+      <span class="logo-icon">🎤</span>
+      <span>VoiceBridge</span>
+    </a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:1.5rem">
+    <div>
+      <h1 class="page-title">Mes voix</h1>
+      <p class="page-sub">Voix de référence disponibles pour la synthèse</p>
+    </div>
+    <a href="/voices/new" class="btn btn-primary" style="text-decoration:none">+ Ajouter une voix</a>
+  </div>
+
+  <div class="voice-list" id="voiceList"></div>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/voices.js"></script>
+</body>
+</html>

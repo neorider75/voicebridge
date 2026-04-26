@@ -1,0 +1,161 @@
+"""Conversions audio (ffmpeg) + validation des uploads.
+
+Toutes les conversions passent par le binaire ``ffmpeg`` du système (préférable
+à ``ffmpeg-python`` pour rester simple). Les uploads sont validés par
+*magic bytes* via ``python-magic`` (la simple extension ne suffit pas).
+"""
+from __future__ import annotations
+
+import logging
+import shutil
+import subprocess
+from pathlib import Path
+
+from .. import config
+
+log = logging.getLogger("voicebridge.audio")
+
+ALLOWED_AUDIO_MIMES: set[str] = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mpeg",      # MP3
+    "audio/mp4",       # M4A
+    "audio/x-m4a",
+    "audio/m4a",
+    "audio/ogg",
+    "audio/x-flac",
+    "audio/flac",
+}
+
+
+class AudioError(Exception):
+    """Erreur métier (à transformer en HTTPException côté route)."""
+
+
+def _run(cmd: list[str], timeout: int = 60) -> None:
+    log.debug("ffmpeg cmd=%s", " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True, timeout=timeout, capture_output=True)
+    except subprocess.CalledProcessError as exc:  # pragma: no cover
+        raise AudioError(f"ffmpeg a échoué : {exc.stderr.decode(errors='replace')}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise AudioError("ffmpeg a dépassé le timeout") from exc
+
+
+def detect_mime(path: Path) -> str:
+    """Détection par magic bytes (refuse le simple suffixe)."""
+    try:
+        import magic  # type: ignore
+    except ImportError:  # pragma: no cover
+        # Fallback minimaliste : on lit les premiers octets manuellement
+        with path.open("rb") as f:
+            head = f.read(12)
+        if head.startswith(b"RIFF") and head[8:12] == b"WAVE":
+            return "audio/wav"
+        if head.startswith(b"ID3") or head[0:2] == b"\xff\xfb":
+            return "audio/mpeg"
+        if head[4:8] == b"ftyp":
+            return "audio/mp4"
+        if head.startswith(b"OggS"):
+            return "audio/ogg"
+        if head.startswith(b"fLaC"):
+            return "audio/flac"
+        return "application/octet-stream"
+    return magic.from_file(str(path), mime=True)
+
+
+def validate_upload(path: Path, max_bytes: int) -> str:
+    """Vérifie taille + type MIME. Retourne le MIME détecté."""
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise AudioError(f"Fichier trop volumineux : {size} > {max_bytes}")
+    mime = detect_mime(path)
+    if mime not in ALLOWED_AUDIO_MIMES:
+        raise AudioError(f"Type audio non supporté : {mime}")
+    return mime
+
+
+def to_wav_24k_mono(src: Path, dst: Path) -> None:
+    """Convertit n'importe quel audio en WAV 24 kHz mono PCM s16 (format NeuTTS)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _run([
+        "ffmpeg", "-y", "-i", str(src),
+        "-ac", "1", "-ar", "24000", "-sample_fmt", "s16",
+        str(dst),
+    ])
+
+
+def to_wav_16k_mono(src: Path, dst: Path) -> None:
+    """Pour Kyutai STT (16 kHz mono PCM s16)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _run([
+        "ffmpeg", "-y", "-i", str(src),
+        "-ac", "1", "-ar", "16000", "-sample_fmt", "s16",
+        str(dst),
+    ])
+
+
+def wav_to_mp3(src: Path, dst: Path, bitrate: str = "128k") -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _run([
+        "ffmpeg", "-y", "-i", str(src),
+        "-codec:a", "libmp3lame", "-b:a", bitrate,
+        str(dst),
+    ])
+
+
+def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
+    """Récupère les ``duration_seconds`` premières secondes de **parole nette**.
+
+    Utilise ``silencedetect`` pour sauter les silences en tête, puis trim.
+    En cas d'échec de la détection, on fait un trim brut depuis 0.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1) Détection du premier silence_end
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-i", str(src),
+                "-af", "silencedetect=noise=-30dB:d=0.4",
+                "-f", "null", "-",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        offset = 0.0
+        for line in (proc.stderr or "").splitlines():
+            if "silence_end" in line:
+                # Format : ... silence_end: 1.234 ...
+                try:
+                    offset = float(line.split("silence_end:")[1].strip().split(" ")[0])
+                    break
+                except (IndexError, ValueError):
+                    continue
+    except subprocess.TimeoutExpired:
+        offset = 0.0
+
+    _run([
+        "ffmpeg", "-y", "-ss", f"{offset:.2f}", "-i", str(src),
+        "-t", str(duration_seconds),
+        "-ac", "1", "-ar", "24000", "-sample_fmt", "s16",
+        str(dst),
+    ])
+
+
+def has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def audio_duration_seconds(path: Path) -> float:
+    """Renvoie la durée en secondes via ``ffprobe``."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+            ],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return float(proc.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return 0.0

@@ -21,6 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from . import auth as auth_mod
 from . import config
 from .limiter import limiter
+from .models import tts as tts_module
 from .routes import auth as r_auth
 from .routes import detection as r_detection
 from .routes import live as r_live
@@ -59,6 +60,13 @@ log = logging.getLogger("voicebridge")
 app = FastAPI(title="VoiceBridge", version="1.0.0-poc", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Enregistre les factory functions des modèles ML auprès du manager.
+# (lazy : rien n'est chargé tant qu'aucune route ne les demande)
+try:
+    tts_module.register_loaders()
+except Exception:  # noqa: BLE001
+    log.warning("register_loaders TTS impossible (deps ML manquantes ?)")
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +177,24 @@ async def page_root(request: Request):
     if not auth_mod.is_authenticated(request):
         return RedirectResponse(url="/login", status_code=302)
     return _serve_html("index.html")
+
+
+# Pages applicatives — servies uniquement si authentifié (middleware ``auth_gate``)
+_HTML_PAGES = {
+    "/studio": "studio.html",
+    "/voices": "voices.html",
+    "/voices/new": "voices-new.html",
+    "/recordings": "recordings.html",
+    "/detection": "detection.html",
+    "/settings": "settings.html",
+}
+
+for _path, _file in _HTML_PAGES.items():
+    def _make_handler(filename: str):
+        async def _handler():
+            return _serve_html(filename)
+        return _handler
+    app.add_api_route(_path, _make_handler(_file), methods=["GET"], include_in_schema=False)
 
 
 @app.get("/healthz")
