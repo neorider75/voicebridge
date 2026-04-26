@@ -24,8 +24,9 @@ python-magic>=0.4.27
 # parmi d'autres dans le wrapper, sélectionné via backbone_repo.
 neutts>=0.1
 llama-cpp-python>=0.2.50
-# NeuCodec (déjà dépendance transitive de neutts mais explicite)
-neucodec>=0.1
+# NeuCodec : versions 0.0.x sur PyPI (pas encore 0.1). Tiré en dépendance
+# transitive par neutts mais explicite ici pour le cas où.
+neucodec>=0.0.4
 # Kyutai STT + détection deepfake (modèles transformers)
 # Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
 transformers>=4.53
