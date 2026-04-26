@@ -136,6 +136,11 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         # sans risquer le pad-up qui dégrade l'audio (testé avec 30 :
         # étouffé/entrecoupé).
         "gpt_cond_len": _read_env_int("VB_XTTS_GPT_COND_LEN", 10),
+        # Découpe automatique du texte en phrases avant inférence : XTTS
+        # traite chaque phrase avec un état frais, ce qui réduit les
+        # micro-artefacts robotiques en milieu de phrase. Particulièrement
+        # utile pour des textes longs ou multi-phrases.
+        "enable_text_splitting": True,
     }
     # gpt_cond_chunk_len et max_ref_len : on laisse les défauts Coqui
     # (calibrés pour marcher), override possible via env vars.
@@ -154,13 +159,13 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         )
     except TypeError as exc:
         # Si la version installée de coqui-tts n'accepte pas tous les
-        # kwargs (ex: gpt_cond_len ajouté plus tard), on retombe sur la
-        # signature minimale + sampling de base.
+        # kwargs (ex: gpt_cond_len, enable_text_splitting ajoutés plus
+        # tard), on retombe sur la signature minimale + sampling de base.
         log.warning("XTTS tts() : kwarg refusé (%s) — fallback signature minimale", exc)
         minimal_params = {
             k: params[k]
             for k in ("temperature", "length_penalty", "repetition_penalty",
-                      "top_k", "top_p", "speed")
+                      "top_k", "top_p", "speed", "enable_text_splitting")
             if k in params
         }
         wav = tts.tts(
