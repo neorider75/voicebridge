@@ -92,7 +92,7 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         np.ndarray float32 [-1, 1] mono à 24 kHz.
 
     Paramètres ajustables via env vars (cf. README) :
-        VB_XTTS_TEMPERATURE       (défaut 0.8)  — diversité prosodique
+        VB_XTTS_TEMPERATURE       (défaut 0.7)  — diversité prosodique
         VB_XTTS_TOP_K             (défaut 50)   — pool de candidats
         VB_XTTS_TOP_P             (défaut 0.85) — nucleus sampling
         VB_XTTS_LENGTH_PENALTY    (défaut 1.0)
@@ -100,6 +100,14 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         VB_XTTS_SPEED             (défaut 1.05) — vitesse parole (0.7-1.3)
         VB_XTTS_PITCH_SHIFT       (défaut 0)    — semi-tons de shift post-process
                                                   (négatif = plus grave, ex -1.5)
+        VB_XTTS_GPT_COND_LEN      (défaut 30)   — secondes de réf utilisées
+                                                  par GPT pour conditionnement.
+                                                  Plus haut = identité mieux
+                                                  capturée (utilise jusqu'à
+                                                  30s de la voix source).
+        VB_XTTS_GPT_COND_CHUNK_LEN (défaut 4)
+        VB_XTTS_MAX_REF_LEN       (défaut 10)   — secondes de réf utilisées
+                                                  pour le décodeur diffusion.
     """
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError(
@@ -114,25 +122,51 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     # du modèle) → permet de bouger via env var sans restart, ou plus tard
     # via un payload UI sans redéploiement.
     params = {
-        # 0.65 = défaut Coqui. 0.8 = un cran d'expressivité (testé safe par
-        # défaut, retour utilisateur "manque d'émotion").
-        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.8),
+        # 0.65 = défaut Coqui (très conservateur). 0.7 = sweet spot empirique
+        # vu dans les exemples Coqui. 0.8 testé donnait trop le côté "généré".
+        # On reste à 0.7 : un poil d'expressivité sans dériver l'identité.
+        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.7),
         "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
-        # Légère accélération par défaut (1.0 = vitesse de la ref ; 1.05 =
-        # +5%, suffisant pour casser l'effet "trop posé" sans déformer).
         "speed": _read_env_float("VB_XTTS_SPEED", 1.05),
+        # ── Identity conditioning ──
+        # gpt_cond_len = nb secondes de la ref utilisées pour conditionner
+        # le GPT speaker encoder. Défaut Coqui = 30s. C'est le levier #1
+        # pour la fidélité d'identité — plus c'est long, mieux la voix est
+        # capturée. Capé à la durée du WAV source (15s actuellement).
+        "gpt_cond_len": _read_env_int("VB_XTTS_GPT_COND_LEN", 30),
+        "gpt_cond_chunk_len": _read_env_int("VB_XTTS_GPT_COND_CHUNK_LEN", 4),
+        # max_ref_len = nb secondes utilisées pour le decoder diffusion.
+        "max_ref_len": _read_env_int("VB_XTTS_MAX_REF_LEN", 10),
     }
 
     log.debug("XTTS infer params: %s", params)
-    wav = tts.tts(
-        text=text,
-        speaker_wav=str(voice_wav_path),
-        language=language,
-        **params,
-    )
+    try:
+        wav = tts.tts(
+            text=text,
+            speaker_wav=str(voice_wav_path),
+            language=language,
+            **params,
+        )
+    except TypeError as exc:
+        # Si la version installée de coqui-tts n'accepte pas tous les
+        # kwargs (ex: gpt_cond_len ajouté plus tard), on retombe sur la
+        # signature minimale + sampling de base.
+        log.warning("XTTS tts() : kwarg refusé (%s) — fallback signature minimale", exc)
+        minimal_params = {
+            k: params[k]
+            for k in ("temperature", "length_penalty", "repetition_penalty",
+                      "top_k", "top_p", "speed")
+            if k in params
+        }
+        wav = tts.tts(
+            text=text,
+            speaker_wav=str(voice_wav_path),
+            language=language,
+            **minimal_params,
+        )
     # `tts.tts()` peut retourner list[float] ou np.ndarray selon la version.
     # On normalise en np.ndarray float32.
     try:

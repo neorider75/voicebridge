@@ -101,16 +101,19 @@ Tous overrides via `Environment="VB_..."` dans
 | `VB_NEUTTS_MAX_CONTEXT` | 4096 | Tokens max → durée audio max (~80 s à 50 tokens/s) |
 | `VB_TORCH_THREADS` | nproc | Threads PyTorch intra-op (= 4 sur ce VPS) |
 
-**XTTS-v2** (sampling + post-traitement) :
+**XTTS-v2** (sampling + identité + post-traitement) :
 
 | Variable | Défaut | Effet |
 |---|---|---|
-| `VB_XTTS_TEMPERATURE` | 0.8 | Diversité prosodique (0.5 = stable, 0.9 = très expressif) |
+| `VB_XTTS_TEMPERATURE` | 0.7 | Diversité prosodique. 0.65 défaut Coqui, 0.7 sweet spot empirique, ↑ = plus expressif mais risque effet "généré" |
 | `VB_XTTS_TOP_K` | 50 | Pool de candidats |
 | `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling |
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
 | `VB_XTTS_SPEED` | 1.05 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+| `VB_XTTS_GPT_COND_LEN` | 30 | **Levier #1 pour l'identité** : secondes de la voix de réf utilisées pour le speaker conditioning. Plus haut = mieux capturée. Capé à la durée du WAV |
+| `VB_XTTS_GPT_COND_CHUNK_LEN` | 4 | Chunk size pour le conditioning |
+| `VB_XTTS_MAX_REF_LEN` | 10 | Secondes pour le décodeur diffusion |
 | `VB_XTTS_PITCH_SHIFT` | 0 | Pitch shift post-process (semi-tons, négatif = plus grave, ex -1.5) |
 
 ### Caches modèles
