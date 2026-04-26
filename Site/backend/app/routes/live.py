@@ -1,35 +1,34 @@
-"""WebSocket ``/ws/stream`` — Live (livraison 4).
+"""WebSocket ``/ws/stream`` — Live (livraison 4, refacto latence).
 
 Pipeline (côté serveur) :
 
-    client → WS                    : chunks audio webm/opus (~1 s) ou PCM 16k brut
-    ↓ ffmpeg                      → PCM 16 kHz mono float32
+    client → WS                    : chunks PCM 16 kHz mono int16 (~100 ms)
+    ↓ np.frombuffer (en RAM)      → float32
     ↓ Silero VAD (chunks 32 ms)   → tag speech/silence
-    ↓ buffer circulaire 5 s       → deque(maxlen=≈156)
+    ↓ buffer circulaire 5 s       → deque
     ↓ flush condition             → silence > 400 ms OU speech > 4 s
-    ↓ Kyutai STT (24 kHz)         → texte
+    ↓ resample np.interp 16k→24k
+    ↓ Kyutai STT                  → texte
     ↓ NeuTTS Q4 (ref_codes)       → WAV 24 kHz mono
     ↓ Perth watermark (auto)
-    ↓ WS                          → chunks WAV au client
+    ↓ WS                          → audio_chunk JSON (WAV b64) au client
 
-Choix POC : on accepte des chunks **webm/opus** côté client (MediaRecorder)
-et on les normalise via ffmpeg côté serveur. C'est plus simple que
-l'AudioWorklet PCM raw, au prix d'une latence plus élevée (~1,5-2 s vs cible
-0,6-1,4 s). À optimiser après le POC.
+Différence avec la version POC initiale :
+- AVANT : MediaRecorder webm 1 s + ffmpeg subprocess par chunk côté serveur
+  → latence ~1,5-2 s
+- MAINTENANT : AudioWorklet PCM raw 100 ms + np.frombuffer en RAM
+  → latence cible 0,6-1,4 s (spec atteinte)
 
-Auth : cookie session OU Bearer token (header lors du handshake).
+Auth : cookie session OU Bearer token au handshake.
 """
 from __future__ import annotations
 
 import asyncio
 import base64
 import io
+import json
 import logging
-import shutil
-import subprocess
 from collections import deque
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 try:
     import numpy as np  # type: ignore
@@ -45,7 +44,6 @@ except ImportError:
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .. import auth as auth_mod
-from .. import config
 from ..services import voices_store
 from ..utils import files
 
@@ -55,15 +53,14 @@ log = logging.getLogger("voicebridge.live")
 VAD_SAMPLE_RATE = 16000
 TTS_SAMPLE_RATE = 24000
 
-# Buffer 5 s à 32 ms par tick → ≈ 156 ticks
+# 32 ms / chunk Silero VAD → 5 s de buffer ≈ 156 chunks
 BUFFER_TICKS = 156
-SILENCE_FLUSH_TICKS = 13  # ~400 ms
-SPEECH_FLUSH_TICKS = 125  # ~4 s
+SILENCE_FLUSH_TICKS = 13   # ~400 ms de silence → flush
+SPEECH_FLUSH_TICKS = 125   # ~4 s de parole continue → flush forcé
+VAD_CHUNK_SAMPLES = 512    # taille de bloc attendue par Silero VAD
 
 
 def _ws_authenticated(ws: WebSocket) -> bool:
-    # auth_mod fournit ``_has_valid_session`` et ``_has_valid_bearer`` qui
-    # acceptent un objet exposant ``.cookies`` et ``.headers`` (WebSocket OK).
     return auth_mod._has_valid_session(ws) or auth_mod._has_valid_bearer(ws)  # type: ignore[arg-type]
 
 
@@ -74,36 +71,16 @@ async def _send_json(ws: WebSocket, payload: dict) -> None:
         pass
 
 
-def _decode_webm_to_pcm16k(webm_bytes: bytes) -> "np.ndarray | None":
-    """Convertit un blob webm/opus en PCM float32 mono 16 kHz via ffmpeg."""
-    if not ML_AVAILABLE:
+def _pcm_int16_bytes_to_float32(raw: bytes):
+    """Convertit du PCM 16-bit signed little-endian en float32 normalisé [-1, 1]."""
+    if not raw:
         return None
-    with TemporaryDirectory(prefix="vb-live-") as d:
-        src = Path(d) / "in.webm"
-        dst = Path(d) / "out.wav"
-        src.write_bytes(webm_bytes)
-        try:
-            subprocess.run(
-                [
-                    "ffmpeg", "-y", "-i", str(src),
-                    "-ac", "1", "-ar", str(VAD_SAMPLE_RATE),
-                    "-sample_fmt", "s16",
-                    str(dst),
-                ],
-                check=True, capture_output=True, timeout=10,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            return None
-        if not dst.exists():
-            return None
-        data, sr = sf.read(str(dst), dtype="float32", always_2d=False)
-        if sr != VAD_SAMPLE_RATE:
-            return None
-        return data
+    arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    return arr
 
 
 def _wav_bytes_24k(audio_array) -> bytes:
-    """Sérialise un np.ndarray (TTS NeuTTS) en WAV 24 kHz."""
+    """Sérialise un np.ndarray (NeuTTS infer) en WAV 24 kHz mono PCM 16-bit."""
     if isinstance(audio_array, torch.Tensor):
         audio_array = audio_array.detach().cpu().numpy()
     arr = np.asarray(audio_array)
@@ -130,7 +107,7 @@ async def stream(ws: WebSocket):
         await ws.close(code=4503)
         return
 
-    # Imports paresseux (lourds)
+    # Imports paresseux (lourds : torch, transformers, neutts)
     try:
         from ..models import stt as stt_model
         from ..models import tts as tts_model
@@ -143,14 +120,17 @@ async def stream(ws: WebSocket):
     # ── État de session ─────────────────────────────────────────────
     voice_id: str | None = None
     language: str = "fr"
-    quality: str = "normal"  # Live → toujours Q4 (plus rapide)
+    quality: str = "normal"  # Live → toujours Q4 (latence)
     ref_codes = None
     ref_text = ""
     vad_iter = None
     speech_buf: deque = deque(maxlen=BUFFER_TICKS)
-    silence_count = 0
     speech_count = 0
+    silence_count = 0
     in_speech = False
+    # Petit accumulateur pour empiler ce que l'on reçoit, et découper en
+    # blocs de 512 samples (ce que veut Silero VAD).
+    pcm_carry = np.zeros(0, dtype=np.float32)
 
     async def configure(payload: dict) -> bool:
         nonlocal voice_id, language, ref_codes, ref_text, vad_iter
@@ -190,14 +170,13 @@ async def stream(ws: WebSocket):
         nonlocal speech_buf, speech_count, silence_count, in_speech
         if not speech_buf:
             return
-        # Concat des chunks float32 16kHz
         audio = np.concatenate(list(speech_buf), axis=0)
         speech_buf.clear()
         speech_count = 0
         silence_count = 0
         in_speech = False
 
-        # Resample 16k → 24k pour Kyutai (interpolation linéaire simple)
+        # Resample 16k → 24k (interp linéaire — qualité voix OK)
         ratio = TTS_SAMPLE_RATE / VAD_SAMPLE_RATE
         new_len = int(len(audio) * ratio)
         x_old = np.linspace(0, 1, len(audio), endpoint=False)
@@ -225,13 +204,23 @@ async def stream(ws: WebSocket):
         await _send_json(ws, {"type": "transcript", "text": text})
         await _send_json(ws, {"type": "audio_chunk", "data": b64, "sample_rate": TTS_SAMPLE_RATE})
 
-    async def consume_pcm(pcm: "np.ndarray") -> None:
-        """Découpe en sub-chunks 32 ms et passe à VAD + buffer."""
-        nonlocal silence_count, speech_count, in_speech
-        # Tronque/pad pour avoir des multiples de VAD_CHUNK_SAMPLES (512)
-        chunk_size = 512
-        for start in range(0, len(pcm) - chunk_size + 1, chunk_size):
-            sub = pcm[start:start + chunk_size]
+    async def consume_pcm(pcm_chunk):
+        """Empile ``pcm_chunk`` dans le carry, découpe en blocs de 512 samples
+        et fait passer chacun par Silero VAD + buffer + flush conditionnel.
+        """
+        nonlocal pcm_carry, silence_count, speech_count, in_speech
+        # Concat
+        pcm_carry = np.concatenate([pcm_carry, pcm_chunk])
+        # Découpe en blocs de 512 samples (32 ms)
+        n_full = len(pcm_carry) // VAD_CHUNK_SAMPLES
+        if n_full == 0:
+            return
+        usable_len = n_full * VAD_CHUNK_SAMPLES
+        full = pcm_carry[:usable_len]
+        pcm_carry = pcm_carry[usable_len:]
+
+        for i in range(0, usable_len, VAD_CHUNK_SAMPLES):
+            sub = full[i:i + VAD_CHUNK_SAMPLES]
             try:
                 ev = vad_iter(torch.from_numpy(sub), return_seconds=False)
             except Exception:  # noqa: BLE001
@@ -255,12 +244,10 @@ async def stream(ws: WebSocket):
     try:
         while True:
             msg = await ws.receive()
-            # WebSocket FastAPI : msg est un dict {'type', 'text' | 'bytes'}
             if msg["type"] == "websocket.disconnect":
                 break
             if msg.get("text"):
                 # Message JSON de contrôle
-                import json
                 try:
                     payload = json.loads(msg["text"])
                 except json.JSONDecodeError:
@@ -273,12 +260,12 @@ async def stream(ws: WebSocket):
                     await _send_json(ws, {"type": "stopped"})
                     break
             elif msg.get("bytes"):
-                # Chunk audio binaire (webm/opus depuis MediaRecorder)
+                # Chunk PCM 16-bit mono 16 kHz envoyé par l'AudioWorklet
                 if vad_iter is None:
                     await _send_json(ws, {"type": "error", "message": "envoyez d'abord un message configure"})
                     continue
-                pcm = _decode_webm_to_pcm16k(msg["bytes"])
-                if pcm is None or len(pcm) < 512:
+                pcm = _pcm_int16_bytes_to_float32(msg["bytes"])
+                if pcm is None or len(pcm) == 0:
                     continue
                 await consume_pcm(pcm)
     except WebSocketDisconnect:

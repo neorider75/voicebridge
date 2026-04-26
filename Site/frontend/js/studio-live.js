@@ -1,15 +1,27 @@
-// VoiceBridge — studio-live.js : WebSocket /ws/stream Live (livraison 4).
-// MediaRecorder webm chunks ~1s → WebSocket → audio retour PCM 24kHz
-// playé via HTMLAudioElement avec MediaSource.
+// VoiceBridge — studio-live.js : Live WebSocket avec AudioWorklet PCM raw.
+//
+// Pipeline :
+//   getUserMedia → AudioContext → MediaStreamSource → AudioWorkletNode (pcm-capture)
+//     → port.onmessage (Int16Array PCM 16 kHz mono, chunks 100 ms)
+//     → ws.send(buffer) (binary frame)
+//
+// Réception : audio_chunk JSON base64 (WAV 24 kHz mono) → Blob → AudioElement.play().
+//
+// Latence cible : 0,6 – 1,4 s (cf. spec). On évite la latence d'1 s du
+// timeslice MediaRecorder + ffmpeg subprocess côté serveur.
 
 (function () {
   function $(id) { return document.getElementById(id); }
   function $$(sel, r) { return Array.prototype.slice.call((r || document).querySelectorAll(sel)); }
 
   var ws = null;
-  var mediaRec = null;
+  var audioCtx = null;
+  var workletNode = null;
+  var sourceNode = null;
   var stream = null;
   var sessionActive = false;
+  var pendingPlay = []; // file d'attente audio renvoyé par le serveur
+  var playing = false;
 
   function loadVoices() {
     VB.api.get('/api/voices').then(function (d) {
@@ -32,6 +44,7 @@
   }
 
   function setStatus(text) { $('liveStatus').textContent = text; }
+
   function appendTranscript(text) {
     var div = document.createElement('div');
     div.style.padding = '0.25rem 0';
@@ -41,23 +54,41 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function playWavBase64(b64) {
-    // Décode → blob → URL → Audio.play
+  // ── Lecture séquentielle des audio_chunk (WAV b64 → Blob → audio.play) ──
+
+  function enqueueWav(b64) {
     try {
       var raw = atob(b64);
       var bytes = new Uint8Array(raw.length);
       for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       var blob = new Blob([bytes], { type: 'audio/wav' });
-      var url = URL.createObjectURL(blob);
-      var audio = $('liveAudio');
-      audio.src = url;
-      audio.play().catch(function () {});
-      // libère la précédente URL au prochain ended
-      audio.onended = function () { URL.revokeObjectURL(url); };
+      pendingPlay.push(URL.createObjectURL(blob));
+      tryPlayNext();
     } catch (e) {
-      console.warn('playWavBase64 failed', e);
+      console.warn('enqueueWav failed', e);
     }
   }
+
+  function tryPlayNext() {
+    if (playing || pendingPlay.length === 0) return;
+    var url = pendingPlay.shift();
+    var audio = $('liveAudio');
+    audio.src = url;
+    playing = true;
+    audio.play().then(function () {
+      audio.onended = function () {
+        URL.revokeObjectURL(url);
+        playing = false;
+        tryPlayNext();
+      };
+    }).catch(function () {
+      URL.revokeObjectURL(url);
+      playing = false;
+      tryPlayNext();
+    });
+  }
+
+  // ── WebSocket ──
 
   function start() {
     var voiceId = $('liveVoiceSelect').value;
@@ -66,6 +97,7 @@
 
     var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + window.location.host + '/ws/stream');
+    ws.binaryType = 'arraybuffer';
 
     ws.addEventListener('open', function () {
       ws.send(JSON.stringify({
@@ -73,19 +105,21 @@
         voice_id: voiceId,
         language: lang,
         output: 'browser',
+        format: 'pcm16',  // indique au serveur qu'on envoie du PCM 16k int16 mono
       }));
     });
 
     ws.addEventListener('message', function (e) {
+      // Le serveur envoie du JSON — pas de binaire pour l'instant
       var payload;
       try { payload = JSON.parse(e.data); } catch (err) { return; }
       if (payload.type === 'ready') {
         setStatus('Connecté · parlez');
-        startRecording();
+        startCapture();
       } else if (payload.type === 'transcript') {
         appendTranscript('🗣 ' + payload.text);
       } else if (payload.type === 'audio_chunk') {
-        playWavBase64(payload.data);
+        enqueueWav(payload.data);
       } else if (payload.type === 'error') {
         VB.notify('error', payload.message || 'Erreur');
         stop();
@@ -96,7 +130,7 @@
 
     ws.addEventListener('close', function () {
       setStatus('Déconnecté');
-      stopRecording();
+      stopCapture();
       sessionActive = false;
       $('liveMicZone').classList.remove('recording');
       $('liveMicLabel').textContent = 'Cliquez pour démarrer';
@@ -112,41 +146,57 @@
     setStatus('Connexion…');
   }
 
-  function startRecording() {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+  // ── Capture micro via AudioWorklet PCM 16 kHz ──
+
+  function startCapture() {
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    }).then(function (s) {
       stream = s;
-      mediaRec = new MediaRecorder(s, { mimeType: 'audio/webm' });
-      mediaRec.ondataavailable = function (e) {
-        if (e.data && e.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(e.data); // binary frame
-        }
-      };
-      // Émet un chunk toutes les 1000 ms (compromis latence/CPU)
-      mediaRec.start(1000);
-    }).catch(function () {
-      VB.notify('error', 'Accès micro refusé');
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx.audioWorklet.addModule('/js/live-worklet.js').then(function () {
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+        workletNode = new AudioWorkletNode(audioCtx, 'pcm-capture');
+        workletNode.port.onmessage = function (event) {
+          // ``event.data`` est l'ArrayBuffer du Int16Array (transferred)
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(event.data);
+          }
+        };
+        sourceNode.connect(workletNode);
+        // Pas besoin de connecter à destination (sinon l'utilisateur s'entend)
+      });
+    }).catch(function (err) {
+      console.warn('getUserMedia/worklet failed', err);
+      VB.notify('error', 'Accès micro refusé ou AudioWorklet indisponible');
       stop();
     });
   }
 
-  function stopRecording() {
-    if (mediaRec && mediaRec.state !== 'inactive') {
-      try { mediaRec.stop(); } catch (e) { /* ignore */ }
-    }
+  function stopCapture() {
+    try { if (workletNode) { workletNode.disconnect(); workletNode = null; } } catch (e) {}
+    try { if (sourceNode) { sourceNode.disconnect(); sourceNode = null; } } catch (e) {}
     if (stream) {
       stream.getTracks().forEach(function (t) { t.stop(); });
       stream = null;
     }
-    mediaRec = null;
+    if (audioCtx) {
+      audioCtx.close().catch(function () {});
+      audioCtx = null;
+    }
   }
 
   function stop() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: 'stop' })); } catch (e) { /* ignore */ }
+      try { ws.send(JSON.stringify({ type: 'stop' })); } catch (e) {}
     }
-    stopRecording();
+    stopCapture();
     if (ws) {
-      try { ws.close(); } catch (e) { /* ignore */ }
+      try { ws.close(); } catch (e) {}
       ws = null;
     }
     sessionActive = false;
