@@ -22,7 +22,7 @@
     });
   }
 
-  // ── Radio groups (format / qualité / rétention) ──
+  // ── Radio groups (format / qualité / rétention / engine) ──
   function bindRadioGroups() {
     $$('.radio-group').forEach(function (group) {
       var name = group.getAttribute('data-name');
@@ -31,9 +31,29 @@
           $$('.radio-option', group).forEach(function (o) { o.classList.remove('selected'); });
           opt.classList.add('selected');
           group.dataset.value = opt.getAttribute('data-value');
+          // Quand l'engine change, on (dé)grise le groupe Qualité — XTTS-v2
+          // n'a qu'un seul niveau, le radio Qualité ne fait rien si engine=xtts.
+          if (name === 'engine') updateQualityVisibility();
         });
       });
     });
+    updateQualityVisibility();  // initial state
+  }
+
+  function updateQualityVisibility() {
+    var engine = readRadio('engine') || 'neutts';
+    var qualityField = document.querySelector('.radio-group[data-name="quality"]');
+    if (!qualityField) return;
+    var fieldWrap = qualityField.closest('.field') || qualityField;
+    var isXtts = engine === 'xtts';
+    fieldWrap.style.opacity = isXtts ? '0.4' : '';
+    fieldWrap.style.pointerEvents = isXtts ? 'none' : '';
+    var label = fieldWrap.querySelector('label');
+    if (label) {
+      label.textContent = isXtts
+        ? 'Qualité (NeuTTS uniquement — ignoré pour XTTS)'
+        : 'Qualité (NeuTTS uniquement)';
+    }
   }
   function readRadio(name) {
     var group = document.querySelector('.radio-group[data-name="' + name + '"]');
