@@ -122,25 +122,28 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     # du modèle) → permet de bouger via env var sans restart, ou plus tard
     # via un payload UI sans redéploiement.
     params = {
-        # 0.65 = défaut Coqui (très conservateur). 0.7 = sweet spot empirique
-        # vu dans les exemples Coqui. 0.8 testé donnait trop le côté "généré".
-        # On reste à 0.7 : un poil d'expressivité sans dériver l'identité.
+        # 0.7 = sweet spot empirique entre 0.65 (défaut Coqui, plus conservateur)
+        # et 0.8 (testé "trop généré").
         "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.7),
         "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
         "speed": _read_env_float("VB_XTTS_SPEED", 1.05),
-        # ── Identity conditioning ──
-        # gpt_cond_len = nb secondes de la ref utilisées pour conditionner
-        # le GPT speaker encoder. Défaut Coqui = 30s. C'est le levier #1
-        # pour la fidélité d'identité — plus c'est long, mieux la voix est
-        # capturée. Capé à la durée du WAV source (15s actuellement).
-        "gpt_cond_len": _read_env_int("VB_XTTS_GPT_COND_LEN", 30),
-        "gpt_cond_chunk_len": _read_env_int("VB_XTTS_GPT_COND_CHUNK_LEN", 4),
-        # max_ref_len = nb secondes utilisées pour le decoder diffusion.
-        "max_ref_len": _read_env_int("VB_XTTS_MAX_REF_LEN", 10),
     }
+    # NB : on NE passe PAS gpt_cond_len / max_ref_len par défaut. Bumper
+    # gpt_cond_len à 30 alors que notre WAV de réf est trimé à 15s a produit
+    # un audio "étouffé + entrecoupé" (le modèle pad/répète mal le ref).
+    # Les défauts internes Coqui (gpt_cond_len=6, max_ref_len=10) sont
+    # calibrés pour donner un résultat propre quelle que soit la taille du
+    # WAV source. Si l'utilisateur veut explicitement bumper, il peut via
+    # env vars qui sont injectées seulement si setées.
+    if "VB_XTTS_GPT_COND_LEN" in os.environ:
+        params["gpt_cond_len"] = _read_env_int("VB_XTTS_GPT_COND_LEN", 6)
+    if "VB_XTTS_GPT_COND_CHUNK_LEN" in os.environ:
+        params["gpt_cond_chunk_len"] = _read_env_int("VB_XTTS_GPT_COND_CHUNK_LEN", 4)
+    if "VB_XTTS_MAX_REF_LEN" in os.environ:
+        params["max_ref_len"] = _read_env_int("VB_XTTS_MAX_REF_LEN", 10)
 
     log.debug("XTTS infer params: %s", params)
     try:

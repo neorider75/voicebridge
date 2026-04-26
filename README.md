@@ -111,9 +111,9 @@ Tous overrides via `Environment="VB_..."` dans
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
 | `VB_XTTS_SPEED` | 1.05 | Vitesse de parole (0.7 lent, 1.3 rapide) |
-| `VB_XTTS_GPT_COND_LEN` | 30 | **Levier #1 pour l'identité** : secondes de la voix de réf utilisées pour le speaker conditioning. Plus haut = mieux capturée. Capé à la durée du WAV |
-| `VB_XTTS_GPT_COND_CHUNK_LEN` | 4 | Chunk size pour le conditioning |
-| `VB_XTTS_MAX_REF_LEN` | 10 | Secondes pour le décodeur diffusion |
+| `VB_XTTS_GPT_COND_LEN` | (non setté → défaut Coqui ~6) | Secondes de la voix de réf utilisées pour le speaker conditioning. **Bumper au-dessus de la durée du WAV source dégrade l'audio** (étouffé/entrecoupé). À toucher seulement si on a un WAV plus long que la valeur visée |
+| `VB_XTTS_GPT_COND_CHUNK_LEN` | (non setté → défaut Coqui 4) | Chunk size pour le conditioning |
+| `VB_XTTS_MAX_REF_LEN` | (non setté → défaut Coqui 10) | Secondes pour le décodeur diffusion |
 | `VB_XTTS_PITCH_SHIFT` | 0 | Pitch shift post-process (semi-tons, négatif = plus grave, ex -1.5) |
 
 ### Caches modèles
