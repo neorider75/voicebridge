@@ -358,7 +358,7 @@ phase6_models() {
   hf_download neuphonic/neutts-nano-french-q8-gguf "$DATA_DIR/models/neutts-nano-fr-q8"
   hf_download neuphonic/neutts-nano-q8-gguf        "$DATA_DIR/models/neutts-nano-en-q8"
   hf_download neuphonic/neucodec                    "$DATA_DIR/models/neucodec"
-  hf_download kyutai/stt-1b-en_fr                   "$DATA_DIR/models/kyutai-1b"
+  hf_download kyutai/stt-1b-en_fr-trfs              "$DATA_DIR/models/kyutai-1b"
   hf_download MelodyMachine/Deepfake-audio-detection-V2 "$DATA_DIR/models/deepfake-detection-v2"
 
   step "Pré-chargement Silero VAD via torch.hub"

@@ -158,8 +158,8 @@ huggingface-cli download neuphonic/neutts-nano-q8-gguf \
 huggingface-cli download neuphonic/neucodec \
   --local-dir /var/voicebridge/data/models/neucodec
 
-# Kyutai 1B
-huggingface-cli download kyutai/stt-1b-en_fr \
+# Kyutai 1B (variante -trfs compatible transformers >= 4.53)
+huggingface-cli download kyutai/stt-1b-en_fr-trfs \
   --local-dir /var/voicebridge/data/models/kyutai-1b
 
 # Deepfake-audio-detection-V2

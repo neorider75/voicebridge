@@ -25,7 +25,8 @@ llama-cpp-python>=0.2.50
 # NeuCodec (déjà dépendance de neutts mais explicite)
 neucodec>=0.1
 # Kyutai STT + détection deepfake (modèles transformers)
-transformers>=4.40
+# Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
+transformers>=4.53
 torch>=2.2
 torchaudio>=2.2
 onnxruntime>=1.17

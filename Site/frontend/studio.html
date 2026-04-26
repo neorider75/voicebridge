@@ -41,7 +41,7 @@
 
   <div class="studio-tabs" role="tablist">
     <button class="studio-tab active" data-tab="tts">🗣 Lire un texte</button>
-    <button class="studio-tab disabled" title="Disponible en livraison 3">📝 Transcrire ma voix</button>
+    <button class="studio-tab" data-tab="stt">📝 Transcrire ma voix</button>
     <button class="studio-tab disabled" title="Disponible en livraison 4">📡 Parler en direct</button>
   </div>
 
@@ -115,6 +115,107 @@
       <button class="btn btn-primary" id="btnDownload">⬇ Télécharger</button>
     </section>
   </div>
+
+  <!-- ══════════════ STT ══════════════ -->
+  <link rel="stylesheet" href="/css/voices.css">
+  <div class="studio-content" data-tab="stt">
+
+    <!-- Step 1 : Enregistrement -->
+    <section class="step" data-step="stt-1">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-title">Enregistrement</div>
+      </div>
+
+      <div class="field">
+        <label for="sttLang">Langue source</label>
+        <select id="sttLang">
+          <option value="fr">🇫🇷 Français</option>
+          <option value="en">🇬🇧 Anglais</option>
+        </select>
+      </div>
+
+      <div class="mic-zone" id="sttMicZone">
+        <div class="mic-zone-icon">🎤</div>
+        <div class="mic-zone-label" id="sttMicLabel">Cliquez pour démarrer l'enregistrement</div>
+      </div>
+      <div class="hint" style="margin-top:0.4rem">💡 Durée max : 5 minutes</div>
+    </section>
+
+    <!-- Step 2 : Validation transcription -->
+    <section class="step locked" data-step="stt-2">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Validation de la transcription</div>
+      </div>
+
+      <div class="audio-player-wrap">
+        <audio id="sttOriginalAudio" controls preload="none"></audio>
+      </div>
+
+      <div class="field">
+        <label for="sttTranscript">Transcription (éditable)</label>
+        <textarea id="sttTranscript" placeholder="La transcription apparaîtra ici…"></textarea>
+        <div class="hint">💡 Corrigez avant de continuer si la transcription est approximative</div>
+      </div>
+    </section>
+
+    <!-- Step 3 : Génération (clone du step 2 TTS) -->
+    <section class="step locked" data-step="stt-3">
+      <div class="step-header">
+        <div class="step-number">3</div>
+        <div class="step-title">Génération</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="sttVoiceSelect">Voix</label>
+          <select id="sttVoiceSelect"></select>
+        </div>
+        <div class="field">
+          <label>Format</label>
+          <div class="radio-group" data-name="stt-format">
+            <button class="radio-option selected" data-value="wav">WAV</button>
+            <button class="radio-option" data-value="mp3">MP3</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label>Qualité</label>
+          <div class="radio-group" data-name="stt-quality">
+            <button class="radio-option" data-value="normal">Normale (Q4)</button>
+            <button class="radio-option selected" data-value="high">Haute qualité (Q8)</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Conserver le fichier</label>
+          <div class="radio-group" data-name="stt-retention">
+            <button class="radio-option selected" data-value="session">Session uniquement</button>
+            <button class="radio-option" data-value="24h">24h</button>
+            <button class="radio-option" data-value="48h">48h</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="sttBtnGenerate">🎙 Générer</button>
+    </section>
+
+    <!-- Step 4 : Résultat -->
+    <section class="step locked" data-step="stt-4">
+      <div class="step-header">
+        <div class="step-number">4</div>
+        <div class="step-title">Résultat</div>
+      </div>
+
+      <div class="alert" id="sttResultNotice"></div>
+      <div class="audio-player-wrap">
+        <audio id="sttResultAudio" controls preload="none"></audio>
+      </div>
+      <button class="btn btn-primary" id="sttBtnDownload">⬇ Télécharger</button>
+    </section>
+  </div>
 </main>
 
 <script src="/js/theme.js"></script>
@@ -122,5 +223,6 @@
 <script src="/js/notify.js"></script>
 <script src="/js/header.js"></script>
 <script src="/js/studio.js"></script>
+<script src="/js/studio-stt.js"></script>
 </body>
 </html>

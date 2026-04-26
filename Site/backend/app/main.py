@@ -21,6 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from . import auth as auth_mod
 from . import config
 from .limiter import limiter
+from .models import stt as stt_module
 from .models import tts as tts_module
 from .routes import auth as r_auth
 from .routes import detection as r_detection
@@ -67,6 +68,11 @@ try:
     tts_module.register_loaders()
 except Exception:  # noqa: BLE001
     log.warning("register_loaders TTS impossible (deps ML manquantes ?)")
+
+try:
+    stt_module.register_loaders()
+except Exception:  # noqa: BLE001
+    log.warning("register_loaders STT impossible (deps ML manquantes ?)")
 
 
 # ---------------------------------------------------------------------------

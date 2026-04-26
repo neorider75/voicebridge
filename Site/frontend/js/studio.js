@@ -12,14 +12,12 @@
   var MAX_CHARS = 5000;
   var voices = [];
 
-  // ── Sub-tabs (TTS only en L2) ──
+  // ── Sub-tabs (le switch TTS/STT est géré par studio-stt.js) ──
   function bindStudioTabs() {
-    $$('.studio-tab').forEach(function (tab) {
+    // Notification "disponible plus tard" pour les onglets disabled (Live)
+    $$('.studio-tab.disabled').forEach(function (tab) {
       tab.addEventListener('click', function () {
-        if (tab.classList.contains('disabled')) {
-          VB.notify('info', 'Disponible dans une prochaine livraison');
-          return;
-        }
+        VB.notify('info', 'Disponible dans une prochaine livraison');
       });
     });
   }
