@@ -220,9 +220,12 @@ async def page_login():
 
 @app.get("/")
 async def page_root(request: Request):
+    # ``/`` → redirect vers /login si non auth, sinon vers /studio (accueil
+    # applicatif tel que défini dans la maquette ; index.html n'est plus
+    # utilisé en V1).
     if not auth_mod.is_authenticated(request):
         return RedirectResponse(url="/login", status_code=302)
-    return _serve_html("index.html")
+    return RedirectResponse(url="/studio", status_code=302)
 
 
 # Pages applicatives — servies uniquement si authentifié (middleware ``auth_gate``)
