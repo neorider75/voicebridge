@@ -25,13 +25,20 @@
   var playbackCtx = null;
   var nextPlayAt = 0;
   var TTS_RATE = 24000;
-  // Head buffer en début de chaque utterance : on attend N ms avant de
-  // commencer à jouer pour absorber la jitter (variabilité NeuTTS Q4 +
-  // transport WebSocket + base64). Trade-off : plus = moins de gaps, moins
-  // de latence perçue. 150 ms est un compromis. Si on entend encore des
-  // blancs : monter à 200-250. Si la latence est trop forte : descendre
-  // à 100 (mais risque de gaps).
-  var BUFFER_HEAD_MS = 150;
+
+  // Jitter buffer : on n'enchaîne pas chaque chunk au fil de l'eau (qui mène
+  // à des gaps si NeuTTS Q4 génère plus lentement que le temps réel sur CPU
+  // modeste). À la place, on accumule jusqu'à JITTER_BUFFER_MS de signal
+  // *avant* de commencer à jouer. Pendant la lecture, les chunks suivants
+  // sont scheduled bout-en-bout depuis nextPlayAt → zéro gap tant qu'ils
+  // arrivent avant la fin du buffer accumulé.
+  //
+  // Compromis : augmenter ce buffer = plus de latence perçue mais moins de
+  // hachage. 500 ms est tolérant pour un CPU lent. À ajuster selon le ressenti.
+  var JITTER_BUFFER_MS = 500;
+  var pendingChunks = [];          // AudioBuffers en attente de scheduling
+  var pendingDurationMs = 0;       // total des durées accumulées
+  var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
   // Level meter (anneau pulsant rouge autour de liveMicZone)
   var levelAnalyser = null;
   var levelRaf = null;
@@ -91,43 +98,73 @@
     return playbackCtx;
   }
 
+  function decodePcmChunk(b64, ctx) {
+    var raw = atob(b64);
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    var int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+    var f32 = new Float32Array(int16.length);
+    for (var j = 0; j < int16.length; j++) f32[j] = int16[j] / 32768;
+    var buffer = ctx.createBuffer(1, f32.length, TTS_RATE);
+    buffer.copyToChannel(f32, 0);
+    return buffer;
+  }
+
+  function scheduleBuffer(ctx, audioBuffer) {
+    var src = ctx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(ctx.destination);
+    var now = ctx.currentTime;
+    var startAt = (nextPlayAt <= now + 0.02) ? now + 0.02 : nextPlayAt;
+    src.start(startAt);
+    nextPlayAt = startAt + audioBuffer.duration;
+  }
+
   function enqueuePcmChunk(b64) {
     try {
       var ctx = ensurePlaybackCtx();
-      var raw = atob(b64);
-      var bytes = new Uint8Array(raw.length);
-      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      // Décodage int16 little-endian
-      var int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
-      var f32 = new Float32Array(int16.length);
-      for (var j = 0; j < int16.length; j++) f32[j] = int16[j] / 32768;
-      var buffer = ctx.createBuffer(1, f32.length, TTS_RATE);
-      buffer.copyToChannel(f32, 0);
-      var src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
+      var audioBuffer = decodePcmChunk(b64, ctx);
 
-      var now = ctx.currentTime;
-      var startAt;
-      if (nextPlayAt <= now + 0.05) {
-        // Underrun ou première chunk d'une utterance — on applique le head
-        // buffer pour absorber la jitter avant d'enchaîner les chunks suivants.
-        startAt = now + BUFFER_HEAD_MS / 1000;
-      } else {
-        // Déjà en train de jouer — on enchaîne sans gap.
-        startAt = nextPlayAt;
+      if (hasStartedUtterance) {
+        // Phrase déjà en cours de lecture → on enchaîne immédiatement.
+        scheduleBuffer(ctx, audioBuffer);
+        return;
       }
-      src.start(startAt);
-      nextPlayAt = startAt + buffer.duration;
+
+      // On accumule jusqu'à atteindre JITTER_BUFFER_MS, puis on flush.
+      pendingChunks.push(audioBuffer);
+      pendingDurationMs += audioBuffer.duration * 1000;
+      if (pendingDurationMs >= JITTER_BUFFER_MS) {
+        flushPending(ctx);
+      }
     } catch (e) {
       console.warn('enqueuePcmChunk failed', e);
     }
   }
 
+  function flushPending(ctx) {
+    // Démarre la lecture en chaînant tous les chunks accumulés. Les chunks
+    // qui arriveront ensuite sont scheduled directement (cf. enqueuePcmChunk).
+    while (pendingChunks.length > 0) {
+      scheduleBuffer(ctx, pendingChunks.shift());
+    }
+    pendingDurationMs = 0;
+    hasStartedUtterance = true;
+  }
+
   function onAudioEnd() {
-    // Pas de reset explicite de nextPlayAt : si l'utilisateur reparle, le
-    // prochain chunk verra "nextPlayAt < now + 50ms" → applique le head
-    // buffer naturellement (cf. enqueuePcmChunk). Plus simple et sans race.
+    // Le serveur signale la fin de la phrase. Si on a accumulé des chunks
+    // sans atteindre JITTER_BUFFER_MS (utterance courte), on flush quand
+    // même pour ne pas garder les chunks en attente indéfiniment.
+    if (!hasStartedUtterance && pendingChunks.length > 0 && playbackCtx) {
+      flushPending(playbackCtx);
+    }
+    // Reset pour la prochaine phrase : on ré-accumulera JITTER_BUFFER_MS.
+    setTimeout(function () {
+      hasStartedUtterance = false;
+      pendingChunks = [];
+      pendingDurationMs = 0;
+    }, 100);
   }
 
   // ── WebSocket ──
