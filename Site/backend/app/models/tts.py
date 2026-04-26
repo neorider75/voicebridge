@@ -143,10 +143,11 @@ def _make_loader(model_key: str):
             log.warning("impossible de bumper max_context sur %s", model_key)
 
         # Patch temperature/top_k pour plus d'expressivité prosodique. NeuTTS
-        # hardcode temperature=1.0 — un peu plat. 1.1 donne un poil plus de
-        # variation sans introduire d'artefacts.
+        # hardcode temperature=1.0 — un peu plat. 1.2 donne plus de variation
+        # d'intonation tout en restant sous le seuil d'artefacts (généralement
+        # autour de 1.4-1.5). Override possible via env VB_NEUTTS_TEMPERATURE.
         try:
-            temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.1"))
+            temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.2"))
             topk = int(os.environ.get("VB_NEUTTS_TOP_K", "50"))
             if _patch_infer_ggml_temperature(instance, temp, topk):
                 log.info("NeuTTS expressivité : temperature=%.2f top_k=%d (%s)",
