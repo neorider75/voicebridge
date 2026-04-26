@@ -32,6 +32,56 @@
   // ── Source : enregistrement micro (MediaRecorder) ──
 
   var mediaRec = null, recChunks = [], recordedMime = 'audio/webm';
+  var levelCtx = null, levelAnalyser = null, levelRaf = null;
+
+  // ── Niveau audio temps réel pour l'anneau pulsant autour de la zone micro ──
+  // Branché sur le même MediaStream que le MediaRecorder via un AnalyserNode.
+  // À chaque frame : calcul du RMS, normalisation grossière (la voix parle
+  // typiquement entre 0.05 et 0.15 RMS, donc x6 pour étaler vers 1) et écriture
+  // dans la variable CSS --mic-level lue par le box-shadow / transform du DOM.
+  function startLevelMeter(stream) {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      levelCtx = new Ctx();
+      // Safari requiert un resume après création si la page n'a pas eu de
+      // user-gesture audio préalable (le clic sur la zone qualifie).
+      if (levelCtx.state === 'suspended') levelCtx.resume().catch(function () {});
+      var source = levelCtx.createMediaStreamSource(stream);
+      levelAnalyser = levelCtx.createAnalyser();
+      levelAnalyser.fftSize = 1024;
+      levelAnalyser.smoothingTimeConstant = 0.6;
+      source.connect(levelAnalyser);
+      // Pas de connexion à destination → pas de retour audio dans les enceintes.
+      var data = new Float32Array(levelAnalyser.fftSize);
+      var zone = $('micZone');
+      function tick() {
+        if (!levelAnalyser) return;
+        levelAnalyser.getFloatTimeDomainData(data);
+        var sum = 0;
+        for (var i = 0; i < data.length; i++) sum += data[i] * data[i];
+        var rms = Math.sqrt(sum / data.length);
+        var level = Math.min(1, rms * 6);
+        if (zone) zone.style.setProperty('--mic-level', level.toFixed(3));
+        levelRaf = requestAnimationFrame(tick);
+      }
+      tick();
+    } catch (e) {
+      // Web Audio indisponible — l'enregistrement marche toujours, juste sans visu
+      console.warn('level meter unavailable', e);
+    }
+  }
+
+  function stopLevelMeter() {
+    if (levelRaf) { cancelAnimationFrame(levelRaf); levelRaf = null; }
+    levelAnalyser = null;
+    if (levelCtx) {
+      try { levelCtx.close(); } catch (e) {}
+      levelCtx = null;
+    }
+    var zone = $('micZone');
+    if (zone) zone.style.setProperty('--mic-level', '0');
+  }
 
   // Détermine un MIME type que le navigateur sait *vraiment* enregistrer.
   // Chrome/Firefox : audio/webm (opus) ; Safari : audio/mp4 (aac). Sans ce
@@ -77,6 +127,7 @@
         recordedMime = mediaRec.mimeType || mime || 'audio/webm';
         mediaRec.ondataavailable = function (e) { if (e.data.size > 0) recChunks.push(e.data); };
         mediaRec.onstop = function () {
+          stopLevelMeter();
           stream.getTracks().forEach(function (t) { t.stop(); });
           recordedBlob = new Blob(recChunks, { type: recordedMime });
           $('micPreview').src = URL.createObjectURL(recordedBlob);
@@ -85,6 +136,7 @@
           $('micLabel').textContent = '🎤 Cliquez pour ré-enregistrer';
         };
         mediaRec.start();
+        startLevelMeter(stream);
         zone.classList.add('recording');
         $('micLabel').textContent = '⏺ Enregistrement… cliquez pour arrêter';
       }).catch(function () {

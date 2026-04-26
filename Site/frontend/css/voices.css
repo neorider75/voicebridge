@@ -103,20 +103,39 @@
 }
 
 .mic-zone {
+  /* --mic-level (0..1) est mis à jour par voices-new.js pendant l'enregistrement
+     via un AnalyserNode Web Audio. Lu ici par box-shadow + transform pour
+     fournir le feedback visuel "j'entends bien votre voix". */
+  --mic-level: 0;
   background: var(--surface2);
   border: 1px dashed var(--border2);
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color 0.2s, background 0.2s;
 }
 .mic-zone:hover { border-color: var(--accent); }
 .mic-zone.recording {
   border-color: var(--danger);
   background: rgba(239,68,68,0.05);
+  /* Anneau qui grossit avec le niveau (0 → 0px, max → ~10px de halo plein
+     + ~32px de halo flou). transition: 40 ms = lecture fluide ~25 fps */
+  box-shadow:
+    0 0 0 calc(var(--mic-level) * 10px) rgba(239, 68, 68, 0.32),
+    0 0 calc(var(--mic-level) * 32px) rgba(239, 68, 68, 0.45);
+  transition: box-shadow 0.04s linear, border-color 0.2s, background 0.2s;
 }
-.mic-zone-icon { font-size: 2rem; margin-bottom: 0.4rem; }
+.mic-zone-icon {
+  font-size: 2rem;
+  margin-bottom: 0.4rem;
+  display: inline-block;
+  transition: transform 0.04s linear;
+}
+.mic-zone.recording .mic-zone-icon {
+  /* Léger zoom de l'emoji micro proportionnel au niveau (max +18%). */
+  transform: scale(calc(1 + var(--mic-level) * 0.18));
+}
 .mic-zone-label { font-size: 0.8rem; color: var(--text2); }
 
 /* Drop zone for upload */
