@@ -20,7 +20,12 @@ APP_DIR="/var/voicebridge/app"
 DATA_DIR="/var/voicebridge/data"
 VENV_DIR="/var/voicebridge/venv"
 SERVICE_USER="voicebridge"
-PYTHON_BIN="python3.11"
+# PYTHON_BIN / PYTHON_PKG / PYTHON_VENV_PKG sont détectés dynamiquement
+# en début de phase 4 (selon la version d'Ubuntu).
+# Ubuntu 22.04 → python3.11 par défaut, 24.04 → python3.12 par défaut.
+PYTHON_BIN=""
+PYTHON_PKG=""
+PYTHON_VENV_PKG=""
 LOG_INSTALL="/var/log/voicebridge-install.log"
 
 # Couleurs ANSI
@@ -239,6 +244,23 @@ EOF
 # Phase 4 — Installation système
 # ---------------------------------------------------------------------------
 
+detect_python() {
+  # Sélectionne la première version Python ≥ 3.11 disponible dans apt
+  # (le code applicatif est compatible 3.11 et 3.12). N'utilise PAS de PPA tiers.
+  for v in 3.12 3.11; do
+    if apt-cache show "python$v" >/dev/null 2>&1; then
+      PYTHON_BIN="python$v"
+      PYTHON_PKG="python$v"
+      PYTHON_VENV_PKG="python$v-venv"
+      ok "Python détecté : $PYTHON_BIN (paquet $PYTHON_PKG)"
+      return 0
+    fi
+  done
+  fail "Aucun python3.12 ni python3.11 disponible dans les dépôts apt."
+  fail "Sur Ubuntu < 22.04 il faudrait ajouter le PPA deadsnakes — non supporté ici."
+  exit 1
+}
+
 phase4_system() {
   banner "Phase 4 / 14 — Paquets système (apt)"
 
@@ -246,9 +268,12 @@ phase4_system() {
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
+  step "Détection de la version Python disponible"
+  detect_python
+
   step "Installation des paquets système"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    python3.11 python3.11-venv python3-pip \
+    "$PYTHON_PKG" "$PYTHON_VENV_PKG" python3-pip \
     build-essential cmake \
     libopenblas-dev \
     ffmpeg \
