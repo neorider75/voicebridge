@@ -25,6 +25,27 @@
 
   function flagFor(language) { return language === 'fr' ? '🇫🇷' : '🇬🇧'; }
 
+  function statusBadge(v) {
+    // status par défaut "ready" pour les voix créées avant l'introduction du
+    // champ. encoding/failed sont des états transitoires côté création.
+    var status = v.status || 'ready';
+    if (status === 'encoding') {
+      return el('span', {
+        class: 'voice-status encoding',
+        title: 'Encodage NeuTTS en cours, ré-essayez dans quelques secondes',
+        style: 'background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid var(--warning);padding:0.15rem 0.55rem;border-radius:12px;font-size:0.7rem;font-weight:600',
+      }, ['⏳ Encodage…']);
+    }
+    if (status === 'failed') {
+      return el('span', {
+        class: 'voice-status failed',
+        title: v.error_message || 'Encodage échoué',
+        style: 'background:rgba(239,68,68,0.12);color:var(--danger);border:1px solid var(--danger);padding:0.15rem 0.55rem;border-radius:12px;font-size:0.7rem;font-weight:600',
+      }, ['❌ Échec']);
+    }
+    return null;
+  }
+
   function render(voices) {
     var list = $('voiceList');
     list.innerHTML = '';
@@ -34,12 +55,33 @@
     }
 
     voices.forEach(function (v) {
+      var status = v.status || 'ready';
+      var ready = status === 'ready';
+
+      var nameNode = el('div', { class: 'voice-name', style: 'display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap' }, [
+        document.createTextNode(v.name),
+      ]);
+      var badge = statusBadge(v);
+      if (badge) nameNode.appendChild(badge);
+
+      var metaText = ready
+        ? 'Ajoutée le ' + fmtDate(v.created_at) + ' · ' + (v.duration_seconds || 0) + 's · ' + (v.backbone || '')
+        : (status === 'encoding'
+            ? 'Pré-encodage NeuTTS en arrière-plan (~30 s à froid). Vous pouvez attendre ou revenir plus tard.'
+            : 'Échec de l\'encodage : ' + (v.error_message || 'raison inconnue') + '. Supprimez et recréez la voix.');
+
       var info = el('div', { class: 'voice-info' }, [
-        el('div', { class: 'voice-name', text: v.name }),
-        el('div', { class: 'voice-meta', text: 'Ajoutée le ' + fmtDate(v.created_at) + ' · ' + (v.duration_seconds || 0) + 's · ' + (v.backbone || '') }),
+        nameNode,
+        el('div', { class: 'voice-meta', text: metaText }),
       ]);
 
-      var btnPlay = el('button', { class: 'icon-btn', title: 'Écouter', 'data-action': 'play' }, ['▶']);
+      var btnPlay = el('button', {
+        class: 'icon-btn' + (ready ? '' : ' disabled'),
+        title: ready ? 'Écouter' : 'Indisponible — voix non prête',
+        'data-action': 'play',
+        'aria-disabled': ready ? 'false' : 'true',
+        style: ready ? '' : 'opacity:0.4;cursor:not-allowed',
+      }, ['▶']);
       var btnEdit = v.protected
         ? el('button', { class: 'icon-btn lock', title: 'Voix protégée' }, ['🔒'])
         : el('button', { class: 'icon-btn', title: 'Modifier', 'data-action': 'edit' }, ['✏️']);
@@ -60,12 +102,33 @@
       var item = el('div', {}, [topRow, player]);
       list.appendChild(item);
 
-      btnPlay.addEventListener('click', function () { togglePlay(v, item); });
+      btnPlay.addEventListener('click', function () {
+        if (!ready) {
+          VB.notify(status === 'encoding' ? 'info' : 'error',
+            status === 'encoding'
+              ? 'Voix en cours d\'encodage — patientez quelques secondes'
+              : 'Encodage échoué pour cette voix');
+          return;
+        }
+        togglePlay(v, item);
+      });
       if (!v.protected) {
         btnDel.addEventListener('click', function () { confirmDelete(v); });
         btnEdit.addEventListener('click', function () { VB.notify('info', 'Édition disponible en livraison ultérieure'); });
       }
     });
+  }
+
+  // Si au moins une voix est en "encoding", on poll toutes les 3 s pour mettre
+  // à jour automatiquement la liste quand le background task finit.
+  var pollTimer = null;
+  function maybeStartPolling(voices) {
+    var hasEncoding = (voices || []).some(function (v) { return v.status === 'encoding'; });
+    if (hasEncoding && !pollTimer) {
+      pollTimer = setInterval(refresh, 3000);
+    } else if (!hasEncoding && pollTimer) {
+      clearInterval(pollTimer); pollTimer = null;
+    }
   }
 
   function togglePlay(voice, container) {
@@ -96,7 +159,10 @@
 
   function refresh() {
     VB.api.get('/api/voices')
-      .then(function (d) { render(d.voices || []); })
+      .then(function (d) {
+        render(d.voices || []);
+        maybeStartPolling(d.voices || []);
+      })
       .catch(function (e) {
         if (e.status === 401) { window.location.href = '/login'; return; }
         VB.notify('error', 'Chargement impossible');

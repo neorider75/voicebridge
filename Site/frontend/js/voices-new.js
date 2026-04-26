@@ -247,15 +247,14 @@
 
   // ── Soumission finale ──
 
-  // Étapes simulées de l'ajout de voix : on ne peut pas avoir une vraie
-  // progression (le POST /api/voices est monolithique) mais on reflète
-  // honnêtement les phases que le backend traverse et on adapte la durée
-  // de l'étape "encode" si elle prend plus longtemps que prévu (cold start
-  // NeuTTS Q4 = jusqu'à 60 s).
+  // Étapes courtes côté client : POST /api/voices ne fait plus que la
+  // validation + conversion ffmpeg (~1-2 s), puis renvoie 201 avec
+  // status="encoding". L'encode_reference NeuTTS tourne en arrière-plan
+  // côté serveur, et la liste /voices affiche un badge "Encodage…" jusqu'à
+  // ce que ce soit prêt. Du coup la barre ici n'a plus à durer 30 s.
   var SUBMIT_STEPS = [
-    { key: 'upload',  label: 'Téléversement…',          target: 20, duration: 600 },
-    { key: 'convert', label: 'Conversion ffmpeg…',      target: 40, duration: 1500 },
-    { key: 'encode',  label: 'Encodage NeuTTS (à froid : ~30 s, à chaud : ~3 s)', target: 92, duration: 30000 },
+    { key: 'upload',  label: 'Téléversement…',     target: 50, duration: 600 },
+    { key: 'convert', label: 'Conversion audio…',  target: 90, duration: 1500 },
   ];
   var submitTimer = null;
 
@@ -342,7 +341,7 @@
         if (!pendingUrlVoiceId) { VB.notify('warning', 'Lancez d\'abord l\'extraction'); return; }
         startSubmitAnimation();
         VB.api.post('/api/voices/' + pendingUrlVoiceId + '/confirm')
-          .then(function () { finishSubmitAnimation(true); done(); })
+          .then(function (v) { finishSubmitAnimation(true); done(v); })
           .catch(function (e) {
             finishSubmitAnimation(false);
             resetSubmitUI();
@@ -393,9 +392,9 @@
           });
         }
         return r.json();
-      }).then(function () {
+      }).then(function (v) {
         finishSubmitAnimation(true);
-        done();
+        done(v);
       }).catch(function (e) {
         finishSubmitAnimation(false);
         resetSubmitUI();
@@ -404,14 +403,29 @@
     });
   }
 
-  function done() {
-    // Carte de validation visible 1.2 s avant la redirection (mieux qu'une
-    // notif éphémère). Le bouton reste disabled donc impossible de re-soumettre
-    // pendant la transition.
+  function done(serverVoice) {
+    // serverVoice (optionnel) = le payload renvoyé par POST /api/voices.
+    // Si status="encoding", on l'indique dans la carte de validation pour
+    // expliquer pourquoi la voix n'est pas encore utilisable dans le Studio.
     var card = $('submitDone');
-    if (card) card.style.display = 'block';
-    VB.notify('success', 'Voix ajoutée');
-    setTimeout(function () { window.location.href = '/voices'; }, 1200);
+    if (card) {
+      if (serverVoice && serverVoice.status === 'encoding') {
+        card.innerHTML =
+          '<div style="font-size:1.6rem;margin-bottom:0.25rem">⏳</div>' +
+          '<div><strong>Voix créée — encodage en arrière-plan</strong></div>' +
+          '<div style="font-size:0.78rem;color:var(--text2);margin-top:0.25rem">' +
+          'Visible dans la liste avec un badge « Encodage… ». Utilisable d\'ici ~30 s.</div>';
+        card.className = 'alert alert-warning';
+      }
+      card.style.display = 'block';
+    }
+    VB.notify(
+      serverVoice && serverVoice.status === 'encoding' ? 'info' : 'success',
+      serverVoice && serverVoice.status === 'encoding'
+        ? 'Voix créée — encodage en cours en arrière-plan'
+        : 'Voix ajoutée'
+    );
+    setTimeout(function () { window.location.href = '/voices'; }, 1500);
   }
 
   document.addEventListener('DOMContentLoaded', function () {

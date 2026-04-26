@@ -133,17 +133,21 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
     ref_text = voices_store.read_ref_text(voice_id)
     if not ref_text:
         # Sans texte de référence, NeuTTS phonémise "" → liste vide → IndexError
-        # dans neutts._to_phones (line 305: phones[0].split()).
-        # Fallback : phrase générique de la langue de la voix. Le résultat
-        # cloné sera moins fidèle qu'avec le vrai texte source mais la
-        # synthèse ne crashera pas. L'utilisateur peut toujours recréer la
-        # voix avec ref_text fourni pour de meilleures performances.
-        FALLBACK = {
-            "fr": "Bonjour, ceci est un texte de référence pour la synthèse vocale.",
-            "en": "Hello, this is a reference text for voice synthesis.",
-        }
-        ref_text = FALLBACK.get(voice["language"], FALLBACK["en"])
-        log.warning("ref_text manquant pour voice_id=%s — fallback générique", voice_id)
+        # OU pire : il prépend un texte arbitraire au prompt et le génère en
+        # plus du texte demandé (l'utilisateur entend "blabla [son texte]"
+        # avec une voix qui ne ressemble à rien).
+        # On refuse plutôt que de générer du contenu trompeur. Les voix créées
+        # avant l'introduction du champ ref_text doivent être supprimées et
+        # recréées (le frontend envoie désormais REF_TEXT[lang] auto pour les
+        # voix recordées, et propose un textarea pour les uploads).
+        raise HTTPException(status.HTTP_409_CONFLICT, detail={
+            "error": "ref_text_missing",
+            "message": (
+                "Cette voix a été créée sans texte de référence — la synthèse "
+                "produirait un audio incorrect. Supprimez la voix et recréez-la "
+                "(en mode Enregistrement, le texte est automatiquement sauvé)."
+            ),
+        })
 
     try:
         wav_data = tts_model.infer(
