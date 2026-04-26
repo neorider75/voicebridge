@@ -64,18 +64,21 @@ def model_key_for(language: str, quality: str) -> str:
 
 
 def _make_loader(model_key: str):
-    backbone_subdir, _lang, _qual = _BACKBONE_PATHS[model_key]
+    backbone_subdir, lang, _qual = _BACKBONE_PATHS[model_key]
 
     def _load() -> Any:
         Cls = _NeuTTSClass()
         backbone = config.MODELS_DIR / backbone_subdir
         codec = config.MODELS_DIR / "neucodec"
         device = os.environ.get("VB_DEVICE", "cpu")
+        # Le paramètre ``language`` (code eSpeak) est requis quand on passe un
+        # chemin local (NeuTTS ne peut pas inférer depuis "neuphonic/...").
         return Cls(
             backbone_repo=str(backbone),
             backbone_device=device,
             codec_repo=str(codec),
             codec_device=device,
+            language=lang,
         )
 
     return _load
