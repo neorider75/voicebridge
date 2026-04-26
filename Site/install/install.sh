@@ -373,7 +373,7 @@ phase4_system() {
     espeak-ng \
     nginx certbot python3-certbot-nginx \
     ufw fail2ban \
-    git curl wget unzip \
+    git curl wget unzip zip \
     libmagic1
   ok "Paquets système installés"
 

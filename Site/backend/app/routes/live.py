@@ -13,11 +13,23 @@ Pipeline (côté serveur) :
     ↓ Perth watermark (auto)
     ↓ WS                          → audio_chunk JSON (WAV b64) au client
 
-Différence avec la version V1 initiale :
+Refacto AudioWorklet vs version V1 initiale :
 - AVANT : MediaRecorder webm 1 s + ffmpeg subprocess par chunk côté serveur
-  → latence ~1,5-2 s
 - MAINTENANT : AudioWorklet PCM raw 100 ms + np.frombuffer en RAM
-  → latence cible 0,6-1,4 s (spec atteinte)
+- Gain net : suppression du timeslice 1 s + suppression du fork ffmpeg
+  par chunk (économie ~100 ms d'I/O et ~1 fork/s par client connecté)
+
+Latence end-to-end (ordre de grandeur, à mesurer en prod) :
+- silence flush 400 ms (attendre la fin de phrase)
+- transport client→serveur : <50 ms LAN, <200 ms internet
+- Kyutai STT : 200-500 ms selon longueur
+- NeuTTS Q4 infer SYNC : ~1× temps réel pour la durée parlée
+  → pour 2 s de phrase → ~2 s à générer
+- transport retour + décodage WAV client : 50-100 ms
+
+Total typique pour une phrase de 2 s : ~3-4 s.
+La cible spec 0,6-1,4 s nécessiterait NeuTTS streaming (méthode
+``infer_stream`` non implémentée — V1.1).
 
 Auth : cookie session OU Bearer token au handshake.
 """

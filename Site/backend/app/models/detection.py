@@ -80,33 +80,53 @@ def detect_perth_watermark(wav_path) -> dict:
 
         {"checked": True, "detected": bool, "tampered": bool}
 
-    Si la lib Perth n'est pas disponible, retourne ``{"checked": False, ...}``.
-    """
-    try:
-        # Le package Perth (Resemble AI) expose des extracteurs ; l'API peut
-        # varier selon la version installée. On essaie plusieurs imports.
-        try:
-            from perth import PerthImplicitWatermarker  # type: ignore
-            extractor = PerthImplicitWatermarker()
-        except ImportError:
-            from resemble_perth import PerthImplicitWatermarker  # type: ignore
-            extractor = PerthImplicitWatermarker()
+    API officielle (cf. resemble-ai/Perth README + spec
+    Spec/voicebridge_specs/10-models-and-tools.md) :
 
-        import soundfile as sf  # type: ignore
-        audio, sr = sf.read(str(wav_path), dtype="float32", always_2d=False)
-        wm = extractor.get_watermark(audio, sample_rate=sr)
-        # ``wm`` est typiquement un tableau / score. Heuristique : si la
-        # corrélation excède un seuil → watermark présent.
+        from perth.perth_net.perth_net_implicit.perth_watermarker import (
+            PerthImplicitWatermarker,
+        )
+        watermarker = PerthImplicitWatermarker(device="cpu")
+        detected = watermarker.detect(audio_array, sample_rate=24000)  # → bool
+
+    Selon la version Perth installée, l'import peut être à différents niveaux
+    (perth.perth_net, resemble_perth.…). On tente les variantes connues.
+    """
+    PerthCls = None
+    for import_path in (
+        "perth.perth_net.perth_net_implicit.perth_watermarker",
+        "perth",
+        "resemble_perth",
+    ):
         try:
-            import numpy as np  # type: ignore
-            score = float(np.abs(np.asarray(wm)).mean())
-        except Exception:  # noqa: BLE001
-            score = 0.0
-        detected = score > 0.001  # seuil empirique très bas
-        return {"checked": True, "detected": detected, "tampered": False, "score": round(score, 4)}
-    except ImportError:
+            module = __import__(import_path, fromlist=["PerthImplicitWatermarker"])
+            PerthCls = getattr(module, "PerthImplicitWatermarker", None)
+            if PerthCls is not None:
+                break
+        except ImportError:
+            continue
+
+    if PerthCls is None:
         return {"checked": False, "detected": False, "tampered": False,
                 "error": "perth_unavailable"}
+
+    try:
+        import soundfile as sf  # type: ignore
+        audio, sr = sf.read(str(wav_path), dtype="float32", always_2d=False)
+        watermarker = PerthCls(device="cpu")
+        # API selon version : preferred .detect() → bool ; fallback heuristique
+        # via .get_watermark() qui retourne un tableau de scores.
+        if hasattr(watermarker, "detect"):
+            detected = bool(watermarker.detect(audio, sample_rate=int(sr)))
+            return {"checked": True, "detected": detected, "tampered": False}
+        if hasattr(watermarker, "get_watermark"):
+            import numpy as np  # type: ignore
+            wm = watermarker.get_watermark(audio, sample_rate=int(sr))
+            score = float(np.abs(np.asarray(wm)).mean())
+            return {"checked": True, "detected": score > 0.001,
+                    "tampered": False, "score": round(score, 4)}
+        return {"checked": False, "detected": False, "tampered": False,
+                "error": "perth_api_unknown"}
     except Exception as exc:  # noqa: BLE001
         log.exception("Perth watermark check failed")
         return {"checked": False, "detected": False, "tampered": False, "error": str(exc)}
