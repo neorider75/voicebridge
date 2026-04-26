@@ -77,12 +77,27 @@ def _make_loader(model_key: str):
     def _load() -> Any:
         Cls = _NeuTTSClass()
         device = os.environ.get("VB_DEVICE", "cpu")
-        return Cls(
+        instance = Cls(
             backbone_repo=backbone_repo,
             backbone_device=device,
             codec_repo=CODEC_REPO,
             codec_device=device,
         )
+        # NeuTTS plafonne la génération à `self.max_context` tokens audio
+        # (~50 tokens/seconde à 24 kHz). Le défaut interne (~512-1024) coupe
+        # la sortie à ~10-20 s — frustrant si l'utilisateur tape un texte
+        # long. On le pousse à 4096 (= ~80 s d'audio par génération).
+        # Override possible via env VB_NEUTTS_MAX_CONTEXT.
+        try:
+            new_max = int(os.environ.get("VB_NEUTTS_MAX_CONTEXT", "4096"))
+            if hasattr(instance, "max_context"):
+                old = getattr(instance, "max_context")
+                if new_max > old:
+                    instance.max_context = new_max
+                    log.info("NeuTTS max_context : %d → %d (%s)", old, new_max, model_key)
+        except Exception:  # noqa: BLE001
+            log.warning("impossible de bumper max_context sur %s", model_key)
+        return instance
 
     return _load
 
