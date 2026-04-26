@@ -54,6 +54,9 @@ huggingface-hub>=0.30,<1.0
 accelerate>=0.30
 torch>=2.2
 torchaudio>=2.2
+# torchcodec : requis par coqui-tts depuis PyTorch 2.9 pour l'audio IO
+# (sinon ImportError au load TTS.api). Recommandé même sans coqui-tts.
+torchcodec>=0.3
 onnxruntime>=1.17
 # VAD
 silero-vad>=4.0

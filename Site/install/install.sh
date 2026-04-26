@@ -449,10 +449,16 @@ phase5_app_code() {
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --no-deps coqui-tts==0.27.5
     # Deps de coqui-tts qu'on doit installer manuellement (sans transformers
     # qui resterait sur 4.56). gruut[de,es,fr] = phonemizers multilingues
-    # utilisés par XTTS.
+    # utilisés par XTTS. torchcodec est requis depuis PyTorch 2.9 pour
+    # l'audio IO de TTS.api (sinon ImportError au runtime).
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install \
       coqpit-config coqui-tts-trainer pysbd inflect num2words anyascii \
-      monotonic-alignment-search "gruut[de,es,fr]" matplotlib
+      monotonic-alignment-search "gruut[de,es,fr]" matplotlib torchcodec
+
+    # Re-pin transformers/numpy si une dep secondaire les a bumpés.
+    step "Re-pin transformers/numpy/fsspec après cascade pip"
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall \
+      "transformers~=4.56.1" "numpy~=2.2.6" "fsspec==2026.2.0" "huggingface-hub<1.0"
 
     # NB : la recompilation llama-cpp-python avec OpenBLAS échoue parfois
     # selon la combinaison Ubuntu/CMake/llama.cpp (ggml-blas CMakeLists).
