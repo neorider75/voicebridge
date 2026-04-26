@@ -516,17 +516,23 @@ try:
     from neutts import NeuTTS  # type: ignore
 except ImportError:
     from neuttsair.neutts import NeuTTSAir as NeuTTS  # type: ignore
+# Le paramètre ``language`` (code eSpeak) est requis quand on passe un chemin
+# local au lieu d'un repo HuggingFace ID Neuphonic.
 mapping = {
-    "juliette": DATA / "models/neutts-nano-fr-q4",
-    "dave":     DATA / "models/neutts-nano-en-q4",
+    "juliette": (DATA / "models/neutts-nano-fr-q4", "fr"),
+    "dave":     (DATA / "models/neutts-nano-en-q4", "en"),
 }
-for voice, backbone in mapping.items():
+for voice, (backbone, lang) in mapping.items():
     wav = DATA / f"voices/{voice}.wav"
     out = DATA / f"voices/encoded/{voice}.pt"
     if not wav.exists():
         print(f"[skip] {wav} absent")
         continue
-    tts = NeuTTS(backbone_repo=str(backbone), codec_repo=str(DATA / "models/neucodec"))
+    tts = NeuTTS(
+        backbone_repo=str(backbone),
+        codec_repo=str(DATA / "models/neucodec"),
+        language=lang,
+    )
     codes = tts.encode_reference(str(wav))
     out.parent.mkdir(parents=True, exist_ok=True)
     torch.save(codes, out)
