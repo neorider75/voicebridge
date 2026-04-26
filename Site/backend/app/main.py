@@ -64,6 +64,22 @@ app = FastAPI(title="VoiceBridge", version="1.0.0", docs_url=None, redoc_url=Non
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ── Threading PyTorch ──
+# transformers (Kyutai STT) utilise torch.matmul → torch.set_num_threads, pas
+# OMP_NUM_THREADS. Sans ce set explicite, PyTorch peut tomber sur 1 thread
+# selon le build : Kyutai 1B passe alors de ~1s à ~11s par inférence.
+# os.cpu_count() rend le total des cores visibles ; sur le VPS = 4.
+try:
+    import torch  # type: ignore
+    n_threads = max(1, int(os.environ.get("VB_TORCH_THREADS", os.cpu_count() or 4)))
+    torch.set_num_threads(n_threads)
+    # 1 thread interop = pas de parallélisme entre opérateurs (mieux pour
+    # workloads séquentiels comme la transcription audio courte).
+    torch.set_num_interop_threads(1)
+    log.info("torch threading : intra=%d interop=1", n_threads)
+except Exception:  # noqa: BLE001
+    log.warning("torch.set_num_threads non applicable (torch absent ?)")
+
 # Enregistre les factory functions des modèles ML auprès du manager.
 # (lazy : rien n'est chargé tant qu'aucune route ne les demande)
 try:
