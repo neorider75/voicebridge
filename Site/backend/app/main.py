@@ -97,12 +97,14 @@ try:
 
     _scheduler = AsyncIOScheduler(timezone="UTC")
     _scheduler.add_job(_retention.cleanup_expired, "interval", minutes=10, id="retention_sweep")
+    _scheduler.add_job(_retention.cleanup_tmp, "interval", minutes=15, id="tmp_sweep",
+                       kwargs={"max_age_minutes": 60})
     _scheduler.add_job(_mgr.manager.sweep_idle, "interval", minutes=5, id="models_idle_sweep")
 
     @app.on_event("startup")
     async def _start_scheduler() -> None:
         _scheduler.start()
-        log.info("scheduler started (retention 10min + models idle 5min)")
+        log.info("scheduler started (retention 10min + tmp 15min + models idle 5min)")
 
     @app.on_event("shutdown")
     async def _stop_scheduler() -> None:
