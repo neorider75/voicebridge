@@ -30,6 +30,9 @@ neucodec>=0.0.4
 # Kyutai STT + détection deepfake (modèles transformers)
 # Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53
 transformers>=4.53
+# accelerate est exigé par transformers dès qu'on passe device_map=... à
+# from_pretrained() (cf. KyutaiSpeechToTextForConditionalGeneration).
+accelerate>=0.30
 torch>=2.2
 torchaudio>=2.2
 onnxruntime>=1.17
