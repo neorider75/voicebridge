@@ -37,15 +37,25 @@ def _load_kyutai():
 
     Charge depuis le cache HF (HF_HOME positionné par voicebridge.service).
     """
+    import torch  # type: ignore
     from transformers import (  # type: ignore
         KyutaiSpeechToTextForConditionalGeneration,
         KyutaiSpeechToTextProcessor,
     )
     device = os.environ.get("VB_DEVICE", "cpu")
+    # Sur CPU, on force float32 plutôt que "auto" (qui peut tomber sur bfloat16).
+    # bf16 sans AVX-512_BF16 hardware est dramatiquement plus lent que fp32 sur
+    # CPU classique → STT à 13s au lieu de 1s. Sur GPU/CUDA, "auto" reste OK
+    # (bf16 native).
+    if device == "cpu":
+        dtype = torch.float32
+    else:
+        dtype = "auto"
     processor = KyutaiSpeechToTextProcessor.from_pretrained(KYUTAI_REPO)
     model = KyutaiSpeechToTextForConditionalGeneration.from_pretrained(
-        KYUTAI_REPO, device_map=device, torch_dtype="auto",
+        KYUTAI_REPO, device_map=device, torch_dtype=dtype,
     )
+    log.info("Kyutai loaded device=%s dtype=%s", device, dtype)
     return {"processor": processor, "model": model, "device": device}
 
 
