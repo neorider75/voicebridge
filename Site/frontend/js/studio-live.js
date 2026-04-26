@@ -25,6 +25,13 @@
   var playbackCtx = null;
   var nextPlayAt = 0;
   var TTS_RATE = 24000;
+  // Head buffer en début de chaque utterance : on attend N ms avant de
+  // commencer à jouer pour absorber la jitter (variabilité NeuTTS Q4 +
+  // transport WebSocket + base64). Trade-off : plus = moins de gaps, moins
+  // de latence perçue. 150 ms est un compromis. Si on entend encore des
+  // blancs : monter à 200-250. Si la latence est trop forte : descendre
+  // à 100 (mais risque de gaps).
+  var BUFFER_HEAD_MS = 150;
   // Level meter (anneau pulsant rouge autour de liveMicZone)
   var levelAnalyser = null;
   var levelRaf = null;
@@ -99,7 +106,17 @@
       var src = ctx.createBufferSource();
       src.buffer = buffer;
       src.connect(ctx.destination);
-      var startAt = Math.max(ctx.currentTime + 0.005, nextPlayAt);
+
+      var now = ctx.currentTime;
+      var startAt;
+      if (nextPlayAt <= now + 0.05) {
+        // Underrun ou première chunk d'une utterance — on applique le head
+        // buffer pour absorber la jitter avant d'enchaîner les chunks suivants.
+        startAt = now + BUFFER_HEAD_MS / 1000;
+      } else {
+        // Déjà en train de jouer — on enchaîne sans gap.
+        startAt = nextPlayAt;
+      }
       src.start(startAt);
       nextPlayAt = startAt + buffer.duration;
     } catch (e) {
@@ -108,12 +125,9 @@
   }
 
   function onAudioEnd() {
-    // La phrase est finie côté serveur. Au prochain chunk d'une nouvelle
-    // phrase, on resync sur currentTime (sinon le prochain start serait dans
-    // le passé si l'utilisateur a parlé bien plus tard).
-    setTimeout(function () {
-      if (playbackCtx) nextPlayAt = playbackCtx.currentTime;
-    }, 50);
+    // Pas de reset explicite de nextPlayAt : si l'utilisateur reparle, le
+    // prochain chunk verra "nextPlayAt < now + 50ms" → applique le head
+    // buffer naturellement (cf. enqueuePcmChunk). Plus simple et sans race.
   }
 
   // ── WebSocket ──
