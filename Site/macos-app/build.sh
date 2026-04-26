@@ -48,7 +48,10 @@ pyinstaller \
   --hidden-import rumps \
   --hidden-import websockets \
   --hidden-import keyring \
-  --hidden-import pyaudio \
+  --hidden-import keyring.backends.macOS \
+  --hidden-import sounddevice \
+  --hidden-import numpy \
+  --collect-data sounddevice \
   voicebridge_app/main.py
 
 # Patch Info.plist : NSMicrophoneUsageDescription + LSUIElement

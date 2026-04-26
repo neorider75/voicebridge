@@ -1,7 +1,8 @@
 # VoiceBridge macOS app — Python 3.11+ (PyInstaller bundle)
 
 rumps>=0.4
-pyaudio>=0.2.14
+sounddevice>=0.5
+numpy>=1.24
 websockets>=12
 keyring>=24
 PyInstaller>=6.0

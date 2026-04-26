@@ -13,7 +13,6 @@ injecte la voix clonée dans BlackHole pour Teams/Zoom/Meet.
 ## Build local (sur Mac)
 
 ```bash
-brew install portaudio
 cd Site/macos-app
 python3 -m venv .venv
 source .venv/bin/activate
@@ -21,6 +20,11 @@ pip install -r requirements.txt
 ./build.sh --zip
 # → dist/VoiceBridge.app + dist/VoiceBridge.app.zip
 ```
+
+ℹ️  La lib audio utilisée est ``sounddevice`` (et non ``pyaudio``) : sa
+wheel pip embarque PortAudio binaire, donc pas besoin de
+``brew install portaudio`` ni de toolchain C. Le build fonctionne sur un
+Mac neuf sans Homebrew.
 
 ## Déploiement sur le VPS
 

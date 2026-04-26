@@ -1,4 +1,8 @@
-"""Capture micro + injection BlackHole via PyAudio.
+"""Capture micro + injection BlackHole via ``sounddevice``.
+
+Note : on utilise ``sounddevice`` (et pas ``pyaudio``) parce que sa wheel pip
+embarque PortAudio binaire — pas besoin de ``brew install portaudio`` côté
+build.
 
 Mode bypass (pause) : le micro réel est routé directement vers BlackHole
 (latence ~10 ms). Mode normal : capture envoyée au VPS, audio cloné reçu
@@ -8,49 +12,47 @@ from __future__ import annotations
 
 import logging
 import threading
+from queue import Empty, Queue
 
 try:
-    import pyaudio  # type: ignore
-    PYAUDIO_OK = True
+    import numpy as np  # type: ignore
+    import sounddevice as sd  # type: ignore
+    SD_OK = True
 except ImportError:
-    pyaudio = None  # type: ignore
-    PYAUDIO_OK = False
+    np = None  # type: ignore
+    sd = None  # type: ignore
+    SD_OK = False
 
 log = logging.getLogger("voicebridge.audio")
 
-CAPTURE_RATE = 16000  # Spec V1 — Live envoie en 16 kHz mono
+CAPTURE_RATE = 16000  # 16 kHz mono — Live spec
 CAPTURE_CHANNELS = 1
-CAPTURE_CHUNK = 1600  # 100 ms à 16 kHz
+CAPTURE_DTYPE = "int16"
+CAPTURE_BLOCKSIZE = 1600  # 100 ms à 16 kHz
+
+OUTPUT_RATE = 24000  # NeuTTS → 24 kHz
+OUTPUT_CHANNELS = 1
+OUTPUT_DTYPE = "int16"
 
 
 def list_input_devices() -> list[dict]:
-    if not PYAUDIO_OK:
+    if not SD_OK:
         return []
-    pa = pyaudio.PyAudio()
-    try:
-        devs = []
-        for i in range(pa.get_device_count()):
-            info = pa.get_device_info_by_index(i)
-            if info.get("maxInputChannels", 0) > 0:
-                devs.append({"index": i, "name": info["name"]})
-        return devs
-    finally:
-        pa.terminate()
+    return [
+        {"index": i, "name": d["name"]}
+        for i, d in enumerate(sd.query_devices())
+        if d.get("max_input_channels", 0) > 0
+    ]
 
 
 def list_output_devices() -> list[dict]:
-    if not PYAUDIO_OK:
+    if not SD_OK:
         return []
-    pa = pyaudio.PyAudio()
-    try:
-        devs = []
-        for i in range(pa.get_device_count()):
-            info = pa.get_device_info_by_index(i)
-            if info.get("maxOutputChannels", 0) > 0:
-                devs.append({"index": i, "name": info["name"]})
-        return devs
-    finally:
-        pa.terminate()
+    return [
+        {"index": i, "name": d["name"]}
+        for i, d in enumerate(sd.query_devices())
+        if d.get("max_output_channels", 0) > 0
+    ]
 
 
 def find_blackhole_index() -> int | None:
@@ -61,74 +63,68 @@ def find_blackhole_index() -> int | None:
 
 
 class AudioPipeline:
-    """Capture continu (toujours actif), envoi/réception conditionnel selon
-    pause/online. Thread-safe.
+    """Pipeline duplex : capture en continu + sortie vers BlackHole.
+
+    Le callback ``on_chunk_captured(bytes)`` reçoit le PCM 16-bit 16 kHz mono
+    en chunks de ~100 ms. Le mode pause passe en bypass (micro réel → BlackHole
+    directement, sans aller-retour serveur).
     """
 
     def __init__(self, on_chunk_captured) -> None:
-        self.on_chunk_captured = on_chunk_captured  # callback(bytes)
-        self._pa = None
+        self.on_chunk_captured = on_chunk_captured
         self._in_stream = None
         self._out_stream = None
-        self._thread = None
         self._stop = threading.Event()
         self._paused = threading.Event()
+        self._out_queue: Queue[bytes] = Queue()
+        self._writer_thread: threading.Thread | None = None
         self.input_device = None
         self.output_device = None
 
+    # ── Public ───────────────────────────────────────────────────────
+
     def start(self, input_idx: int | None, output_idx: int | None) -> None:
-        if not PYAUDIO_OK:
-            log.warning("pyaudio non installé — pipeline désactivé")
+        if not SD_OK:
+            log.warning("sounddevice non installé — pipeline désactivé")
             return
         self.input_device = input_idx
         self.output_device = output_idx
-        self._pa = pyaudio.PyAudio()
-        self._in_stream = self._pa.open(
-            format=pyaudio.paInt16,
-            channels=CAPTURE_CHANNELS,
-            rate=CAPTURE_RATE,
-            input=True,
-            input_device_index=input_idx,
-            frames_per_buffer=CAPTURE_CHUNK,
-        )
-        if output_idx is not None:
-            self._out_stream = self._pa.open(
-                format=pyaudio.paInt16,
-                channels=CAPTURE_CHANNELS,
-                rate=24000,  # NeuTTS sortie
-                output=True,
-                output_device_index=output_idx,
-            )
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
 
-    def _loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                data = self._in_stream.read(CAPTURE_CHUNK, exception_on_overflow=False)
-            except Exception:  # noqa: BLE001
-                continue
+        # Sortie : RawOutputStream (PCM 16-bit) — on écrit via stream.write()
+        # depuis un thread dédié pour éviter de bloquer le callback d'entrée.
+        self._out_stream = sd.RawOutputStream(
+            samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype=OUTPUT_DTYPE,
+            device=output_idx, blocksize=0,
+        )
+        self._out_stream.start()
+        self._stop.clear()
+        self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
+        self._writer_thread.start()
+
+        def _in_callback(indata, frames, time_info, status):  # noqa: ARG001
+            # ``indata`` est un cffi buffer (CData) en mode raw → bytes()
+            data_bytes = bytes(indata)
             if self._paused.is_set():
-                # Bypass : pousser le micro réel directement dans BlackHole
-                if self._out_stream is not None:
-                    try:
-                        self._out_stream.write(data)
-                    except Exception:  # noqa: BLE001
-                        pass
-                continue
-            try:
-                self.on_chunk_captured(data)
-            except Exception:  # noqa: BLE001
-                log.exception("on_chunk_captured failed")
+                # Bypass : envoie le micro réel direct dans BlackHole.
+                # Resample 16k → 24k brutalement (zero-stuff x1.5) — peu propre
+                # mais latence minimale. À améliorer post-POC.
+                self._out_queue.put(self._upsample_16k_to_24k(data_bytes))
+            else:
+                try:
+                    self.on_chunk_captured(data_bytes)
+                except Exception:  # noqa: BLE001
+                    log.exception("on_chunk_captured failed")
+
+        self._in_stream = sd.RawInputStream(
+            samplerate=CAPTURE_RATE, channels=CAPTURE_CHANNELS, dtype=CAPTURE_DTYPE,
+            device=input_idx, blocksize=CAPTURE_BLOCKSIZE, callback=_in_callback,
+        )
+        self._in_stream.start()
 
     def play_response(self, audio_bytes: bytes) -> None:
-        """À appeler depuis le ws_client quand un audio_chunk arrive du serveur."""
-        if self._out_stream is not None:
-            try:
-                self._out_stream.write(audio_bytes)
-            except Exception:  # noqa: BLE001
-                log.exception("output write failed")
+        """Le ws_client appelle ça quand un audio_chunk arrive du serveur."""
+        if audio_bytes:
+            self._out_queue.put(audio_bytes)
 
     def pause(self, value: bool) -> None:
         if value:
@@ -141,17 +137,43 @@ class AudioPipeline:
 
     def stop(self) -> None:
         self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=2)
-        if self._in_stream:
+        for s in (self._in_stream, self._out_stream):
+            if s is not None:
+                try:
+                    s.stop(); s.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        if self._writer_thread:
+            self._writer_thread.join(timeout=2)
+
+    # ── Internal ────────────────────────────────────────────────────
+
+    def _writer_loop(self) -> None:
+        while not self._stop.is_set():
             try:
-                self._in_stream.stop_stream(); self._in_stream.close()
-            except Exception:  # noqa: BLE001
-                pass
-        if self._out_stream:
+                chunk = self._out_queue.get(timeout=0.2)
+            except Empty:
+                continue
+            if self._out_stream is None:
+                continue
             try:
-                self._out_stream.stop_stream(); self._out_stream.close()
+                self._out_stream.write(chunk)
             except Exception:  # noqa: BLE001
-                pass
-        if self._pa:
-            self._pa.terminate()
+                log.exception("output write failed")
+
+    @staticmethod
+    def _upsample_16k_to_24k(pcm_int16_bytes: bytes) -> bytes:
+        """Upsample brut 16 kHz → 24 kHz par interpolation linéaire (mono).
+
+        Utilisé en mode bypass uniquement (latence prioritaire sur qualité).
+        """
+        if np is None:
+            return pcm_int16_bytes
+        x = np.frombuffer(pcm_int16_bytes, dtype=np.int16)
+        if len(x) == 0:
+            return b""
+        n_new = int(len(x) * 24000 / 16000)
+        idx_old = np.linspace(0, 1, len(x), endpoint=False)
+        idx_new = np.linspace(0, 1, n_new, endpoint=False)
+        y = np.interp(idx_new, idx_old, x.astype(np.float32))
+        return y.astype(np.int16).tobytes()
