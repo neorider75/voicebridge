@@ -20,6 +20,10 @@ APP_DIR="/var/voicebridge/app"
 DATA_DIR="/var/voicebridge/data"
 VENV_DIR="/var/voicebridge/venv"
 SERVICE_USER="voicebridge"
+# HF_HOME : cache HuggingFace partagé installation/runtime. Permet de
+# référencer les modèles par repo ID (ex: neuphonic/neutts-nano-french-q4-gguf)
+# tout en gardant le contrôle de l'emplacement disque.
+HF_CACHE_DIR="$DATA_DIR/models/hf-cache"
 # PYTHON_BIN / PYTHON_PKG / PYTHON_VENV_PKG sont détectés dynamiquement
 # en début de phase 4 (selon la version d'Ubuntu).
 # Ubuntu 22.04 → python3.11 par défaut, 24.04 → python3.12 par défaut.
@@ -380,6 +384,7 @@ phase4_system() {
 
   step "Création de l'arborescence /var/voicebridge"
   mkdir -p "$DATA_DIR"/{voices,voices/encoded,audio,models,install,logs,tmp}
+  mkdir -p "$HF_CACHE_DIR"
   chown -R "$SERVICE_USER:$SERVICE_USER" /var/voicebridge
   ok "Arborescence créée"
 }
@@ -430,18 +435,19 @@ phase5_app_code() {
 # ---------------------------------------------------------------------------
 
 hf_download() {
+  # Télécharge un repo HF dans le cache standard (HF_HOME) — pas via
+  # --local-dir. Permet aux libs (neutts, transformers) de résoudre le
+  # repo par ID au lieu de devoir leur passer un chemin filesystem.
   local repo="$1"
-  local dest="$2"
-  step "↓ $repo → $dest"
-  # ``hf download`` est le nouveau nom (huggingface-cli est déprécié depuis
-  # huggingface-hub >= 0.34). Fallback sur l'ancien nom si la nouvelle CLI
-  # n'est pas disponible (versions plus anciennes).
+  step "↓ $repo (cache : $HF_CACHE_DIR)"
   if [[ -x "$VENV_DIR/bin/hf" ]]; then
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/hf" download "$repo" \
-      --local-dir "$dest" --quiet
+    sudo -u "$SERVICE_USER" \
+      env "HF_HOME=$HF_CACHE_DIR" "HUGGINGFACE_HUB_CACHE=$HF_CACHE_DIR/hub" \
+      "$VENV_DIR/bin/hf" download "$repo" --quiet
   else
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/huggingface-cli" download "$repo" \
-      --local-dir "$dest" --quiet
+    sudo -u "$SERVICE_USER" \
+      env "HF_HOME=$HF_CACHE_DIR" "HUGGINGFACE_HUB_CACHE=$HF_CACHE_DIR/hub" \
+      "$VENV_DIR/bin/huggingface-cli" download "$repo" --quiet
   fi
 }
 
@@ -455,13 +461,15 @@ phase6_models() {
 
   sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --quiet huggingface-hub
 
-  hf_download neuphonic/neutts-nano-french-q4-gguf "$DATA_DIR/models/neutts-nano-fr-q4"
-  hf_download neuphonic/neutts-nano-q4-gguf        "$DATA_DIR/models/neutts-nano-en-q4"
-  hf_download neuphonic/neutts-nano-french-q8-gguf "$DATA_DIR/models/neutts-nano-fr-q8"
-  hf_download neuphonic/neutts-nano-q8-gguf        "$DATA_DIR/models/neutts-nano-en-q8"
-  hf_download neuphonic/neucodec                    "$DATA_DIR/models/neucodec"
-  hf_download kyutai/stt-1b-en_fr-trfs              "$DATA_DIR/models/kyutai-1b"
-  hf_download MelodyMachine/Deepfake-audio-detection-V2 "$DATA_DIR/models/deepfake-detection-v2"
+  # Tout télécharger dans le cache HF standard ($HF_CACHE_DIR/hub).
+  # Les libs Python résolvent ensuite par repo ID, sans connaître le chemin disque.
+  hf_download neuphonic/neutts-nano-french-q4-gguf
+  hf_download neuphonic/neutts-nano-q4-gguf
+  hf_download neuphonic/neutts-nano-french-q8-gguf
+  hf_download neuphonic/neutts-nano-q8-gguf
+  hf_download neuphonic/neucodec
+  hf_download kyutai/stt-1b-en_fr-trfs
+  hf_download MelodyMachine/Deepfake-audio-detection-V2
 
   step "Pré-chargement Silero VAD via torch.hub"
   sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c \
@@ -504,36 +512,36 @@ phase7_default_voices() {
   done
 
   step "Pré-encodage des ref_codes (.pt) — peut prendre 1-2 min"
-  # On passe VB_DATA_DIR explicitement via env(1) car sudo -u ne propage pas
-  # l'environnement par défaut. Le heredoc reste 'PY' (quoté) pour éviter
-  # l'expansion bash des $ Python.
-  sudo -u "$SERVICE_USER" env "VB_DATA_DIR=$DATA_DIR" "$VENV_DIR/bin/python" - <<'PY'
+  # HF_HOME est exporté pour que NeuTTS résolve les repo IDs depuis le cache
+  # local (sinon il tenterait de re-télécharger).
+  sudo -u "$SERVICE_USER" \
+    env "VB_DATA_DIR=$DATA_DIR" "HF_HOME=$HF_CACHE_DIR" \
+        "HUGGINGFACE_HUB_CACHE=$HF_CACHE_DIR/hub" \
+    "$VENV_DIR/bin/python" - <<'PY'
 import os
 import torch
 from pathlib import Path
 DATA = Path(os.environ["VB_DATA_DIR"])
-# Le package PyPI s'appelle "neutts" — neuttsair en fallback pour anciennes versions.
 try:
     from neutts import NeuTTS  # type: ignore
 except ImportError:
     from neuttsair.neutts import NeuTTSAir as NeuTTS  # type: ignore
-# Le paramètre ``language`` (code eSpeak ISO 639-3 + variante régionale) est
-# requis quand on passe un chemin local au lieu d'un repo HF ID Neuphonic.
-# eSpeak refuse "fr" tout court → utiliser "fr-fr", "en-us", etc.
+# On passe les repo IDs HuggingFace : NeuTTS reconnaît "neuphonic/..." comme
+# officiel, infère le format GGUF + la langue, et utilise le cache HF local
+# (HF_HOME ci-dessus) sans tenter un re-download.
 mapping = {
-    "juliette": (DATA / "models/neutts-nano-fr-q4", "fr-fr"),
-    "dave":     (DATA / "models/neutts-nano-en-q4", "en-us"),
+    "juliette": "neuphonic/neutts-nano-french-q4-gguf",
+    "dave":     "neuphonic/neutts-nano-q4-gguf",
 }
-for voice, (backbone, lang) in mapping.items():
+for voice, backbone_repo in mapping.items():
     wav = DATA / f"voices/{voice}.wav"
     out = DATA / f"voices/encoded/{voice}.pt"
     if not wav.exists():
         print(f"[skip] {wav} absent")
         continue
     tts = NeuTTS(
-        backbone_repo=str(backbone),
-        codec_repo=str(DATA / "models/neucodec"),
-        language=lang,
+        backbone_repo=backbone_repo,
+        codec_repo="neuphonic/neucodec",
     )
     codes = tts.encode_reference(str(wav))
     out.parent.mkdir(parents=True, exist_ok=True)

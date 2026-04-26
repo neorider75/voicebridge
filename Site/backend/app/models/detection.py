@@ -17,15 +17,22 @@ log = logging.getLogger("voicebridge.detection")
 DETECTION_SAMPLE_RATE = 16000
 
 
+DEEPFAKE_REPO = "MelodyMachine/Deepfake-audio-detection-V2"
+
+
 def _load_deepfake_v2():
-    """Factory invoquée par ``ModelManager``."""
+    """Factory invoquée par ``ModelManager``. Charge depuis le cache HF
+    (variable HF_HOME positionnée par voicebridge.service).
+
+    Le modèle est un wav2vec2 fine-tuné, classification binaire 16 kHz.
+    id2label = {0: "fake", 1: "real"} (vérifié config.json HF).
+    """
     from transformers import (  # type: ignore
         AutoFeatureExtractor,
         AutoModelForAudioClassification,
     )
-    model_dir = config.MODELS_DIR / "deepfake-detection-v2"
-    extractor = AutoFeatureExtractor.from_pretrained(str(model_dir))
-    model = AutoModelForAudioClassification.from_pretrained(str(model_dir))
+    extractor = AutoFeatureExtractor.from_pretrained(DEEPFAKE_REPO)
+    model = AutoModelForAudioClassification.from_pretrained(DEEPFAKE_REPO)
     model.eval()
     return {"extractor": extractor, "model": model}
 

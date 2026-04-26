@@ -43,22 +43,23 @@ def _NeuTTSClass() -> type:
 
 
 # ---------------------------------------------------------------------------
-# Mapping : clé manager → (chemin backbone local, code eSpeak, qualité)
+# Mapping : clé manager → (repo HuggingFace ID, qualité)
 # ---------------------------------------------------------------------------
 #
-# ``espeak_lang`` est le code eSpeak (ISO 639-3 + variante régionale) requis
-# par NeuTTS quand on passe un chemin local. eSpeak refuse "fr" tout court →
-# il faut "fr-fr", "en-us", etc.
-#
-# Côté API métier, on continue de manipuler "fr"/"en" (langue logique
-# stockée dans voices/metadata.json). La conversion se fait UNIQUEMENT ici.
+# On passe les repo IDs HuggingFace (et non des chemins filesystem) au
+# constructeur NeuTTS. NeuTTS reconnaît "neuphonic/..." comme officiel,
+# infère la langue/le format GGUF et résout le téléchargement depuis le
+# cache HF local (variables HF_HOME / HUGGINGFACE_HUB_CACHE positionnées
+# par voicebridge.service). Pas de re-download → résolution immédiate.
 
-_BACKBONE_PATHS = {
-    mgr.MODEL_NEUTTS_FR_Q4: ("neutts-nano-fr-q4", "fr-fr", "normal"),
-    mgr.MODEL_NEUTTS_EN_Q4: ("neutts-nano-en-q4", "en-us", "normal"),
-    mgr.MODEL_NEUTTS_FR_Q8: ("neutts-nano-fr-q8", "fr-fr", "high"),
-    mgr.MODEL_NEUTTS_EN_Q8: ("neutts-nano-en-q8", "en-us", "high"),
+_BACKBONE_REPOS = {
+    mgr.MODEL_NEUTTS_FR_Q4: ("neuphonic/neutts-nano-french-q4-gguf", "fr", "normal"),
+    mgr.MODEL_NEUTTS_EN_Q4: ("neuphonic/neutts-nano-q4-gguf",        "en", "normal"),
+    mgr.MODEL_NEUTTS_FR_Q8: ("neuphonic/neutts-nano-french-q8-gguf", "fr", "high"),
+    mgr.MODEL_NEUTTS_EN_Q8: ("neuphonic/neutts-nano-q8-gguf",        "en", "high"),
 }
+
+CODEC_REPO = "neuphonic/neucodec"
 
 
 def model_key_for(language: str, quality: str) -> str:
@@ -71,21 +72,16 @@ def model_key_for(language: str, quality: str) -> str:
 
 
 def _make_loader(model_key: str):
-    backbone_subdir, lang, _qual = _BACKBONE_PATHS[model_key]
+    backbone_repo, _lang, _qual = _BACKBONE_REPOS[model_key]
 
     def _load() -> Any:
         Cls = _NeuTTSClass()
-        backbone = config.MODELS_DIR / backbone_subdir
-        codec = config.MODELS_DIR / "neucodec"
         device = os.environ.get("VB_DEVICE", "cpu")
-        # Le paramètre ``language`` (code eSpeak) est requis quand on passe un
-        # chemin local (NeuTTS ne peut pas inférer depuis "neuphonic/...").
         return Cls(
-            backbone_repo=str(backbone),
+            backbone_repo=backbone_repo,
             backbone_device=device,
-            codec_repo=str(codec),
+            codec_repo=CODEC_REPO,
             codec_device=device,
-            language=lang,
         )
 
     return _load
@@ -93,7 +89,7 @@ def _make_loader(model_key: str):
 
 def register_loaders() -> None:
     """À appeler une fois au boot (depuis ``main.py``)."""
-    for key in _BACKBONE_PATHS:
+    for key in _BACKBONE_REPOS:
         mgr.manager.register_loader(key, _make_loader(key))
 
 

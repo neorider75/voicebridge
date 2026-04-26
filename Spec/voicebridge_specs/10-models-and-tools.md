@@ -4,6 +4,8 @@
 
 Tous les modèles ML sont **téléchargés à l'installation** depuis HuggingFace, puis utilisés en local. Aucun appel API externe en runtime.
 
+> **Implémentation V1 (vérifié)** : tous les modèles sont stockés dans le **cache HuggingFace standard** sous `/var/voicebridge/data/models/hf-cache/hub/`, accessible via les variables d'environnement `HF_HOME` et `HUGGINGFACE_HUB_CACHE` posées par `voicebridge.service`. Le code Python passe les **repo IDs HF** (et non des chemins filesystem) aux constructeurs : NeuTTS reconnaît les repos `neuphonic/...` comme officiels et infère langue + format GGUF, sans tentative de re-download.
+
 ## Modèles utilisés
 
 ### NeuTTS Nano (Text-to-Speech)
@@ -26,25 +28,31 @@ Tous les modèles ML sont **téléchargés à l'installation** depuis HuggingFac
 **Taille** : ~50 Mo
 **Rôle** : Décode les tokens audio générés par NeuTTS en WAV
 
-#### Installation Python
+#### Installation Python (vérifié)
 
 ```bash
-pip install neutts[all]
+pip install neutts            # PyPI : "neutts" (et non "neuttsair")
+pip install neucodec          # versions plafonnent à 0.0.5 (pas 0.1)
 ```
 
 Inclut automatiquement :
 - `llama-cpp-python` (pour les modèles GGUF)
 - `onnxruntime` (pour le codec)
 - `perth` (pour le watermark automatique)
+- `phonemizer` + besoin du binaire système `espeak-ng` (`apt install espeak-ng`)
 
-#### Configuration recommandée llama-cpp-python
+#### Configuration optionnelle llama-cpp-python avec OpenBLAS
 
 ```bash
+# Prérequis apt : pkg-config + libblas-dev + liblapack-dev
 CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
   pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-OpenBLAS accélère significativement l'inférence CPU sur AMD EPYC.
+OpenBLAS peut accélérer ~10-20% l'inférence CPU. **Notre install POC
+utilise le wheel pip standard** (la recompilation locale ggml-blas a
+parfois des incompatibilités CMake selon Ubuntu). À ré-évaluer si la
+synthèse Q8 est trop lente.
 
 #### Usage
 
@@ -71,29 +79,41 @@ output_audio = tts.infer("Mon texte à synthétiser.", ref_codes, ref_text)
 
 ### Kyutai 1B (Speech-to-Text)
 
-**HuggingFace** : `kyutai/stt-1b-en_fr`
+**HuggingFace** : `kyutai/stt-1b-en_fr-trfs` (variante "transformers natif")
 **Taille** : ~2 Go
-**Langues** : Français + Anglais uniquement
-**Latence** : ~1s après le premier chunk
+**Langues** : Français + Anglais uniquement (auto-détection)
+**Latence** : ~1 s après le premier chunk
+**Sample rate attendu** : **24 kHz** (et non 16 kHz comme initialement
+prévu — confirmé via le README HuggingFace officiel)
 
 #### Pourquoi Kyutai
 - Streaming natif (contrairement à Whisper qui est batch-only)
 - FR + EN couvre exactement nos besoins
 - Latence faible adaptée au temps réel
 
-#### Usage
+#### Usage (vérifié sur le README HF)
 
 ```python
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import (
+    KyutaiSpeechToTextProcessor,
+    KyutaiSpeechToTextForConditionalGeneration,
+)
 
-processor = AutoProcessor.from_pretrained("kyutai/stt-1b-en_fr")
-model = AutoModelForSpeechSeq2Seq.from_pretrained("kyutai/stt-1b-en_fr")
+model_id = "kyutai/stt-1b-en_fr-trfs"
+processor = KyutaiSpeechToTextProcessor.from_pretrained(model_id)
+model = KyutaiSpeechToTextForConditionalGeneration.from_pretrained(
+    model_id, device_map="cpu", torch_dtype="auto",
+)
 
-# Inférence streaming sur audio chunk
-inputs = processor(audio_chunk, sampling_rate=16000, return_tensors="pt")
-generated = model.generate(**inputs)
-text = processor.batch_decode(generated, skip_special_tokens=True)[0]
+# Audio en 24 kHz mono float32 (la conversion ffmpeg est faite en amont)
+inputs = processor(audio_array)         # PAS de sampling_rate kwarg
+inputs.to("cpu")
+output_tokens = model.generate(**inputs)
+text = processor.batch_decode(output_tokens, skip_special_tokens=True)[0]
 ```
+
+**Requiert** `transformers >= 4.53` (les classes `KyutaiSpeechToText*`
+ne sont disponibles qu'à partir de cette version).
 
 ---
 

@@ -10,6 +10,8 @@ WorkingDirectory=/var/voicebridge/app/Site/backend
 Environment="PATH=/var/voicebridge/venv/bin"
 Environment="VB_DATA_DIR=/var/voicebridge/data"
 Environment="VB_FRONTEND_DIR=/var/voicebridge/app/Site/frontend"
+Environment="HF_HOME=/var/voicebridge/data/models/hf-cache"
+Environment="HUGGINGFACE_HUB_CACHE=/var/voicebridge/data/models/hf-cache/hub"
 ExecStart=/var/voicebridge/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=10

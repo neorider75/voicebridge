@@ -29,18 +29,22 @@ log = logging.getLogger("voicebridge.stt")
 KYUTAI_SAMPLE_RATE = 24000
 
 
+KYUTAI_REPO = "kyutai/stt-1b-en_fr-trfs"
+
+
 def _load_kyutai():
-    """Factory invoquée par ``ModelManager`` au premier usage."""
+    """Factory invoquée par ``ModelManager`` au premier usage.
+
+    Charge depuis le cache HF (HF_HOME positionné par voicebridge.service).
+    """
     from transformers import (  # type: ignore
         KyutaiSpeechToTextForConditionalGeneration,
         KyutaiSpeechToTextProcessor,
     )
-
-    model_dir = config.MODELS_DIR / "kyutai-1b"
     device = os.environ.get("VB_DEVICE", "cpu")
-    processor = KyutaiSpeechToTextProcessor.from_pretrained(str(model_dir))
+    processor = KyutaiSpeechToTextProcessor.from_pretrained(KYUTAI_REPO)
     model = KyutaiSpeechToTextForConditionalGeneration.from_pretrained(
-        str(model_dir), device_map=device, torch_dtype="auto",
+        KYUTAI_REPO, device_map=device, torch_dtype="auto",
     )
     return {"processor": processor, "model": model, "device": device}
 

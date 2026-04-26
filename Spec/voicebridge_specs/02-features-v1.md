@@ -55,7 +55,7 @@
 
 ### Comportements
 - Capture micro via Web Audio API (`getUserMedia`)
-- Format de capture : WAV 16kHz mono pour Kyutai
+- Format de capture : WAV 24kHz mono pour Kyutai (le modèle `kyutai/stt-1b-en_fr-trfs` exige 24 kHz, cf. README HuggingFace)
 - Durée max : 5 minutes (au-delà : message d'erreur)
 - Si l'utilisateur ré-enregistre, les étapes 3 et 4 sont re-verrouillées
 
