@@ -87,20 +87,21 @@
           <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
             Chargez en RAM uniquement ce dont vous avez besoin pour économiser de la mémoire.
           </div>
-          <label style="font-size:0.7rem;letter-spacing:0.05em;color:var(--text3);text-transform:uppercase;font-weight:600;display:block;margin-bottom:0.4rem">Profils</label>
-          <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.85rem">
-            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem">
-              <input type="checkbox" id="warmProfileTts" checked style="margin-top:0.2rem">
+          <label>Profils</label>
+          <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.85rem">
+            <!-- Override de la règle globale `label` (uppercase/letter-spacing) — on veut du texte normal pour la description -->
+            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);margin-bottom:0">
+              <input type="checkbox" id="warmProfileTts" checked style="margin-top:0.2rem;flex-shrink:0">
               <span>
-                <strong>TTS fichier</strong> — qualité haute (NeuTTS Q8)
-                <span style="display:block;font-size:0.7rem;color:var(--text3);margin-top:0.1rem">≈ 3 Go RAM · pour générer un audio depuis du texte</span>
+                <strong style="font-weight:600">TTS fichier</strong> — qualité haute (NeuTTS Q8)
+                <span style="display:block;font-size:0.72rem;color:var(--text3);margin-top:0.15rem;font-weight:400">≈ 3 Go RAM · pour générer un audio depuis du texte</span>
               </span>
             </label>
-            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem">
-              <input type="checkbox" id="warmProfileLive" style="margin-top:0.2rem">
+            <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;font-size:0.82rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text);margin-bottom:0">
+              <input type="checkbox" id="warmProfileLive" style="margin-top:0.2rem;flex-shrink:0">
               <span>
-                <strong>Live</strong> — voix clonée en direct (NeuTTS Q4 + Kyutai STT + Silero VAD)
-                <span style="display:block;font-size:0.7rem;color:var(--text3);margin-top:0.1rem">≈ 6-7 Go RAM · pour parler dans Teams/Zoom avec votre voix clonée</span>
+                <strong style="font-weight:600">Live</strong> — voix clonée en direct (NeuTTS Q4 + Kyutai STT + Silero VAD)
+                <span style="display:block;font-size:0.72rem;color:var(--text3);margin-top:0.15rem;font-weight:400">≈ 6-7 Go RAM · pour parler dans Teams/Zoom avec votre voix clonée</span>
               </span>
             </label>
           </div>
