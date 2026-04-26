@@ -123,22 +123,29 @@
   function enqueuePcmChunk(b64) {
     try {
       var ctx = ensurePlaybackCtx();
+      if (ctx.state === 'suspended') {
+        // Tentative de resume — peut être no-op si le contexte n'a pas
+        // d'autorisation user-gesture, auquel cas on log et on poursuit
+        // (le scheduling fonctionnera dès que le user fera un autre geste).
+        ctx.resume().catch(function (err) {
+          console.warn('[live] resume during chunk failed', err);
+        });
+      }
       var audioBuffer = decodePcmChunk(b64, ctx);
+      console.log('[live] +chunk dur=' + (audioBuffer.duration * 1000).toFixed(0) + 'ms, ctxState=' + ctx.state);
 
       if (hasStartedUtterance) {
-        // Phrase déjà en cours de lecture → on enchaîne immédiatement.
         scheduleBuffer(ctx, audioBuffer);
         return;
       }
 
-      // On accumule jusqu'à atteindre JITTER_BUFFER_MS, puis on flush.
       pendingChunks.push(audioBuffer);
       pendingDurationMs += audioBuffer.duration * 1000;
       if (pendingDurationMs >= JITTER_BUFFER_MS) {
         flushPending(ctx);
       }
     } catch (e) {
-      console.warn('enqueuePcmChunk failed', e);
+      console.warn('[live] enqueuePcmChunk failed', e);
     }
   }
 
@@ -173,6 +180,28 @@
     var voiceId = $('liveVoiceSelect').value;
     if (!voiceId) { VB.notify('warning', 'Choisissez une voix'); return; }
     var lang = $('liveLang').value;
+
+    // IMPORTANT : créer + resume le playbackCtx ICI dans la chaîne de user-
+    // gesture (clic sur la zone micro). Si on attend la première chunk
+    // WebSocket pour le créer, Safari le marque "suspended" et resume()
+    // échoue silencieusement → aucun audio ne sort. Chrome/Firefox plus
+    // tolérants mais on harmonise.
+    if (!playbackCtx) {
+      try {
+        playbackCtx = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: TTS_RATE,
+          latencyHint: 'interactive',
+        });
+      } catch (e) {
+        console.warn('[live] AudioContext creation failed', e);
+      }
+    }
+    if (playbackCtx && playbackCtx.state === 'suspended') {
+      playbackCtx.resume().catch(function (err) {
+        console.warn('[live] playbackCtx.resume failed', err);
+      });
+    }
+    nextPlayAt = playbackCtx ? playbackCtx.currentTime : 0;
 
     var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + window.location.host + '/ws/stream');
