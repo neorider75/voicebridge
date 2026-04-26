@@ -112,3 +112,15 @@ def read_ref_text(voice_id: str) -> str:
     if p.exists():
         return p.read_text(encoding="utf-8").strip()
     return ""
+
+
+def write_ref_text(voice_id: str, text: str) -> None:
+    """Persiste le texte de référence (ce que dit l'audio source).
+
+    Indispensable pour NeuTTS qui phonémise ce texte avant de cloner —
+    sans ref_text, ``_to_phones("")`` rend une liste vide et l'inférence
+    plante avec IndexError.
+    """
+    p = ref_text_path(voice_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text((text or "").strip(), encoding="utf-8")

@@ -358,10 +358,17 @@
       if (currentSource === 'record') {
         if (!recordedBlob) { VB.notify('warning', 'Enregistrez d\'abord votre voix'); return; }
         fd.append('audio_file', recordedBlob, 'recording.' + extForMime(recordedMime));
+        // L'utilisateur a lu REF_TEXT[lang] à voix haute → on l'envoie comme
+        // ref_text. Sans ça, NeuTTS phonémise "" → IndexError au TTS suivant.
+        fd.append('ref_text', REF_TEXT[lang] || '');
       } else if (currentSource === 'upload') {
         var input = $('fileInput');
         if (!input.files.length) { VB.notify('warning', 'Choisissez un fichier'); return; }
         fd.append('audio_file', input.files[0]);
+        // Pour les uploads, l'utilisateur peut typer la transcription dans le
+        // champ optionnel — sinon le serveur retombe sur un fallback générique.
+        var uploadRef = $('uploadRefText');
+        if (uploadRef && uploadRef.value.trim()) fd.append('ref_text', uploadRef.value.trim());
       }
 
       startSubmitAnimation();

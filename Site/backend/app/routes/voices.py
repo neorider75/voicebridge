@@ -109,7 +109,18 @@ async def create_voice(
     name: str = Form(..., min_length=1, max_length=50),
     language: str = Form(...),
     audio_file: UploadFile = File(...),
+    ref_text: str | None = Form(default=None),
 ):
+    """Crée une voix depuis un audio uploadé (record/upload).
+
+    ``ref_text`` (optionnel) = transcription exacte de l'audio source. Si
+    fourni, il est sauvé à côté du WAV et utilisé par NeuTTS au moment de
+    l'inférence (cf. ``models.tts.infer``). Sans ref_text, NeuTTS phonémise
+    une chaîne vide et lève IndexError au moment de la génération TTS.
+    Le front envoie automatiquement le texte affiché à l'utilisateur en
+    mode "Enregistrement" (cf. ``voices-new.js`` REF_TEXT) ; en mode upload
+    c'est à l'utilisateur de le saisir s'il connaît la transcription.
+    """
     _require_ml()
     language = _validate_language(language)
     voice_id = files.new_id("v_")
@@ -141,6 +152,12 @@ async def create_voice(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
             "error": "encode_failed", "message": str(exc)})
 
+    # Sauvegarde du ref_text (si fourni) — sinon le fichier .txt n'existe pas
+    # et read_ref_text() rendra "" → l'inférence retombera sur le fallback safe
+    # de routes/tts.py
+    if ref_text and ref_text.strip():
+        store.write_ref_text(voice_id, ref_text.strip())
+
     duration = int(audio.audio_duration_seconds(wav_dst))
     voice = store.upsert({
         "id": voice_id,
@@ -149,7 +166,8 @@ async def create_voice(
         "backbone": _backbone_label(language),
         "duration_seconds": duration,
     })
-    log.info("voice created id=%s lang=%s duration=%ds", voice_id, language, duration)
+    log.info("voice created id=%s lang=%s duration=%ds has_ref_text=%s",
+             voice_id, language, duration, bool(ref_text and ref_text.strip()))
     return voice
 
 

@@ -118,8 +118,18 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
 
     ref_text = voices_store.read_ref_text(voice_id)
     if not ref_text:
-        # Sans texte de référence, NeuTTS infère moins bien. On loggue mais on continue.
-        log.warning("ref_text manquant pour voice_id=%s", voice_id)
+        # Sans texte de référence, NeuTTS phonémise "" → liste vide → IndexError
+        # dans neutts._to_phones (line 305: phones[0].split()).
+        # Fallback : phrase générique de la langue de la voix. Le résultat
+        # cloné sera moins fidèle qu'avec le vrai texte source mais la
+        # synthèse ne crashera pas. L'utilisateur peut toujours recréer la
+        # voix avec ref_text fourni pour de meilleures performances.
+        FALLBACK = {
+            "fr": "Bonjour, ceci est un texte de référence pour la synthèse vocale.",
+            "en": "Hello, this is a reference text for voice synthesis.",
+        }
+        ref_text = FALLBACK.get(voice["language"], FALLBACK["en"])
+        log.warning("ref_text manquant pour voice_id=%s — fallback générique", voice_id)
 
     try:
         wav_data = tts_model.infer(
