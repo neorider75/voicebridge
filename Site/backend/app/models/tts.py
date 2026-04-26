@@ -143,12 +143,16 @@ def _make_loader(model_key: str):
             log.warning("impossible de bumper max_context sur %s", model_key)
 
         # Patch temperature/top_k pour plus d'expressivité prosodique. NeuTTS
-        # hardcode temperature=1.0 — un peu plat. 1.2 donne plus de variation
-        # d'intonation tout en restant sous le seuil d'artefacts (généralement
-        # autour de 1.4-1.5). Override possible via env VB_NEUTTS_TEMPERATURE.
+        # hardcode temperature=1.0 — un peu plat. 1.1 donne un poil plus de
+        # variation sans dériver de l'identité de la voix source. 1.2 a été
+        # testé et trouvé "trop de pauses + tonalité éloignée" → retour à 1.1.
+        # Override possible via env VB_NEUTTS_TEMPERATURE.
         try:
-            temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.2"))
-            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "50"))
+            temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.1"))
+            # top_k 100 (vs 50 défaut NeuTTS) ouvre un peu le pool de candidats
+            # à chaque token → plus de diversité prosodique sans pousser
+            # temperature (qui dévie l'identité). Combo qui marche en pratique.
+            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "100"))
             if _patch_infer_ggml_temperature(instance, temp, topk):
                 log.info("NeuTTS expressivité : temperature=%.2f top_k=%d (%s)",
                          temp, topk, model_key)
@@ -187,6 +191,43 @@ NEUTTS_OUTPUT_SAMPLE_RATE = 24000    # Sortie NeuTTS Air = 24 kHz mono
 SAMPLES_PER_REF_TOKEN = NEUTTS_OUTPUT_SAMPLE_RATE // NEUCODEC_TOKENS_PER_SECOND  # 480
 
 
+def _trim_leading_silence(wav, threshold: float = 0.012, window_ms: int = 20) -> "Any":
+    """Trim le silence de tête en cherchant la 1re fenêtre de window_ms
+    avec amplitude moyenne > threshold. Limite à 1.5s max pour ne pas
+    couper de la voix par erreur.
+
+    Sans cette étape, le trim par count de tokens (~480 samples/token) peut
+    laisser un résidu de 50-300 ms de silence en début de sortie NeuTTS.
+    """
+    try:
+        import numpy as _np
+        arr = _np.abs(_np.asarray(wav))
+        if arr.ndim > 1:
+            arr = arr.squeeze()
+        win = max(1, window_ms * NEUTTS_OUTPUT_SAMPLE_RATE // 1000)
+        if len(arr) < win:
+            return wav
+        # Moyenne mobile via cumsum
+        c = _np.cumsum(arr, dtype=_np.float64)
+        means = (c[win:] - c[:-win]) / win
+        voiced = _np.where(means > threshold)[0]
+        if len(voiced) == 0:
+            return wav
+        start = int(voiced[0])
+        # Cap à 1.5s pour rester safe
+        max_skip = int(NEUTTS_OUTPUT_SAMPLE_RATE * 1.5)
+        if start > max_skip:
+            return wav
+        if start > 0:
+            log.info("trim leading silence: %d samples (%.2fs)",
+                     start, start / NEUTTS_OUTPUT_SAMPLE_RATE)
+            return wav[start:]
+        return wav
+    except Exception as exc:  # noqa: BLE001
+        log.warning("trim leading silence skipped: %s", exc)
+        return wav
+
+
 def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
     """Synthétise un WAV complet (np.ndarray float32 à 24 kHz).
 
@@ -196,19 +237,16 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
     de la référence avant de continuer sur ``input_text`` — l'utilisateur
     entend "blabla de référence + son texte" au lieu de juste son texte.
 
-    La version streaming (``_infer_stream_ggml``) gère ça en pré-remplissant
-    ``token_cache`` avec ref_codes et en démarrant le décodage à
-    ``n_decoded_tokens = len(ref_codes)``. La version non-streaming
-    (``_infer_ggml``) ne fait pas ce skip → on le fait nous-mêmes ici en
-    coupant les premiers ``len(ref_codes) × 480`` samples (= durée du ref
-    audio à 24 kHz).
+    On compense en deux temps :
+    1. Trim par count de tokens (~480 samples/token NeuCodec) pour couper
+       la portion de ref audio dans la sortie.
+    2. Trim de silence de tête (énergie < seuil) pour le résidu éventuel.
     """
     key = model_key_for(language, quality)
     tts = mgr.manager.get(key)
     output = tts.infer(text, ref_codes, ref_text)
 
     try:
-        # ref_codes peut être tensor torch ou ndarray ; les deux supportent len()
         ref_token_count = int(len(ref_codes))
     except TypeError:
         ref_token_count = 0
@@ -222,6 +260,10 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
         else:
             log.warning("infer output (%d samples) shorter than expected ref prefix (%d) — pas de trim",
                         len(output), trim)
+
+    # 2e passe : silence de tête résiduel (mismatch token count, silence
+    # NeuTTS post-prompt, etc.) → on coupe jusqu'au 1er sample voicé.
+    output = _trim_leading_silence(output)
     return output
 
 
