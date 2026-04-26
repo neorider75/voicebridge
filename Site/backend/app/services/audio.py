@@ -38,10 +38,18 @@ def _run(cmd: list[str], timeout: int = 60) -> None:
     log.debug("ffmpeg cmd=%s", " ".join(cmd))
     try:
         subprocess.run(cmd, check=True, timeout=timeout, capture_output=True)
+    except FileNotFoundError as exc:
+        # Binaire absent (ex : ffmpeg non installé). On remonte une AudioError
+        # explicite plutôt que de laisser cascader un 500 "Internal Server Error"
+        # opaque côté client.
+        raise AudioError(
+            f"binaire introuvable : {cmd[0]}. "
+            f"Installez-le sur le serveur avec : sudo apt install {cmd[0]}"
+        ) from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover
-        raise AudioError(f"ffmpeg a échoué : {exc.stderr.decode(errors='replace')}") from exc
+        raise AudioError(f"{cmd[0]} a échoué : {exc.stderr.decode(errors='replace')}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise AudioError("ffmpeg a dépassé le timeout") from exc
+        raise AudioError(f"{cmd[0]} a dépassé le timeout") from exc
 
 
 def detect_mime(path: Path) -> str:

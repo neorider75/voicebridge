@@ -377,6 +377,21 @@ phase4_system() {
     libmagic1
   ok "Paquets système installés"
 
+  # Vérification finale : si l'un des binaires runtime critiques manque,
+  # on bail tout de suite (mieux qu'un 500 opaque au runtime des mois plus tard).
+  step "Vérification des binaires runtime"
+  local missing=()
+  for bin in ffmpeg nginx; do
+    if ! command -v "$bin" >/dev/null 2>&1; then
+      missing+=("$bin")
+    fi
+  done
+  if (( ${#missing[@]} > 0 )); then
+    fail "Binaires critiques manquants : ${missing[*]} — apt install a probablement échoué partiellement."
+    exit 1
+  fi
+  ok "ffmpeg, nginx présents dans le PATH"
+
   step "Création de l'utilisateur Linux dédié '$SERVICE_USER'"
   if ! id "$SERVICE_USER" >/dev/null 2>&1; then
     useradd -r -s /bin/false -m -d "/var/$SERVICE_USER" "$SERVICE_USER"
