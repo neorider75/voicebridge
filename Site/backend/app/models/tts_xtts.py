@@ -180,6 +180,14 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     except ImportError:
         pass  # numpy n'est pas dispo (très improbable)
 
+    # Filtre passe-haut pour retirer le ronflement basse fréquence (rumble
+    # micro, secteur 50/60 Hz, ventilo). 80 Hz coupe quasi rien de la voix
+    # utile (l'énergie vocale commence vers 100-150 Hz pour les graves).
+    # 0 = désactivé.
+    hp_hz = _read_env_float("VB_XTTS_HIGHPASS_HZ", 80.0)
+    if hp_hz > 0:
+        wav = _highpass_filter(wav, cutoff_hz=hp_hz)
+
     # Compression des silences entre phrases : XTTS surdose souvent les
     # pauses (1-2s entre deux phrases). On cap chaque pause à MAX_PAUSE_S
     # tout en préservant les pauses naturelles plus courtes.
@@ -207,6 +215,26 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
             log.warning("pitch_shift failed: %s", exc)
 
     return wav
+
+
+def _highpass_filter(wav, cutoff_hz: float, order: int = 4):
+    """Filtre passe-haut Butterworth à `cutoff_hz`. Supprime les très basses
+    fréquences (rumble, ronflement secteur, souffle ventilo) sans toucher à
+    la voix qui commence vers 100-150 Hz."""
+    try:
+        import numpy as np  # type: ignore
+        from scipy.signal import butter, sosfilt  # type: ignore
+    except ImportError:
+        return wav
+    arr = np.asarray(wav, dtype=np.float32)
+    if arr.ndim > 1:
+        arr = arr.squeeze()
+    if arr.size < 100:
+        return wav
+    nyq = XTTS_OUTPUT_SAMPLE_RATE / 2
+    sos = butter(order, cutoff_hz / nyq, btype="highpass", output="sos")
+    filtered = sosfilt(sos, arr).astype(np.float32)
+    return filtered
 
 
 def _compress_silences(wav, max_pause_s: float, threshold_db: float = 40):

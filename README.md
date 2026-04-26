@@ -115,6 +115,7 @@ Tous overrides via `Environment="VB_..."` dans
 | `VB_XTTS_GPT_COND_CHUNK_LEN` | (non setté → défaut Coqui 4) | Chunk size pour le conditioning |
 | `VB_XTTS_MAX_REF_LEN` | (non setté → défaut Coqui 10) | Secondes pour le décodeur diffusion |
 | `VB_XTTS_MAX_PAUSE_S` | 0.4 | Plafond de durée des silences entre phrases (s). XTTS surdose les pauses → on cap à 0.4s. Mettre 0 pour désactiver |
+| `VB_XTTS_HIGHPASS_HZ` | 80 | Filtre passe-haut sur l'output (Hz). Supprime le rumble (ventilo, secteur, souffle micro). 80 Hz ne coupe pas la voix. Mettre 0 pour désactiver |
 | `VB_XTTS_PITCH_SHIFT` | 0 | Pitch shift post-process (semi-tons, négatif = plus grave, ex -1.5) |
 
 ### Caches modèles
