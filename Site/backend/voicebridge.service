@@ -7,7 +7,7 @@ Type=simple
 User=voicebridge
 Group=voicebridge
 WorkingDirectory=/var/voicebridge/app/Site/backend
-Environment="PATH=/var/voicebridge/venv/bin"
+Environment="PATH=/var/voicebridge/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="VB_DATA_DIR=/var/voicebridge/data"
 Environment="VB_FRONTEND_DIR=/var/voicebridge/app/Site/frontend"
 Environment="HF_HOME=/var/voicebridge/data/models/hf-cache"
