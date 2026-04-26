@@ -25,6 +25,8 @@ ALLOWED_AUDIO_MIMES: set[str] = {
     "audio/ogg",
     "audio/x-flac",
     "audio/flac",
+    "audio/webm",      # MediaRecorder par défaut sur Chrome/Firefox
+    "video/webm",      # certains libmagic taggent webm en video/* même sans piste vidéo
 }
 
 
@@ -60,6 +62,8 @@ def detect_mime(path: Path) -> str:
             return "audio/ogg"
         if head.startswith(b"fLaC"):
             return "audio/flac"
+        if head.startswith(b"\x1a\x45\xdf\xa3"):  # EBML magic = Matroska/WebM
+            return "audio/webm"
         return "application/octet-stream"
     return magic.from_file(str(path), mime=True)
 

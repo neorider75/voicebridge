@@ -31,7 +31,30 @@
 
   // ── Source : enregistrement micro (MediaRecorder) ──
 
-  var mediaRec = null, recChunks = [];
+  var mediaRec = null, recChunks = [], recordedMime = 'audio/webm';
+
+  // Détermine un MIME type que le navigateur sait *vraiment* enregistrer.
+  // Chrome/Firefox : audio/webm (opus) ; Safari : audio/mp4 (aac). Sans ce
+  // check, Safari produit du MP4 mais on l'emballe en blob "audio/webm" →
+  // <audio> n'arrive pas à décoder et affiche "Erreur".
+  function pickRecorderMime() {
+    var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    for (var i = 0; i < candidates.length; i++) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
+  }
+
+  function extForMime(mime) {
+    if (!mime) return 'webm';
+    if (mime.indexOf('mp4') >= 0) return 'm4a';
+    if (mime.indexOf('ogg') >= 0) return 'ogg';
+    if (mime.indexOf('webm') >= 0) return 'webm';
+    if (mime.indexOf('wav') >= 0) return 'wav';
+    return 'webm';
+  }
+
   function bindRecord() {
     var zone = $('micZone');
     if (!zone) return;
@@ -42,11 +65,20 @@
       }
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
         recChunks = [];
-        mediaRec = new MediaRecorder(stream);
+        var mime = pickRecorderMime();
+        try {
+          mediaRec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        } catch (e) {
+          // Si le mime explicite est refusé, retombe sur les défauts du navigateur.
+          mediaRec = new MediaRecorder(stream);
+        }
+        // Le navigateur peut renvoyer un mimeType différent de celui demandé
+        // (notamment Safari quand on lui passe webm). On lit le vrai utilisé.
+        recordedMime = mediaRec.mimeType || mime || 'audio/webm';
         mediaRec.ondataavailable = function (e) { if (e.data.size > 0) recChunks.push(e.data); };
         mediaRec.onstop = function () {
           stream.getTracks().forEach(function (t) { t.stop(); });
-          recordedBlob = new Blob(recChunks, { type: 'audio/webm' });
+          recordedBlob = new Blob(recChunks, { type: recordedMime });
           $('micPreview').src = URL.createObjectURL(recordedBlob);
           $('micPreviewWrap').style.display = 'block';
           zone.classList.remove('recording');
@@ -183,7 +215,9 @@
 
       if (currentSource === 'record') {
         if (!recordedBlob) { VB.notify('warning', 'Enregistrez d\'abord votre voix'); return; }
-        fd.append('audio_file', recordedBlob, 'recording.webm');
+        // Le serveur s'appuie sur l'extension pour décider du décodage ffmpeg
+        // (cf. routes/voices.py) — il faut donc refléter le format réel.
+        fd.append('audio_file', recordedBlob, 'recording.' + extForMime(recordedMime));
       } else if (currentSource === 'upload') {
         var input = $('fileInput');
         if (!input.files.length) { VB.notify('warning', 'Choisissez un fichier'); return; }
