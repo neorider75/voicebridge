@@ -357,8 +357,8 @@ phase4_system() {
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-  step "Détection de la version Python disponible"
-  detect_python
+  # detect_python est désormais appelé depuis main() (avant run_phase) pour
+  # rester valide même à la reprise (phase 4 skippée).
 
   step "Installation des paquets système"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -833,6 +833,10 @@ main() {
     phase3_recap
     mark_done phase3
   fi
+
+  # detect_python doit s'exécuter à chaque run (sert aux phases 5+ qui peuvent
+  # être ré-exécutées en reprise même si phase 4 est déjà skippée).
+  detect_python
 
   run_phase phase4  phase4_system
   run_phase phase5  phase5_app_code
