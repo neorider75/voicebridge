@@ -503,15 +503,19 @@ phase7_default_voices() {
   done
 
   step "Pré-encodage des ref_codes (.pt) — peut prendre 1-2 min"
-  sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" - <<'PY'
+  # On passe VB_DATA_DIR explicitement via env(1) car sudo -u ne propage pas
+  # l'environnement par défaut. Le heredoc reste 'PY' (quoté) pour éviter
+  # l'expansion bash des $ Python.
+  sudo -u "$SERVICE_USER" env "VB_DATA_DIR=$DATA_DIR" "$VENV_DIR/bin/python" - <<'PY'
 import os
 import torch
 from pathlib import Path
 DATA = Path(os.environ["VB_DATA_DIR"])
+# Le package PyPI s'appelle "neutts" — neuttsair en fallback pour anciennes versions.
 try:
-    from neuttsair.neutts import NeuTTSAir as NeuTTS  # selon version
-except ImportError:
     from neutts import NeuTTS  # type: ignore
+except ImportError:
+    from neuttsair.neutts import NeuTTSAir as NeuTTS  # type: ignore
 mapping = {
     "juliette": DATA / "models/neutts-nano-fr-q4",
     "dave":     DATA / "models/neutts-nano-en-q4",
