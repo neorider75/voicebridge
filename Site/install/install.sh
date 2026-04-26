@@ -412,10 +412,14 @@ phase5_app_code() {
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements-minimal.txt"
   else
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements.txt"
-    step "Recompilation llama-cpp-python avec OpenBLAS"
-    sudo -u "$SERVICE_USER" \
-      CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
-      "$VENV_DIR/bin/pip" install llama-cpp-python --force-reinstall --no-cache-dir
+    # NB POC : la recompilation llama-cpp-python avec OpenBLAS échoue parfois
+    # selon la combinaison Ubuntu/CMake/llama.cpp (ggml-blas CMakeLists). Le
+    # wheel par défaut a déjà les optimisations CPU x86_64 standard.
+    # → À ré-évaluer post-POC si la perf TTS Q8 est insuffisante :
+    #     CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
+    #       pip install llama-cpp-python --force-reinstall --no-cache-dir
+    #   nécessite : pkg-config + libblas-dev + liblapack-dev installés (déjà fait).
+    step "llama-cpp-python : wheel par défaut (optimisations CPU standard)"
   fi
   ok "Dépendances Python installées"
 }
