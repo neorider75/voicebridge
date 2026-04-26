@@ -60,21 +60,30 @@ API_TOKEN=""
 
 # Flags
 MINIMAL=0
+WITH_UFW=0
 for arg in "$@"; do
   case "$arg" in
     --minimal)
       MINIMAL=1
       ;;
+    --with-ufw)
+      WITH_UFW=1
+      ;;
     -h|--help)
       cat <<EOF
-Usage : sudo ./install.sh [--minimal]
+Usage : sudo ./install.sh [--minimal] [--with-ufw]
 
-  --minimal   N'installe que la livraison 1 du POC (login + sécurité +
-              Nginx/SSL + systemd) en sautant le téléchargement des modèles
-              ML et la compilation de llama-cpp-python. Utile pour valider
-              rapidement le déploiement avant les livraisons suivantes.
-              Pour compléter l'installation plus tard, relancer le script
-              SANS ce flag (idempotent).
+  --minimal     N'installe que la livraison 1 du POC (login + sécurité +
+                Nginx/SSL + systemd) en sautant le téléchargement des
+                modèles ML et la compilation de llama-cpp-python.
+                Pour compléter l'installation plus tard, relancer le
+                script SANS ce flag (idempotent).
+
+  --with-ufw    Active le firewall UFW (par défaut : désactivé). Refuse
+                tout en entrée sauf 22, 80, 443. ATTENTION : si un autre
+                service expose un port public sur ce VPS (Docker, Node…),
+                il deviendra inaccessible. Faites un audit avec
+                'sudo ss -tlnp' avant de l'activer.
 EOF
       exit 0
       ;;
@@ -632,15 +641,10 @@ phase11_systemd() {
 # ---------------------------------------------------------------------------
 
 phase12_firewall() {
-  banner "Phase 12 / 14 — UFW + fail2ban"
+  banner "Phase 12 / 14 — fail2ban + UFW (optionnel)"
 
-  ufw default deny incoming
-  ufw default allow outgoing
-  ufw allow 22/tcp
-  ufw allow 80/tcp
-  ufw allow 443/tcp
-  ufw --force enable
-
+  # fail2ban (toujours activé : ne change rien d'autre que la défense SSH)
+  step "Configuration fail2ban (anti-bruteforce SSH)"
   cat > /etc/fail2ban/jail.local <<EOF
 [sshd]
 enabled = true
@@ -650,7 +654,27 @@ bantime = 3600
 EOF
   systemctl enable fail2ban
   systemctl restart fail2ban
-  ok "UFW + fail2ban configurés"
+  ok "fail2ban configuré"
+
+  # UFW : opt-in via --with-ufw
+  if (( WITH_UFW )); then
+    step "Activation UFW (firewall) — flag --with-ufw"
+    warn "Vérifiez que vos autres services écoutent sur 22/80/443 ou sont"
+    warn "publiés via Docker (qui contourne UFW). En cas de doute :"
+    warn "  sudo ss -tlnp | grep LISTEN"
+    ufw default deny incoming
+    ufw default allow outgoing
+    ufw allow 22/tcp
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    ufw --force enable
+    ok "UFW actif"
+  else
+    warn "UFW NON activé (par défaut). Pour l'activer plus tard :"
+    warn "  sudo ufw default deny incoming && sudo ufw default allow outgoing"
+    warn "  sudo ufw allow 22/tcp 80/tcp 443/tcp && sudo ufw --force enable"
+    warn "Ou relancer : sudo ./install.sh --with-ufw"
+  fi
 }
 
 # ---------------------------------------------------------------------------
