@@ -435,14 +435,27 @@ phase5_app_code() {
     warn "Mode --minimal : seulement les deps légères (login + sécurité + Nginx)."
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements-minimal.txt"
   else
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/Site/backend/requirements.txt"
+    # On installe coqui-tts en deux temps à cause du conflit fondamental sur
+    # transformers : neutts veut ~=4.56, coqui-tts force >=4.57. En pratique
+    # coqui-tts marche avec 4.56 (isin_mps_friendly existe depuis 4.45),
+    # mais pip ne nous laisse pas faire en mode normal. On installe d'abord
+    # tout sauf coqui-tts (avec --no-deps + filtrage) puis coqui-tts en
+    # --no-deps pour conserver transformers 4.56.x.
+    step "Dépendances principales (sans coqui-tts)"
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install \
+      $(grep -v "^coqui-tts" "$APP_DIR/Site/backend/requirements.txt" | grep -v "^#" | grep -v "^$")
+
+    step "coqui-tts (XTTS-v2 engine alternatif) avec --no-deps pour préserver transformers 4.56"
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --no-deps coqui-tts==0.27.5
+    # Deps de coqui-tts qu'on doit installer manuellement (sans transformers
+    # qui resterait sur 4.56). gruut[de,es,fr] = phonemizers multilingues
+    # utilisés par XTTS.
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install \
+      coqpit-config coqui-tts-trainer pysbd inflect num2words anyascii \
+      monotonic-alignment-search "gruut[de,es,fr]" matplotlib
+
     # NB : la recompilation llama-cpp-python avec OpenBLAS échoue parfois
-    # selon la combinaison Ubuntu/CMake/llama.cpp (ggml-blas CMakeLists). Le
-    # wheel par défaut a déjà les optimisations CPU x86_64 standard.
-    # → À ré-évaluer si la perf TTS Q8 est insuffisante :
-    #     CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
-    #       pip install llama-cpp-python --force-reinstall --no-cache-dir
-    #   nécessite : pkg-config + libblas-dev + liblapack-dev installés (déjà fait).
+    # selon la combinaison Ubuntu/CMake/llama.cpp (ggml-blas CMakeLists).
     step "llama-cpp-python : wheel par défaut (optimisations CPU standard)"
   fi
   ok "Dépendances Python installées"

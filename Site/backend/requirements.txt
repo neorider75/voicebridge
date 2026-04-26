@@ -31,10 +31,17 @@ neucodec>=0.0.4
 # (multilingue FR+EN+ES+DE+13 autres). Plus gros et plus lent que NeuTTS
 # Nano, mais clonage nettement plus naturel. La maintenance officielle
 # Coqui est arrêtée ; on utilise le fork "coqui-tts" maintenu par Idiap.
-# Pin <0.27 : la version 0.27 force transformers >=4.57, incompatible
-# avec neutts qui exige ~=4.56.1. 0.26.2 supporte XTTS-v2 et permet de
-# rester sur transformers 4.56.x.
-coqui-tts>=0.24,<0.27
+#
+# /!\ Conflit fondamental de versions :
+#   - neutts        : transformers ~= 4.56.1
+#   - coqui-tts <0.27 : transformers >=4.47, <4.52
+#   - coqui-tts >=0.27: transformers >= 4.57 (et 5.x retire isin_mps_friendly
+#                       qu'XTTS utilise → cassé en runtime)
+# Aucune version coqui-tts ne supporte officiellement transformers 4.56 !
+# En pratique 0.27.5 fonctionne avec 4.56 (isin_mps_friendly existe depuis
+# transformers 4.45). On contourne le pin strict avec --no-deps.
+# Cf. install.sh phase 5 pour la séquence pip exacte.
+coqui-tts==0.27.5
 # Kyutai STT + détection deepfake (modèles transformers)
 # Kyutai STT 1B (kyutai/stt-1b-en_fr-trfs) requiert transformers >= 4.53.
 # Pin en <5.0 car coqui-tts >=0.27 force transformers >=4.57 ce qui casse
