@@ -118,7 +118,23 @@
       }).then(function (r) {
         var ct = r.headers.get('content-type') || '';
         if (!r.ok) {
-          return r.json().then(function (d) { throw new Error(d.message || 'Erreur ' + r.status); });
+          // r.json() sur un body plain-text "Internal Server Error" lève un
+          // SyntaxError dont Safari formate le message en "The string did not
+          // match the expected pattern." → cryptique. On lit en text() puis
+          // best-effort JSON parse pour exposer le vrai message si dispo.
+          return r.text().then(function (raw) {
+            var msg = 'Erreur ' + r.status;
+            try {
+              var d = JSON.parse(raw);
+              msg = (d && d.detail && d.detail.message)
+                || (d && d.message)
+                || (d && d.detail && typeof d.detail === 'string' ? d.detail : null)
+                || msg;
+            } catch (e) {
+              if (raw && raw.length < 200) msg = msg + ' · ' + raw;
+            }
+            throw new Error(msg);
+          });
         }
         if (ct.indexOf('application/json') >= 0) {
           return r.json().then(function (d) { showResult({ url: d.url, format: format, retention: retention, expires_at: d.expires_at }); });
