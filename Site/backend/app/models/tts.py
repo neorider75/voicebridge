@@ -71,6 +71,51 @@ def model_key_for(language: str, quality: str) -> str:
     raise ValueError(f"langue non supportée : {language}")
 
 
+def _patch_infer_ggml_temperature(instance, temperature: float, top_k: int) -> bool:
+    """Remplace _infer_ggml de l'instance NeuTTS pour utiliser une
+    temperature/top_k configurables (au lieu du 1.0/50 hardcodés). Plus de
+    temperature = plus d'expressivité prosodique (intonation moins plate).
+    Trade-off : risque d'artefacts si trop haut. 1.1-1.2 est safe.
+
+    Retourne True si patché avec succès.
+    """
+    if not hasattr(instance, "_infer_ggml"):
+        return False
+    try:
+        import re  # noqa: F401  (utilisé indirectement par le re-décodage)
+
+        def patched(self, ref_codes, ref_text, input_text):
+            # Recopie de la logique de _infer_ggml mais avec temperature/top_k
+            # pris depuis self.temperature / self.top_k.
+            ref_text_p = self._to_phones(ref_text)
+            input_text_p = self._to_phones(input_text)
+            codes_str = "".join([f"<|speech_{idx}|>" for idx in ref_codes])
+            prompt = (
+                f"user: Convert the text to speech:<|TEXT_PROMPT_START|>"
+                f"{ref_text_p} {input_text_p}"
+                f"<|TEXT_PROMPT_END|>\nassistant:"
+                f"<|SPEECH_GENERATION_START|>{codes_str}"
+            )
+            output = self.backbone(
+                prompt,
+                max_tokens=self.max_context,
+                temperature=getattr(self, "_vb_temperature", 1.0),
+                top_k=getattr(self, "_vb_top_k", 50),
+                stop=["<|SPEECH_GENERATION_END|>"],
+            )
+            return output["choices"][0]["text"]
+
+        instance._vb_temperature = temperature
+        instance._vb_top_k = top_k
+        # Bind la méthode patchée à l'instance
+        import types
+        instance._infer_ggml = types.MethodType(patched, instance)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("monkey-patch _infer_ggml échoué : %s", exc)
+        return False
+
+
 def _make_loader(model_key: str):
     backbone_repo, _lang, _qual = _BACKBONE_REPOS[model_key]
 
@@ -87,7 +132,6 @@ def _make_loader(model_key: str):
         # (~50 tokens/seconde à 24 kHz). Le défaut interne (~512-1024) coupe
         # la sortie à ~10-20 s — frustrant si l'utilisateur tape un texte
         # long. On le pousse à 4096 (= ~80 s d'audio par génération).
-        # Override possible via env VB_NEUTTS_MAX_CONTEXT.
         try:
             new_max = int(os.environ.get("VB_NEUTTS_MAX_CONTEXT", "4096"))
             if hasattr(instance, "max_context"):
@@ -97,6 +141,18 @@ def _make_loader(model_key: str):
                     log.info("NeuTTS max_context : %d → %d (%s)", old, new_max, model_key)
         except Exception:  # noqa: BLE001
             log.warning("impossible de bumper max_context sur %s", model_key)
+
+        # Patch temperature/top_k pour plus d'expressivité prosodique. NeuTTS
+        # hardcode temperature=1.0 — un peu plat. 1.1 donne un poil plus de
+        # variation sans introduire d'artefacts.
+        try:
+            temp = float(os.environ.get("VB_NEUTTS_TEMPERATURE", "1.1"))
+            topk = int(os.environ.get("VB_NEUTTS_TOP_K", "50"))
+            if _patch_infer_ggml_temperature(instance, temp, topk):
+                log.info("NeuTTS expressivité : temperature=%.2f top_k=%d (%s)",
+                         temp, topk, model_key)
+        except Exception:  # noqa: BLE001
+            pass
         return instance
 
     return _load
