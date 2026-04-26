@@ -124,7 +124,10 @@ def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1) Détection du premier silence_end
+    # 1) Détection du premier silence_end (best-effort : si ça plante on
+    # retombe sur offset 0, le trim brut suivant lèvera une AudioError claire
+    # via _run() si ffmpeg manque vraiment).
+    offset = 0.0
     try:
         proc = subprocess.run(
             [
@@ -134,7 +137,6 @@ def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
             ],
             capture_output=True, text=True, timeout=60,
         )
-        offset = 0.0
         for line in (proc.stderr or "").splitlines():
             if "silence_end" in line:
                 # Format : ... silence_end: 1.234 ...
@@ -143,7 +145,7 @@ def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
                     break
                 except (IndexError, ValueError):
                     continue
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, FileNotFoundError):
         offset = 0.0
 
     _run([
@@ -159,7 +161,11 @@ def has_ffmpeg() -> bool:
 
 
 def audio_duration_seconds(path: Path) -> float:
-    """Renvoie la durée en secondes via ``ffprobe``."""
+    """Renvoie la durée en secondes via ``ffprobe``.
+
+    Ne lève pas d'erreur (la durée est de la métadonnée non-bloquante) — on
+    se contente de logger les cas anormaux.
+    """
     try:
         proc = subprocess.run(
             [
@@ -169,5 +175,8 @@ def audio_duration_seconds(path: Path) -> float:
             capture_output=True, text=True, timeout=10, check=True,
         )
         return float(proc.stdout.strip())
+    except FileNotFoundError:
+        log.warning("ffprobe introuvable — durée renvoyée à 0 (apt install ffmpeg ?)")
+        return 0.0
     except Exception:  # noqa: BLE001
         return 0.0

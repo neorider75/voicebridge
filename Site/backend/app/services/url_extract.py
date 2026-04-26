@@ -29,7 +29,11 @@ class UrlExtractError(Exception):
 def _ensure_yt_dlp() -> str:
     path = shutil.which("yt-dlp")
     if not path:
-        raise UrlExtractError("yt-dlp n'est pas installé")
+        raise UrlExtractError(
+            "binaire introuvable : yt-dlp. "
+            "Installez-le sur le serveur avec : sudo pip install yt-dlp "
+            "(ou sudo apt install yt-dlp si dispo)"
+        )
     return path
 
 
