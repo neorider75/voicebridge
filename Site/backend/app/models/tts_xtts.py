@@ -129,7 +129,7 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
-        "speed": _read_env_float("VB_XTTS_SPEED", 1.05),
+        "speed": _read_env_float("VB_XTTS_SPEED", 1.10),
         # gpt_cond_len = secondes de réf utilisées par le speaker encoder.
         # Défaut Coqui interne ~6s. Notre WAV est trimé à 15s, donc 10s
         # laisse une marge confortable et améliore la capture d'identité

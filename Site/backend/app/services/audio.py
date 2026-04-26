@@ -121,18 +121,25 @@ def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
 
     Utilise ``silencedetect`` pour sauter les silences en tête, puis trim.
     En cas d'échec de la détection, on fait un trim brut depuis 0.
+
+    Seuils tunés pour clonage de voix : -40 dB / 200 ms attrape les courtes
+    respirations et hésitations qu'un seuil plus laxiste (-30 dB / 400 ms)
+    laisserait passer. Important pour XTTS qui prend les premières secondes
+    comme conditioning speaker — du silence en tête dégrade l'identité.
+    On ajoute aussi 50 ms de marge avant l'attaque pour ne pas couper les
+    consonnes douces (h, f, s).
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1) Détection du premier silence_end (best-effort : si ça plante on
+    # 1) Détection du premier silence_end. Best-effort : si ça plante on
     # retombe sur offset 0, le trim brut suivant lèvera une AudioError claire
-    # via _run() si ffmpeg manque vraiment).
+    # via _run() si ffmpeg manque vraiment.
     offset = 0.0
     try:
         proc = subprocess.run(
             [
                 "ffmpeg", "-i", str(src),
-                "-af", "silencedetect=noise=-30dB:d=0.4",
+                "-af", "silencedetect=noise=-40dB:d=0.2",
                 "-f", "null", "-",
             ],
             capture_output=True, text=True, timeout=60,
@@ -141,10 +148,15 @@ def trim_first_voiced(src: Path, dst: Path, duration_seconds: int = 15) -> None:
             if "silence_end" in line:
                 # Format : ... silence_end: 1.234 ...
                 try:
-                    offset = float(line.split("silence_end:")[1].strip().split(" ")[0])
+                    raw = float(line.split("silence_end:")[1].strip().split(" ")[0])
+                    # Recule de 50 ms pour ne pas couper l'attaque des
+                    # consonnes douces (h, f, s) qui sont plus basses en énergie.
+                    offset = max(0.0, raw - 0.05)
                     break
                 except (IndexError, ValueError):
                     continue
+        if offset > 0:
+            log.info("trim_first_voiced: skipping %.2fs of leading silence", offset)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         offset = 0.0
 

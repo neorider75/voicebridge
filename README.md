@@ -110,7 +110,7 @@ Tous overrides via `Environment="VB_..."` dans
 | `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling |
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
-| `VB_XTTS_SPEED` | 1.05 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+| `VB_XTTS_SPEED` | 1.10 | Vitesse de parole (0.7 lent, 1.3 rapide) |
 | `VB_XTTS_GPT_COND_LEN` | 10 | Secondes de la voix de réf utilisées pour le speaker conditioning. WAV trimé à 15s → 10s laisse marge. **Bumper au-dessus de la durée du WAV source dégrade l'audio** (étouffé/entrecoupé) |
 | `VB_XTTS_GPT_COND_CHUNK_LEN` | (non setté → défaut Coqui 4) | Chunk size pour le conditioning |
 | `VB_XTTS_MAX_REF_LEN` | (non setté → défaut Coqui 10) | Secondes pour le décodeur diffusion |
