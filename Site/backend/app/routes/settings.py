@@ -1,12 +1,32 @@
-"""Routes ``/api/settings/*`` — partiellement impl. (full en livraison 6)."""
+"""Routes ``/api/settings/*`` (livraison 6 — versions complètes).
+
+- GET  /api/settings                 : retention par défaut, model_unload, domaine
+- PUT  /api/settings                 : maj partielle (default_retention,
+  model_unload_after_minutes)
+- POST /api/settings/password        : change le mot de passe (vérif courant)
+- GET  /api/settings/api-key         : info masquée
+- POST /api/settings/api-key/generate : génère + retourne en clair (UNE FOIS)
+"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import hashlib
+import logging
+import secrets
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
 from .. import config
 from ..auth import require_auth
+from ..utils import security
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_auth)])
+log = logging.getLogger("voicebridge.settings")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @router.get("")
@@ -19,6 +39,54 @@ async def get_settings():
     }
 
 
+class SettingsUpdate(BaseModel):
+    default_retention: str | None = Field(default=None, pattern="^(session|24h|48h)$")
+    model_unload_after_minutes: int | None = Field(default=None, ge=5, le=240)
+
+
+@router.put("")
+async def update_settings(payload: SettingsUpdate):
+    updates: dict = {}
+    if payload.default_retention is not None:
+        updates["default_retention"] = payload.default_retention
+    if payload.model_unload_after_minutes is not None:
+        updates["model_unload_after_minutes"] = payload.model_unload_after_minutes
+    if updates:
+        config.set_many(updates)
+        log.info("settings updated keys=%s", list(updates.keys()))
+    return {"success": True, "updated": updates}
+
+
+# ---------------------------------------------------------------------------
+# Mot de passe
+# ---------------------------------------------------------------------------
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+@router.post("/password")
+async def change_password(payload: PasswordChange):
+    cfg = config.load()
+    expected_hash = cfg.get("password_hash", "")
+    if not security.verify_password(payload.current_password, expected_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={
+            "error": "invalid_current_password", "message": "Mot de passe actuel incorrect"})
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+            "error": "same_password", "message": "Le nouveau mot de passe doit différer de l'actuel"})
+    config.set_many({"password_hash": security.hash_password(payload.new_password)})
+    log.info("password changed")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Clé API Bearer
+# ---------------------------------------------------------------------------
+
+
 @router.get("/api-key")
 async def get_api_key_info():
     cfg = config.load()
@@ -27,3 +95,18 @@ async def get_api_key_info():
         "masked": "sk-" + "•" * 28 + (h[-4:] if h else "????"),
         "created_at": cfg.get("api_token_created_at"),
     }
+
+
+@router.post("/api-key/generate")
+async def generate_api_key():
+    """Génère et **retourne en clair** une nouvelle clé. L'ancienne devient
+    immédiatement invalide. La clé en clair n'est plus jamais accessible.
+    """
+    token = "sk-" + secrets.token_hex(16)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    config.set_many({
+        "api_token_hash": token_hash,
+        "api_token_created_at": _now_iso(),
+    })
+    log.info("api key regenerated")
+    return {"key": token, "created_at": _now_iso()}

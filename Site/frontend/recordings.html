@@ -7,6 +7,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/voices.css">
+  <link rel="stylesheet" href="/css/studio.css">
 </head>
 <body>
 
@@ -30,18 +32,24 @@
 
 <main>
   <h1 class="page-title">Enregistrements</h1>
-  <p class="page-sub">Fichiers générés et conservés selon la rétention choisie</p>
+  <p class="page-sub">Fichiers générés (rétention 24 h / 48 h)</p>
 
-  <div class="alert alert-info">
-    Page complète disponible en livraison 6 (filtres, lecteur inline, suppression batch).
-    En attendant, les fichiers générés en TTS avec rétention 24h/48h sont accessibles
-    via l'API <code>/api/recordings</code>.
+  <div class="studio-tabs" role="tablist" style="margin-bottom:1.25rem">
+    <button class="studio-tab active" data-mode="all">Tous</button>
+    <button class="studio-tab" data-mode="tts">TTS</button>
+    <button class="studio-tab" data-mode="stt">STT</button>
+    <button class="studio-tab" data-mode="live">Live</button>
   </div>
+
+  <div id="recStats" style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text3);margin-bottom:1rem"></div>
+
+  <div class="voice-list" id="recList"></div>
 </main>
 
 <script src="/js/theme.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/notify.js"></script>
 <script src="/js/header.js"></script>
+<script src="/js/recordings.js"></script>
 </body>
 </html>

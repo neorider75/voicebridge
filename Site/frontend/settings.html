@@ -7,6 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/studio.css">
 </head>
 <body>
 
@@ -32,9 +33,115 @@
   <h1 class="page-title">Réglages</h1>
   <p class="page-sub">Serveur · API · Sécurité · Installation</p>
 
-  <div class="alert alert-info">
-    Page complète disponible en livraison 6 (préchauffage, rétention par défaut,
-    génération clé API, changement mot de passe, téléchargements).
+  <!-- Sidebar tabs -->
+  <div class="studio-tabs" role="tablist" style="margin-bottom:1.5rem">
+    <button class="studio-tab active" data-section="server">Serveur</button>
+    <button class="studio-tab" data-section="api">API</button>
+    <button class="studio-tab" data-section="security">Sécurité</button>
+    <button class="studio-tab" data-section="install">Installation</button>
+  </div>
+
+  <!-- ── Serveur ── -->
+  <div class="studio-content active" data-section="server">
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">État du serveur</h2>
+      <div id="serverState" style="font-family:'DM Mono',monospace;font-size:0.78rem;line-height:1.7"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Préchauffage</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label for="warmLang">Langue</label>
+          <select id="warmLang"><option value="fr">🇫🇷 Français</option><option value="en">🇬🇧 Anglais</option></select>
+        </div>
+        <div class="field">
+          <label for="warmVoice">Voix (optionnel)</label>
+          <select id="warmVoice"><option value="">Aucune (préchauffe juste les modèles)</option></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnWarm">🚀 Préchauffer</button>
+      <div id="warmStatus" class="hint" style="margin-top:0.6rem"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Rétention par défaut (TTS et STT)</h2>
+      <p class="hint" style="margin-bottom:0.75rem">Valeur appliquée à toutes les générations. Modifiable au cas par cas dans le Studio.</p>
+      <div class="radio-group" data-name="default-retention">
+        <button class="radio-option" data-value="session">Session uniquement</button>
+        <button class="radio-option" data-value="24h">24h</button>
+        <button class="radio-option" data-value="48h">48h</button>
+      </div>
+      <div class="hint" style="margin-top:0.5rem">Le mode Live ne génère jamais de fichier · Buffer 5 s en RAM gère les micro-coupures.</div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Déchargement automatique</h2>
+      <p class="hint" style="margin-bottom:0.75rem">Après inactivité de :</p>
+      <div class="radio-group" data-name="model-unload">
+        <button class="radio-option" data-value="15">15 min</button>
+        <button class="radio-option" data-value="30">30 min</button>
+        <button class="radio-option" data-value="60">1 h</button>
+      </div>
+    </div>
+
+    <div class="card" style="opacity:0.55">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <h2 style="font-size:0.95rem;font-weight:700">Mode intensif</h2>
+        <span style="background:var(--accent);color:#fff;font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:10px;font-weight:700">V2</span>
+      </div>
+      <p class="hint">Programmez des sessions avec préchauffage automatique et déchargement étendu. Disponible en V2.</p>
+    </div>
+  </div>
+
+  <!-- ── API ── -->
+  <div class="studio-content" data-section="api">
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:0.6rem">Clé API</h2>
+      <p class="hint" style="margin-bottom:1rem">Utilisée par l'application VoiceBridge pour s'authentifier au serveur.</p>
+      <div style="font-family:'DM Mono',monospace;font-size:0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.85rem;margin-bottom:0.5rem" id="apiKeyMasked">…</div>
+      <div class="hint" id="apiKeyDate"></div>
+      <button class="btn btn-secondary" id="btnRegenKey" style="margin-top:1rem">🔄 Générer une nouvelle clé</button>
+      <div id="apiKeyResult" style="display:none;margin-top:1rem">
+        <div class="alert alert-warning">⚠️ Copiez maintenant · Ne sera plus affichée · Ancienne clé révoquée</div>
+        <div style="font-family:'DM Mono',monospace;font-size:0.95rem;background:var(--surface3);border:1px solid var(--accent);border-radius:6px;padding:0.7rem 0.85rem" id="apiKeyClear"></div>
+        <button class="btn btn-secondary" id="btnCopyKey" style="margin-top:0.6rem">📋 Copier</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sécurité ── -->
+  <div class="studio-content" data-section="security">
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Mot de passe</h2>
+      <div class="field"><label>Mot de passe actuel</label><input type="password" id="pwCurrent" placeholder="••••••••••••" autocomplete="current-password"></div>
+      <div class="field"><label>Nouveau mot de passe</label><input type="password" id="pwNew" placeholder="••••••••••••" autocomplete="new-password"></div>
+      <div class="field"><label>Confirmer</label><input type="password" id="pwConfirm" placeholder="••••••••••••" autocomplete="new-password"></div>
+      <button class="btn btn-primary" id="btnChangePw">✅ Mettre à jour</button>
+    </div>
+  </div>
+
+  <!-- ── Installation ── -->
+  <div class="studio-content" data-section="install">
+    <div class="card">
+      <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:1rem">Configuration de l'app macOS</h2>
+      <ol style="padding-left:1.25rem;line-height:1.8;font-size:0.85rem">
+        <li>
+          <strong>Périphérique virtuel :</strong>
+          <a href="https://existential.audio/blackhole/" target="_blank" rel="noopener" style="color:var(--accent2)">📥 Télécharger BlackHole</a>
+          (Mac, gratuit)
+        </li>
+        <li><strong>Application VoiceBridge :</strong>
+          <a href="/api/install/voicebridge-app" download style="color:var(--accent2)">📥 Télécharger VoiceBridge.app</a>
+        </li>
+        <li><strong>Configuration Teams :</strong>
+          <div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--accent2);margin-top:0.3rem">
+            Teams → Paramètres → Périphériques → Microphone → BlackHole 2ch
+          </div>
+        </li>
+        <li><strong>Clé API :</strong> copiez-la depuis l'onglet API ci-dessus et collez-la dans VoiceBridge → Préférences.</li>
+      </ol>
+    </div>
   </div>
 </main>
 
@@ -42,5 +149,6 @@
 <script src="/js/api.js"></script>
 <script src="/js/notify.js"></script>
 <script src="/js/header.js"></script>
+<script src="/js/settings.js"></script>
 </body>
 </html>

@@ -86,6 +86,32 @@ try:
 except Exception:  # noqa: BLE001
     log.warning("register_loaders détection impossible (deps ML manquantes ?)")
 
+# ---------------------------------------------------------------------------
+# Scheduler in-process : retention + auto-unload modèles
+# ---------------------------------------------------------------------------
+
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
+    from .models import manager as _mgr
+    from .services import retention as _retention
+
+    _scheduler = AsyncIOScheduler(timezone="UTC")
+    _scheduler.add_job(_retention.cleanup_expired, "interval", minutes=10, id="retention_sweep")
+    _scheduler.add_job(_mgr.manager.sweep_idle, "interval", minutes=5, id="models_idle_sweep")
+
+    @app.on_event("startup")
+    async def _start_scheduler() -> None:
+        _scheduler.start()
+        log.info("scheduler started (retention 10min + models idle 5min)")
+
+    @app.on_event("shutdown")
+    async def _stop_scheduler() -> None:
+        _scheduler.shutdown(wait=False)
+except ImportError:
+    log.warning("APScheduler non disponible — pas de cleanup in-process")
+except Exception:  # noqa: BLE001
+    log.exception("scheduler boot failed")
+
 
 # ---------------------------------------------------------------------------
 # Middleware : headers de sécurité + auth
