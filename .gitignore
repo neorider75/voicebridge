@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code (settings locaux à l'utilisateur)
+.claude/
+
+# Environnements et secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Données runtime (jamais dans le repo)
+# Le runtime vit sous /var/voicebridge/data/ sur le VPS
+config.local.json
