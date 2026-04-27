@@ -92,6 +92,29 @@
       <div class="progress-bar-wrap"><div class="progress-bar-fill" id="uploadTranscribeBar"></div></div>
       <div class="progress-step" id="uploadTranscribeStep">Transcription auto en cours…</div>
     </div>
+
+    <!-- Comparaison Original / Nettoyé après upload : 2 lecteurs + choix -->
+    <div id="uploadCompareWrap" style="display:none;margin-top:1rem;padding:0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.6rem">🎚️ Choisissez la version à utiliser pour cloner</div>
+      <div class="grid-2" style="gap:0.85rem">
+        <div class="field" style="margin:0">
+          <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text);font-size:0.78rem;margin-bottom:0.35rem;display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="radio" name="upload-clean-choice" value="original" id="cleanChoiceOriginal" checked>
+            <span><strong>Original</strong> <span style="color:var(--text3);font-size:0.7rem">(tel que vous l'avez fourni)</span></span>
+          </label>
+          <audio id="uploadOriginalPreview" controls preload="metadata" style="width:100%"></audio>
+        </div>
+        <div class="field" style="margin:0">
+          <label style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text);font-size:0.78rem;margin-bottom:0.35rem;display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="radio" name="upload-clean-choice" value="cleaned" id="cleanChoiceCleaned">
+            <span><strong>Nettoyé</strong> <span style="color:var(--text3);font-size:0.7rem">(débruitage léger + égalisation volume)</span></span>
+          </label>
+          <audio id="uploadCleanedPreview" controls preload="metadata" style="width:100%"></audio>
+          <div id="cleanedStatus" class="hint" style="margin-top:0.3rem;font-size:0.7rem">Préparation…</div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:0.55rem;font-size:0.7rem">💡 La version nettoyée est conservatrice (pas d'effet destructeur). Si la voix d'origine sonne déjà propre, gardez l'original.</div>
+    </div>
     <div class="field" style="margin-top:1rem">
       <label for="uploadRefText">Transcription <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400">(auto-rempli, modifiable)</span></label>
       <textarea id="uploadRefText" rows="3" placeholder="Sélectionnez un fichier pour l'auto-transcription, ou tapez à la main ce que dit l'audio." style="width:100%;padding:0.6rem 0.9rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>

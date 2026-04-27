@@ -172,12 +172,64 @@
       if (input.files.length) showUploadPreview(input.files[0]);
     });
   }
+  // Blob de la version nettoyée (récupéré côté serveur via preview-clean).
+  // Utilisé au moment du submit si l'utilisateur choisit "Nettoyé".
+  var uploadCleanedBlob = null;
+
   function showUploadPreview(file) {
     $('uploadName').textContent = file.name + ' · ' + Math.round(file.size / 1024) + ' Ko';
     $('uploadName').style.display = 'block';
+    // Affiche le panneau de comparaison Original / Nettoyé
+    var wrap = $('uploadCompareWrap');
+    if (wrap) wrap.style.display = 'block';
+    // Lecteur "Original" : Blob URL local du fichier choisi
+    var origPlayer = $('uploadOriginalPreview');
+    if (origPlayer) {
+      origPlayer.src = URL.createObjectURL(file);
+      origPlayer.load();
+    }
+    // Lecteur "Nettoyé" : on lance l'appel serveur, on remplira la src au retour
+    fetchCleanedPreview(file);
     // Auto-transcription via Kyutai pour pré-remplir le textarea ref_text.
-    // L'utilisateur peut corriger avant de soumettre.
+    // L'utilisateur peut corriger avant de soumettre. La transcription se fait
+    // sur l'ORIGINAL (Kyutai gère bien le bruit en général ; pas besoin du
+    // nettoyage pour ça).
     autoTranscribeUpload(file);
+  }
+
+  function fetchCleanedPreview(file) {
+    var status = $('cleanedStatus');
+    var player = $('uploadCleanedPreview');
+    if (status) status.textContent = '⏳ Nettoyage en cours…';
+    uploadCleanedBlob = null;
+    var fd = new FormData();
+    fd.append('audio_file', file);
+    fetch('/api/voices/preview-clean', {
+      method: 'POST', credentials: 'same-origin', body: fd,
+    }).then(function (r) {
+      if (!r.ok) {
+        return r.text().then(function (raw) {
+          var msg = 'Erreur ' + r.status;
+          try { var d = JSON.parse(raw); msg = (d.detail && d.detail.message) || d.message || msg; } catch (e) {}
+          throw new Error(msg);
+        });
+      }
+      return r.blob();
+    }).then(function (blob) {
+      uploadCleanedBlob = blob;
+      if (player) {
+        player.src = URL.createObjectURL(blob);
+        player.load();
+      }
+      if (status) status.textContent = '✅ Prêt — comparez les deux versions ci-dessus';
+    }).catch(function (e) {
+      if (status) status.textContent = '⚠️ Nettoyage indisponible : ' + (e.message || 'erreur') + ' — l\'original sera utilisé.';
+      // On force le radio sur "original" et on désactive l'option nettoyé
+      var radio = $('cleanChoiceCleaned');
+      if (radio) radio.disabled = true;
+      var origRadio = $('cleanChoiceOriginal');
+      if (origRadio) origRadio.checked = true;
+    });
   }
 
   // Anime une barre de progression linéairement en attendant la réponse
@@ -446,14 +498,24 @@
         var uploadRef = $('uploadRefText');
         var refText = uploadRef ? uploadRef.value.trim() : '';
         if (!refText) {
-          // Sans ref_text, NeuTTS plantera ou produira de l'audio dégradé au
-          // 1er TTS. On bloque ici plutôt que créer une voix inutilisable.
           VB.notify('warning',
             'La transcription est vide. Attendez l\'auto-transcription ou tapez le texte que dit l\'audio.');
           if (uploadRef) uploadRef.focus();
           return;
         }
-        fd.append('audio_file', input.files[0]);
+        // Choix de version : "original" ou "cleaned" (radio uploadCompareWrap)
+        var choice = 'original';
+        var cleanedRadio = $('cleanChoiceCleaned');
+        if (cleanedRadio && cleanedRadio.checked) choice = 'cleaned';
+        if (choice === 'cleaned') {
+          if (!uploadCleanedBlob) {
+            VB.notify('warning', 'La version nettoyée n\'est pas encore prête. Attendez ou choisissez "Original".');
+            return;
+          }
+          fd.append('audio_file', uploadCleanedBlob, 'cleaned.wav');
+        } else {
+          fd.append('audio_file', input.files[0]);
+        }
         fd.append('ref_text', refText);
       }
 

@@ -97,6 +97,31 @@ def to_wav_24k_mono(src: Path, dst: Path) -> None:
     ])
 
 
+def clean_light(src: Path, dst: Path) -> None:
+    """Nettoyage audio léger non destructif pour clonage de voix.
+
+    Pipeline ffmpeg :
+        afftdn=nf=-25:nr=10  → débruiteur FFT léger (10 dB de réduction max,
+                               seuil de bruit -25 dB)
+        highpass=f=60        → coupe le rumble basse fréquence (ronflement,
+                               souffle ventilo) sans toucher la voix
+        loudnorm=I=-16...    → normalisation EBU R128 vers -16 LUFS
+                               (cible standard "voix" web/podcast)
+        format mono 24kHz s16 → format final compatible avec NeuTTS
+
+    Préserve la prosodie et l'identité du speaker. Suffisant pour absorber
+    un peu de bruit de fond ambiant et homogénéiser le volume sans
+    effets destructeurs (compression dynamique forte, gating brutal).
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    _run([
+        "ffmpeg", "-y", "-i", str(src),
+        "-af", "afftdn=nf=-25:nr=10,highpass=f=60,loudnorm=I=-16:TP=-1.5:LRA=11",
+        "-ac", "1", "-ar", "24000", "-sample_fmt", "s16",
+        str(dst),
+    ], timeout=90)
+
+
 def to_wav_16k_mono(src: Path, dst: Path) -> None:
     """Pour Kyutai STT (16 kHz mono PCM s16)."""
     dst.parent.mkdir(parents=True, exist_ok=True)

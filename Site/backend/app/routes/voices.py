@@ -128,6 +128,51 @@ async def voice_audio(voice_id: str):
 # ---------------------------------------------------------------------------
 
 
+@router.post("/preview-clean")
+@limiter.limit("20/minute")
+async def preview_clean(
+    request: Request,
+    audio_file: UploadFile = File(...),
+):
+    """Prend un audio uploadé et retourne sa version nettoyée
+    (afftdn + highpass + loudnorm via ffmpeg).
+
+    Permet à l'utilisateur de comparer Original / Nettoyé avant de choisir
+    quelle version utiliser pour créer la voix. Pas de side-effect : aucun
+    enregistrement persistant côté serveur, juste un round-trip.
+    """
+    _require_ml()  # pas strictement requis (pas de ML utilisé) mais cohérent
+    src_path = None
+    cleaned_path = None
+    try:
+        with NamedTemporaryFile(delete=False, dir=config.TMP_DIR,
+                                suffix=Path(audio_file.filename or "").suffix) as tmp:
+            src_path = Path(tmp.name)
+            shutil.copyfileobj(audio_file.file, tmp)
+        try:
+            audio.validate_upload(src_path, MAX_VOICE_BYTES)
+        except audio.AudioError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+                "error": "audio_invalid", "message": str(exc)})
+        cleaned_path = src_path.with_suffix(".cleaned.wav")
+        try:
+            audio.clean_light(src_path, cleaned_path)
+        except audio.AudioError as exc:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
+                "error": "clean_failed", "message": str(exc)})
+        # Lecture du WAV en mémoire pour le streamer (le tmp sera supprimé
+        # tout de suite après).
+        data = cleaned_path.read_bytes()
+        from fastapi.responses import Response  # local import pour éviter circular
+        return Response(content=data, media_type="audio/wav",
+                        headers={"Content-Disposition": "inline; filename=cleaned.wav"})
+    finally:
+        if src_path and src_path.exists():
+            src_path.unlink(missing_ok=True)
+        if cleaned_path and cleaned_path.exists():
+            cleaned_path.unlink(missing_ok=True)
+
+
 @router.post("", status_code=201)
 @limiter.limit("10/minute")
 async def create_voice(
