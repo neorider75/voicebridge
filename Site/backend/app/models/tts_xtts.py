@@ -122,14 +122,16 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     # du modèle) → permet de bouger via env var sans restart, ou plus tard
     # via un payload UI sans redéploiement.
     params = {
-        # 0.7 = sweet spot empirique entre 0.65 (défaut Coqui, plus conservateur)
-        # et 0.8 (testé "trop généré").
-        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.7),
+        # 0.65 = défaut Coqui = max stabilité / fidélité d'identité.
+        # 0.7 testé donnait un poil plus d'expressivité mais dérivait sur
+        # certains mots ("je ne reconnais plus la voix"). On revient au
+        # plus déterministe.
+        "temperature": _read_env_float("VB_XTTS_TEMPERATURE", 0.65),
         "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
         "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
-        "speed": _read_env_float("VB_XTTS_SPEED", 1.10),
+        "speed": _read_env_float("VB_XTTS_SPEED", 1.15),
         # gpt_cond_len = secondes de réf utilisées par le speaker encoder.
         # Défaut Coqui interne ~6s. Notre WAV est trimé à 15s, donc 10s
         # laisse une marge confortable et améliore la capture d'identité

@@ -105,12 +105,12 @@ Tous overrides via `Environment="VB_..."` dans
 
 | Variable | Défaut | Effet |
 |---|---|---|
-| `VB_XTTS_TEMPERATURE` | 0.7 | Diversité prosodique. 0.65 défaut Coqui, 0.7 sweet spot empirique, ↑ = plus expressif mais risque effet "généré" |
+| `VB_XTTS_TEMPERATURE` | 0.65 | Diversité prosodique = défaut Coqui = max stabilité d'identité. ↑ vers 0.7-0.8 pour plus d'expression, mais risque dérive du timbre / effet "généré" |
 | `VB_XTTS_TOP_K` | 50 | Pool de candidats |
 | `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling |
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
-| `VB_XTTS_SPEED` | 1.10 | Vitesse de parole (0.7 lent, 1.3 rapide) |
+| `VB_XTTS_SPEED` | 1.15 | Vitesse de parole (0.7 lent, 1.3 rapide) |
 | `VB_XTTS_GPT_COND_LEN` | 10 | Secondes de la voix de réf utilisées pour le speaker conditioning. WAV trimé à 15s → 10s laisse marge. **Bumper au-dessus de la durée du WAV source dégrade l'audio** (étouffé/entrecoupé) |
 | `VB_XTTS_GPT_COND_CHUNK_LEN` | (non setté → défaut Coqui 4) | Chunk size pour le conditioning |
 | `VB_XTTS_MAX_REF_LEN` | (non setté → défaut Coqui 10) | Secondes pour le décodeur diffusion |
