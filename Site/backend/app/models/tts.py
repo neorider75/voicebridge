@@ -238,41 +238,121 @@ def _trim_leading_silence(wav, threshold: float = 0.012, window_ms: int = 20) ->
         return wav
 
 
-def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
+def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str,
+          ref_wav_path: "Path | None" = None):
     """Synthétise un WAV complet (np.ndarray float32 à 24 kHz).
 
-    **Workaround NeuTTS Air GGML** : le backend GGML construit un prompt qui
-    contient le texte combiné ``ref_text + input_text`` côté texte mais
-    seulement les ``ref_codes`` côté speech. Le modèle ré-émet alors l'audio
-    de la référence avant de continuer sur ``input_text`` — l'utilisateur
-    entend "blabla de référence + son texte" au lieu de juste son texte.
+    **Workaround NeuTTS Air GGML** : le modèle ré-émet inconsisitement
+    l'audio de référence en début de sortie (parfois oui, parfois non,
+    parfois partiellement). Quand il le fait, c'est typiquement la fin
+    de la ref qui est ré-émise sur ~2 s.
 
-    On compense en deux temps :
-    1. Trim par count de tokens (~480 samples/token NeuCodec) pour couper
-       la portion de ref audio dans la sortie.
-    2. Trim de silence de tête (énergie < seuil) pour le résidu éventuel.
+    Stratégie : si ``ref_wav_path`` est fourni, on calcule la corrélation
+    d'enveloppe d'énergie entre la fin de la ref WAV et le début de
+    l'output. Si la similarité dépasse un seuil → résidu présent → trim
+    de ``VB_NEUTTS_HEAD_TRIM_S`` secondes (défaut 2.0). Sinon → sortie
+    brute, on ne touche à rien (évite de manger le début du nouveau texte
+    quand le modèle se comporte bien).
     """
     key = model_key_for(language, quality)
     tts = mgr.manager.get(key)
     output = tts.infer(text, ref_codes, ref_text)
 
-    try:
-        ref_token_count = int(len(ref_codes))
-    except TypeError:
-        ref_token_count = 0
-
-    # NOTE : on N'APPLIQUE PLUS de trim par défaut, ni par count de tokens
-    # ni par détection de silence. NeuTTS Air GGML est inconsistent : parfois
-    # il ré-émet l'audio de référence en début, parfois non. Aucun trim à
-    # un offset fixe ne marche, et la détection de silence coupait dans le
-    # contenu utilisateur (audios réduits à 2 s — uniquement la fin du texte).
-    #
-    # Décision : sortie BRUTE. Si le résidu de ref revient en début, on
-    # tentera une approche plus fiable (cross-correlation avec le WAV de
-    # référence pour détecter exactement où le contenu change), mais c'est
-    # mieux qu'un trim aveugle qui mange le début du nouveau texte.
-    _ = ref_token_count  # noqa : on garde la lecture pour ne pas casser le calcul
+    if ref_wav_path is not None:
+        head_trim_s = float(os.environ.get("VB_NEUTTS_HEAD_TRIM_S", "2.0"))
+        if head_trim_s > 0 and _has_ref_residual_at_start(output, ref_wav_path):
+            try:
+                trim_samples = int(head_trim_s * NEUTTS_OUTPUT_SAMPLE_RATE)
+                if hasattr(output, "__len__") and len(output) > trim_samples + 1000:
+                    log.info("NeuTTS : ref résiduel détecté, trim %.2fs", head_trim_s)
+                    import numpy as np  # type: ignore
+                    output = np.asarray(output, dtype="float32")
+                    if output.ndim > 1:
+                        output = output.squeeze()
+                    output = output[trim_samples:]
+            except Exception as exc:  # noqa: BLE001
+                log.warning("trim head failed: %s", exc)
     return output
+
+
+def _has_ref_residual_at_start(output, ref_wav_path,
+                               tail_window_s: float = 1.0,
+                               search_window_s: float = 3.0,
+                               correlation_threshold: float = 0.55) -> bool:
+    """Détecte si le début de ``output`` ressemble à la fin de la ref WAV
+    via corrélation d'enveloppe d'énergie (RMS sur fenêtre 10 ms).
+
+    L'enveloppe d'énergie est plus robuste que la corrélation directe sur
+    waveform : deux générations du même contenu auront des waveforms
+    différents (variations autorégressives) mais des enveloppes très
+    similaires (mêmes attaques, mêmes pauses, même rythme prosodique).
+
+    Retourne True si la corrélation max dépasse ``correlation_threshold``
+    sur les ``search_window_s`` premières secondes de l'output.
+    """
+    try:
+        import numpy as np  # type: ignore
+        import soundfile as sf  # type: ignore
+    except ImportError:
+        return False
+    try:
+        ref_audio, sr = sf.read(str(ref_wav_path))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ref WAV illisible pour détection résidu: %s", exc)
+        return False
+    if sr != NEUTTS_OUTPUT_SAMPLE_RATE:
+        # Le WAV de la voix devrait toujours être en 24 kHz (cf. to_wav_24k_mono)
+        # mais on évite de se baser sur ça.
+        return False
+    if ref_audio.ndim > 1:
+        ref_audio = ref_audio[:, 0]
+    ref_audio = np.asarray(ref_audio, dtype=np.float32)
+    out_arr = np.asarray(output, dtype=np.float32)
+    if out_arr.ndim > 1:
+        out_arr = out_arr.squeeze()
+
+    tail_n = int(tail_window_s * NEUTTS_OUTPUT_SAMPLE_RATE)
+    head_n = int(search_window_s * NEUTTS_OUTPUT_SAMPLE_RATE)
+    if len(ref_audio) < tail_n // 2 or len(out_arr) < tail_n + 1000:
+        return False
+    ref_tail = ref_audio[-tail_n:] if len(ref_audio) >= tail_n else ref_audio
+    out_head = out_arr[:min(len(out_arr), head_n)]
+
+    # Enveloppe RMS à granularité 10 ms (240 samples à 24 kHz)
+    win = NEUTTS_OUTPUT_SAMPLE_RATE // 100
+    def _rms_env(arr):
+        n = len(arr) // win
+        if n == 0:
+            return np.zeros(0, dtype=np.float32)
+        chunks = arr[: n * win].reshape(n, win)
+        env = np.sqrt(np.mean(chunks ** 2, axis=1))
+        # Normalisation pour rendre la corrélation insensible au volume
+        m = float(np.max(env))
+        return env / m if m > 1e-6 else env
+
+    ref_env = _rms_env(ref_tail)
+    head_env = _rms_env(out_head)
+    if len(ref_env) < 5 or len(head_env) < len(ref_env):
+        return False
+
+    # Corrélation glissante normalisée (Pearson-like)
+    n_pos = len(head_env) - len(ref_env) + 1
+    best = 0.0
+    ref_centered = ref_env - float(np.mean(ref_env))
+    ref_norm = float(np.linalg.norm(ref_centered))
+    if ref_norm < 1e-6:
+        return False
+    for i in range(n_pos):
+        h = head_env[i:i + len(ref_env)]
+        h_centered = h - float(np.mean(h))
+        h_norm = float(np.linalg.norm(h_centered))
+        if h_norm < 1e-6:
+            continue
+        corr = float(np.dot(ref_centered, h_centered) / (ref_norm * h_norm))
+        if corr > best:
+            best = corr
+    log.info("NeuTTS ref-residual corr max=%.2f (seuil=%.2f)", best, correlation_threshold)
+    return best >= correlation_threshold
 
 
 def _trim_to_silence_end(wav,

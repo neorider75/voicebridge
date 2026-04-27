@@ -185,6 +185,7 @@ def _synthesize_neutts(payload: GeneratePayload, voice: dict, voice_id: str):
             ref_text=ref_text,
             language=voice["language"],
             quality=payload.quality,
+            ref_wav_path=voices_store.wav_path(voice_id),
         )
     except RuntimeError as exc:
         log.exception("NeuTTS.infer a échoué")
