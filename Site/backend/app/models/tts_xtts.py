@@ -225,7 +225,45 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         except Exception as exc:  # noqa: BLE001
             log.warning("pitch_shift failed: %s", exc)
 
+    # Application du watermark Perth (idem NeuTTS qui le fait nativement,
+    # XTTS ne le fait pas par défaut). Permet à la détection deepfake de
+    # reconnaître l'audio comme généré par VoiceBridge avec certitude.
+    wav = _apply_perth_watermark(wav)
     return wav
+
+
+# Cache singleton du watermarker Perth (initialisé lazy au 1er appel)
+_PERTH_WATERMARKER = None
+
+
+def _apply_perth_watermark(wav):
+    """Applique le watermark Perth sur le signal généré par XTTS.
+
+    NeuTTS le fait nativement à la fin de son infer (cf. neutts.py
+    self.watermarker.apply_watermark). XTTS ne le fait pas → on
+    réplique le comportement ici pour que la détection deepfake puisse
+    reconnaître l'audio comme généré par VoiceBridge avec certitude.
+
+    Le watermarker Perth est imperceptible à l'oreille mais détectable
+    par PerthImplicitWatermarker.get_watermark().
+    """
+    global _PERTH_WATERMARKER
+    try:
+        import numpy as np  # type: ignore
+        if _PERTH_WATERMARKER is None:
+            from perth import PerthImplicitWatermarker  # type: ignore
+            _PERTH_WATERMARKER = PerthImplicitWatermarker()
+            log.info("Perth watermarker initialisé")
+        arr = np.asarray(wav, dtype=np.float32)
+        if arr.ndim > 1:
+            arr = arr.squeeze()
+        watermarked = _PERTH_WATERMARKER.apply_watermark(
+            arr, sample_rate=XTTS_OUTPUT_SAMPLE_RATE
+        )
+        return watermarked
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Perth watermark non appliqué: %s", exc)
+        return wav
 
 
 def _highpass_filter(wav, cutoff_hz: float, order: int = 4):

@@ -53,18 +53,53 @@ def _require_ml() -> None:
 
 
 def _combined_verdict(watermark: dict, spectral: dict | None) -> tuple[str, float, str]:
-    """Retourne ``(verdict, confidence, message_court)``."""
+    """Retourne ``(verdict, confidence, message_court)``.
+
+    Hiérarchie d'autorité :
+    1. **Watermark Perth détecté** → verdict ferme "ai_generated" (généré par
+       VoiceBridge, certitude haute, indépendant de la qualité spectrale)
+    2. **Watermark absent + spectral "fake"** → "ai_generated_unverified"
+       (modèle spectral peu fiable seul, on signale mais avec prudence)
+    3. **Watermark absent + spectral "real"** → "human_unverified"
+       (probablement humain, mais le détecteur spectral peut rater des
+       deepfakes externes — pas de preuve formelle d'authenticité)
+    4. **Watermark absent + spectral "uncertain"** → "uncertain"
+       (le détecteur spectral n'a pas tranché — verdict prudent)
+
+    Le modèle MelodyMachine/Deepfake-audio-detection-V2 a des taux non
+    négligeables de faux positifs ET faux négatifs sur l'audio "propre"
+    qui a été resamplé/denoisé. On reflète cette incertitude au verdict.
+    """
     wm_detected = bool(watermark.get("detected"))
     spectral_label = (spectral or {}).get("label", "real")
     spectral_conf = (spectral or {}).get("confidence", 0)
 
-    if wm_detected and spectral_label == "fake":
-        return "ai_generated", spectral_conf, "Généré par IA (watermark VoiceBridge présent)"
-    if wm_detected and spectral_label == "real":
-        return "ai_generated", spectral_conf, "Généré par IA (VoiceBridge, audio préservé)"
-    if not wm_detected and spectral_label == "fake":
-        return "ai_generated", spectral_conf, "Généré par IA (origine inconnue)"
-    return "human", spectral_conf, "Non généré par IA"
+    # 1. Watermark Perth détecté = certitude
+    if wm_detected:
+        return (
+            "ai_generated",
+            99.0,
+            "Généré par IA — watermark VoiceBridge détecté (certitude haute)",
+        )
+
+    # 2-4. Pas de watermark, on s'appuie sur le spectral seul (moins fiable)
+    if spectral_label == "fake":
+        return (
+            "ai_generated_unverified",
+            spectral_conf,
+            "Probablement généré par IA (analyse spectrale, pas de watermark VoiceBridge)",
+        )
+    if spectral_label == "uncertain":
+        return (
+            "uncertain",
+            spectral_conf,
+            "Indéterminé — l'analyse spectrale n'est pas concluante",
+        )
+    return (
+        "human_unverified",
+        spectral_conf,
+        "Probablement humain — pas d'indices de génération IA détectés",
+    )
 
 
 @router.post("/analyze")

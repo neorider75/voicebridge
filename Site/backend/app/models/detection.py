@@ -41,8 +41,26 @@ def register_loaders() -> None:
     mgr.manager.register_loader(mgr.MODEL_DEEPFAKE_V2, _load_deepfake_v2)
 
 
+# Seuils de confiance pour passer un verdict net. Les détecteurs deepfake
+# audio open-source ont un taux élevé de faux positifs sur l'audio "propre"
+# (resamplé, denoisé, voix réelle bien enregistrée). On exige donc une
+# proba dominante > 75 % pour rendre un verdict ; entre 25 % et 75 % on
+# rend "uncertain" pour éviter d'affirmer un faux positif/négatif.
+FAKE_THRESHOLD = 0.75
+REAL_THRESHOLD = 0.75
+
+
 def analyze_spectral(audio_array, sample_rate: int) -> dict:
-    """Retourne ``{"label": "real"|"fake", "confidence": float (0-100)}``."""
+    """Retourne le verdict + les deux probabilités.
+
+    Format :
+        {
+          "label": "real" | "fake" | "uncertain",
+          "raw_label": "...",            # label brut du modèle (id2label)
+          "confidence": float (0-100),   # proba de la classe dominante
+          "probs": {"real": float, "fake": float},  # les deux probas
+        }
+    """
     if sample_rate != DETECTION_SAMPLE_RATE:
         raise ValueError(f"sample_rate attendu {DETECTION_SAMPLE_RATE}, reçu {sample_rate}")
 
@@ -58,18 +76,39 @@ def analyze_spectral(audio_array, sample_rate: int) -> dict:
     if not isinstance(probs, list):
         probs = [probs]
     pred_idx = max(range(len(probs)), key=lambda i: probs[i])
-
     raw_label = (model.config.id2label or {}).get(pred_idx, str(pred_idx)).lower()
-    # Normalisation : "fake"/"spoof"/"synthetic" → fake, sinon → real
-    if any(k in raw_label for k in ("fake", "spoof", "synth", "ai")):
+
+    # Identifie l'index "fake" et l'index "real" via le mapping id2label.
+    fake_prob = 0.0
+    real_prob = 0.0
+    for idx, lbl in (model.config.id2label or {}).items():
+        lbl_low = str(lbl).lower()
+        prob = probs[int(idx)] if int(idx) < len(probs) else 0.0
+        if any(k in lbl_low for k in ("fake", "spoof", "synth", "ai")):
+            fake_prob = prob
+        else:
+            real_prob = prob
+
+    # Verdict avec seuil de confiance (évite les faux positifs sur audio
+    # légèrement traité que les détecteurs étiquettent à tort "fake").
+    if fake_prob >= FAKE_THRESHOLD:
         normalized = "fake"
-    else:
+        confidence = fake_prob
+    elif real_prob >= REAL_THRESHOLD:
         normalized = "real"
+        confidence = real_prob
+    else:
+        normalized = "uncertain"
+        confidence = max(fake_prob, real_prob)
 
     return {
         "label": normalized,
         "raw_label": raw_label,
-        "confidence": round(probs[pred_idx] * 100, 1),
+        "confidence": round(confidence * 100, 1),
+        "probs": {
+            "real": round(real_prob * 100, 1),
+            "fake": round(fake_prob * 100, 1),
+        },
     }
 
 
