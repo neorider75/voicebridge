@@ -194,7 +194,12 @@ def encode_reference(wav_path: Path, language: str) -> Any:
 # Constantes de trim (cf. infer ci-dessous)
 NEUCODEC_TOKENS_PER_SECOND = 50      # NeuCodec produit 50 tokens audio par seconde
 NEUTTS_OUTPUT_SAMPLE_RATE = 24000    # Sortie NeuTTS Air = 24 kHz mono
-SAMPLES_PER_REF_TOKEN = NEUTTS_OUTPUT_SAMPLE_RATE // NEUCODEC_TOKENS_PER_SECOND  # 480
+# Le ratio théorique est 480 (24000/50). En pratique le modèle émet parfois
+# 5-15% de tokens en plus pour le préfixe ref (variations autorégressives).
+# On applique un facteur 1.10 par défaut pour over-trim légèrement et capter
+# ce résidu. Risque marginal : cut de quelques ms d'attaque sur le 1er
+# phonème du nouveau texte (à peine perceptible vs entendre 0.5-1s de ref).
+SAMPLES_PER_REF_TOKEN = 528          # 480 * 1.10
 
 
 def _trim_leading_silence(wav, threshold: float = 0.012, window_ms: int = 20) -> "Any":
@@ -276,9 +281,9 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
 
 
 def _trim_to_silence_end(wav,
-                         search_window_s: float = 0.6,
-                         silence_threshold: float = 0.008,
-                         min_silence_ms: int = 60):
+                         search_window_s: float = 1.5,
+                         silence_threshold: float = 0.012,
+                         min_silence_ms: int = 50):
     """Cherche la première plage de silence (≥ ``min_silence_ms`` ms,
     amplitude < ``silence_threshold``) dans les ``search_window_s``
     premières secondes du signal, et coupe à sa fin.
