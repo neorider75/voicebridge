@@ -107,7 +107,7 @@ Tous overrides via `Environment="VB_..."` dans
 |---|---|---|
 | `VB_XTTS_TEMPERATURE` | 0.65 | Diversité prosodique = défaut Coqui = max stabilité d'identité. ↑ vers 0.7-0.8 pour plus d'expression, mais risque dérive du timbre / effet "généré" |
 | `VB_XTTS_TOP_K` | 50 | Pool de candidats |
-| `VB_XTTS_TOP_P` | 0.90 | Nucleus sampling. 0.85 défaut Coqui. 0.90 = un poil plus de variation prosodique sans toucher temperature (orthogonal au timbre) |
+| `VB_XTTS_TOP_P` | 0.85 | Nucleus sampling, défaut Coqui. ↑ vers 0.90 ouvre le pool de candidats mais peut introduire des micro-artefacts sur certains mots |
 | `VB_XTTS_LENGTH_PENALTY` | 1.0 | Pondération longueur des séquences |
 | `VB_XTTS_REPETITION_PENALTY` | 2.0 | Pénalité répétitions (plus bas = tolère plus) |
 | `VB_XTTS_SPEED` | 1.15 | Vitesse de parole (0.7 lent, 1.3 rapide) |
