@@ -261,21 +261,17 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
     except TypeError:
         ref_token_count = 0
 
-    if ref_token_count > 0 and hasattr(output, "__len__"):
-        trim = ref_token_count * SAMPLES_PER_REF_TOKEN
-        if len(output) > trim:
-            log.info("trimming %d samples (%.2fs) of ref audio prefix from infer output",
-                     trim, trim / NEUTTS_OUTPUT_SAMPLE_RATE)
-            output = output[trim:]
-            # Trim fin par détection de pause : la transition ref → nouveau
-            # texte produit en général un creux de silence court (le modèle
-            # respire). On cherche ce creux dans les ~600 ms post-trim et
-            # on coupe à sa fin pour attraper le résidu de ref que la
-            # multiplication par len(ref_codes) sous-estime parfois.
-            output = _trim_to_silence_end(output)
-        else:
-            log.warning("infer output (%d samples) shorter than expected ref prefix (%d) — pas de trim",
-                        len(output), trim)
+    # NOTE : on N'APPLIQUE PLUS de trim par défaut, ni par count de tokens
+    # ni par détection de silence. NeuTTS Air GGML est inconsistent : parfois
+    # il ré-émet l'audio de référence en début, parfois non. Aucun trim à
+    # un offset fixe ne marche, et la détection de silence coupait dans le
+    # contenu utilisateur (audios réduits à 2 s — uniquement la fin du texte).
+    #
+    # Décision : sortie BRUTE. Si le résidu de ref revient en début, on
+    # tentera une approche plus fiable (cross-correlation avec le WAV de
+    # référence pour détecter exactement où le contenu change), mais c'est
+    # mieux qu'un trim aveugle qui mange le début du nouveau texte.
+    _ = ref_token_count  # noqa : on garde la lecture pour ne pas casser le calcul
     return output
 
 
