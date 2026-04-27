@@ -60,9 +60,28 @@
     });
   }
 
+  function bindStatusBadge() {
+    var badge = $('#statusBadge');
+    if (!badge) return;
+    badge.style.cursor = 'pointer';
+    badge.title = "État du serveur — clic pour voir les détails";
+    badge.addEventListener('click', function () {
+      // Si on est déjà sur /settings, scroll au top et active le panel "Serveur"
+      // (le 1er panel par défaut). Sinon redirige vers /settings.
+      if (window.location.pathname === '/settings') {
+        var serverItem = document.querySelector('.settings-nav-item[data-panel="server"]');
+        if (serverItem) serverItem.click();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        window.location.href = '/settings';
+      }
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     highlightNav();
     bindLogout();
+    bindStatusBadge();
     refreshStatus();
     setInterval(refreshStatus, POLL_INTERVAL);
   });
