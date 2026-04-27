@@ -38,6 +38,7 @@ async def status_public():
     vm = psutil.virtual_memory()
     disk = shutil.disk_usage("/")
     snap = _models_snapshot()
+    detailed = mgr.manager.detailed_snapshot()
     # Statut global
     if any(v == "loaded" for v in snap.values()):
         global_status = "ready"
@@ -56,6 +57,7 @@ async def status_public():
             "percent": round(disk.used / disk.total * 100, 1),
         },
         "models": snap,
+        "models_detailed": detailed,  # avec last_used timestamp
         "latency_ms": None,
         "voicebridge_connected": False,
         "uptime_seconds": int(time.time() - _BOOT_TIME),

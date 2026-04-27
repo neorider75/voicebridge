@@ -94,16 +94,27 @@
     var models = data.models || {};
     var loaded = 0, total = 0;
     var rows = '';
+    var detailed = data.models_detailed || {};
     Object.keys(models).forEach(function (k) {
       total += 1;
       var v = models[k];
       var isLoaded = v === 'loaded';
       if (isLoaded) loaded += 1;
       var dotColor = isLoaded ? 'var(--success)' : 'var(--text3)';
+      var lastUsed = detailed[k] && detailed[k].last_used ? detailed[k].last_used : 0;
+      var rel = '';
+      if (lastUsed) {
+        var now = Date.now() / 1000;
+        var diff = Math.max(0, Math.round(now - lastUsed));
+        if (diff < 60) rel = diff + 's';
+        else if (diff < 3600) rel = Math.round(diff / 60) + 'min';
+        else if (diff < 86400) rel = Math.round(diff / 3600) + 'h';
+        else rel = Math.round(diff / 86400) + 'j';
+      }
       rows += '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.15rem 0;font-family:\'DM Mono\',monospace;font-size:0.72rem">'
         + '<span style="color:' + dotColor + '">●</span>'
         + '<span>' + k + '</span>'
-        + '<span style="color:var(--text3);margin-left:auto">' + v + '</span>'
+        + '<span style="color:var(--text3);margin-left:auto;font-size:0.65rem">' + (rel ? rel + ' · ' : '') + v + '</span>'
         + '</div>';
     });
     var summaryColor = loaded === 0 ? 'var(--text3)'

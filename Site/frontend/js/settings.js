@@ -39,7 +39,7 @@
       $('diskText').textContent = s.storage.used_gb + ' / ' + s.storage.total_gb + ' Go';
       $('diskBar').style.width = (s.storage.percent || 0) + '%';
       // Modèles : nombre chargés / total + détail (avec bouton ⏏ par ligne loaded)
-      renderModelsList(s.models);
+      renderModelsList(s.models, s.models_detailed);
       lastRefreshAt = Date.now();
       tickRefreshAge();
     }).catch(function () {}).finally(function () {
@@ -47,7 +47,17 @@
     });
   }
 
-  function renderModelsList(models) {
+  function fmtRelativeTime(ts) {
+    if (!ts) return '';
+    var now = Date.now() / 1000;
+    var diff = Math.max(0, Math.round(now - ts));
+    if (diff < 60) return 'il y a ' + diff + ' s';
+    if (diff < 3600) return 'il y a ' + Math.round(diff / 60) + ' min';
+    if (diff < 86400) return 'il y a ' + Math.round(diff / 3600) + ' h';
+    return 'il y a ' + Math.round(diff / 86400) + ' j';
+  }
+
+  function renderModelsList(models, detailed) {
     var loaded = 0, total = 0;
     var list = $('modelsList');
     list.innerHTML = '';
@@ -65,7 +75,14 @@
 
       var left = document.createElement('span');
       var dotColor = isLoaded ? 'var(--success)' : 'var(--text3)';
-      left.innerHTML = '<span style="color:' + dotColor + '">●</span> ' + k + ' : ' + v;
+      // Affichage du last_used si dispo (pour debug : voir si le modèle a
+      // vraiment été utilisé récemment ou s'il est en veille depuis longtemps).
+      var lastUsedHint = '';
+      if (detailed && detailed[k] && detailed[k].last_used) {
+        lastUsedHint = ' <span style="color:var(--text3);font-size:0.65rem">·  '
+          + fmtRelativeTime(detailed[k].last_used) + '</span>';
+      }
+      left.innerHTML = '<span style="color:' + dotColor + '">●</span> ' + k + ' : ' + v + lastUsedHint;
       row.appendChild(left);
 
       if (isLoaded) {

@@ -100,6 +100,18 @@ class ModelManager:
             out[key] = "loaded" if slot.instance is not None else "unloaded"
         return out
 
+    def detailed_snapshot(self) -> dict[str, dict]:
+        """Comme status_snapshot mais avec last_used (timestamp Unix) pour
+        chaque modèle. Permet d'afficher "il y a X s" côté UI et de vérifier
+        que le tracking fonctionne (debug)."""
+        out: dict[str, dict] = {}
+        for key, slot in self._slots.items():
+            out[key] = {
+                "status": "loaded" if slot.instance is not None else "unloaded",
+                "last_used": slot.last_used or 0.0,
+            }
+        return out
+
     def unload(self, key: str) -> bool:
         slot = self._slots[key]
         with slot.lock:
