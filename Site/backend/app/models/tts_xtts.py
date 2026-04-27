@@ -156,30 +156,34 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         params["max_ref_len"] = _read_env_int("VB_XTTS_MAX_REF_LEN", 10)
 
     log.debug("XTTS infer params: %s", params)
-    try:
-        wav = tts.tts(
-            text=text,
-            speaker_wav=str(voice_wav_path),
-            language=language,
-            **params,
-        )
-    except TypeError as exc:
-        # Si la version installée de coqui-tts n'accepte pas tous les
-        # kwargs (ex: gpt_cond_len, enable_text_splitting ajoutés plus
-        # tard), on retombe sur la signature minimale + sampling de base.
-        log.warning("XTTS tts() : kwarg refusé (%s) — fallback signature minimale", exc)
-        minimal_params = {
-            k: params[k]
-            for k in ("temperature", "length_penalty", "repetition_penalty",
-                      "top_k", "top_p", "speed", "enable_text_splitting")
-            if k in params
-        }
-        wav = tts.tts(
-            text=text,
-            speaker_wav=str(voice_wav_path),
-            language=language,
-            **minimal_params,
-        )
+
+    # Chunking manuel pour les textes longs : XTTS-v2 dérive (artefacts,
+    # drift de pitch) au-delà de ~200 caractères en une seule passe parce
+    # que son speaker conditioning s'estompe au fil des tokens générés.
+    # On découpe en phrases, on infère chacune avec speaker_wav repassé
+    # en frais, puis on concatène. enable_text_splitting interne le faisait
+    # imparfaitement ; ici on a le contrôle total.
+    chunks = _split_text_chunks(text, max_chars=200)
+    if len(chunks) <= 1:
+        wav = _infer_one_chunk(tts, text, voice_wav_path, language, params)
+    else:
+        log.info("XTTS chunking : %d sub-chunks", len(chunks))
+        try:
+            import numpy as np  # type: ignore
+        except ImportError:
+            wav = _infer_one_chunk(tts, text, voice_wav_path, language, params)
+        else:
+            parts = []
+            # 50 ms de silence entre chunks pour éviter les clics aux jonctions.
+            silence = np.zeros(int(0.05 * XTTS_OUTPUT_SAMPLE_RATE), dtype=np.float32)
+            for i, chunk in enumerate(chunks):
+                log.debug("XTTS chunk %d/%d (%d chars)", i + 1, len(chunks), len(chunk))
+                ch_wav = _infer_one_chunk(tts, chunk, voice_wav_path, language, params)
+                arr = np.asarray(ch_wav, dtype=np.float32).squeeze()
+                parts.append(arr)
+                if i < len(chunks) - 1:
+                    parts.append(silence)
+            wav = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
     # `tts.tts()` peut retourner list[float] ou np.ndarray selon la version.
     # On normalise en np.ndarray float32.
     try:
@@ -232,6 +236,76 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
     # filtre passe-haut qui altère la phase fréquentielle.
     wav = _apply_perth_watermark(wav)
     return wav
+
+
+def _split_text_chunks(text: str, max_chars: int = 200) -> list:
+    """Découpe ``text`` en chunks ≤ ``max_chars``, en privilégiant les
+    frontières de phrases (.!?…) puis sub-puis (;,:).
+
+    Retourne une liste de strings non vides. Si ``text`` ≤ ``max_chars``
+    on rend simplement [text] (pas de découpe).
+    """
+    import re
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return [text] if text else []
+
+    # 1ère passe : split sur ponctuation forte. La regex garde la
+    # ponctuation collée à la phrase précédente.
+    sentences = re.split(r"(?<=[.!?…])\s+", text)
+
+    chunks: list = []
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent:
+            continue
+        if len(sent) <= max_chars:
+            chunks.append(sent)
+            continue
+        # Phrase trop longue → sub-split sur ; , : avec accumulation.
+        subs = re.split(r"(?<=[,;:])\s+", sent)
+        buf = ""
+        for s in subs:
+            s = s.strip()
+            if not s:
+                continue
+            candidate = (buf + " " + s) if buf else s
+            if len(candidate) > max_chars and buf:
+                chunks.append(buf.strip())
+                buf = s
+            else:
+                buf = candidate
+        if buf:
+            chunks.append(buf.strip())
+
+    return [c for c in chunks if c]
+
+
+def _infer_one_chunk(tts, text: str, voice_wav_path, language: str, params: dict):
+    """Une inférence XTTS sur un chunk court. Gère le fallback try/except
+    si la version installée de coqui-tts ne supporte pas tous les kwargs."""
+    try:
+        return tts.tts(
+            text=text,
+            speaker_wav=str(voice_wav_path),
+            language=language,
+            **params,
+        )
+    except TypeError as exc:
+        # Fallback signature minimale (cf. commentaire dans infer()).
+        log.warning("XTTS tts() : kwarg refusé (%s) — fallback signature minimale", exc)
+        minimal_params = {
+            k: params[k]
+            for k in ("temperature", "length_penalty", "repetition_penalty",
+                      "top_k", "top_p", "speed", "enable_text_splitting")
+            if k in params
+        }
+        return tts.tts(
+            text=text,
+            speaker_wav=str(voice_wav_path),
+            language=language,
+            **minimal_params,
+        )
 
 
 # Cache singleton du watermarker Perth (initialisé lazy au 1er appel)
