@@ -259,51 +259,62 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str,
     output = tts.infer(text, ref_codes, ref_text)
 
     if ref_wav_path is not None:
-        head_trim_s = float(os.environ.get("VB_NEUTTS_HEAD_TRIM_S", "2.0"))
-        if head_trim_s > 0 and _has_ref_residual_at_start(output, ref_wav_path):
-            try:
-                trim_samples = int(head_trim_s * NEUTTS_OUTPUT_SAMPLE_RATE)
-                if hasattr(output, "__len__") and len(output) > trim_samples + 1000:
-                    log.info("NeuTTS : ref résiduel détecté, trim %.2fs", head_trim_s)
-                    import numpy as np  # type: ignore
-                    output = np.asarray(output, dtype="float32")
-                    if output.ndim > 1:
-                        output = output.squeeze()
-                    output = output[trim_samples:]
-            except Exception as exc:  # noqa: BLE001
-                log.warning("trim head failed: %s", exc)
+        try:
+            trim_samples = _detect_ref_end_in_output(output, ref_wav_path)
+            if trim_samples > 0:
+                import numpy as np  # type: ignore
+                output_arr = np.asarray(output, dtype="float32")
+                if output_arr.ndim > 1:
+                    output_arr = output_arr.squeeze()
+                if len(output_arr) > trim_samples + 1000:
+                    log.info("NeuTTS : ref résiduel détecté → trim %d samples (%.2fs)",
+                             trim_samples, trim_samples / NEUTTS_OUTPUT_SAMPLE_RATE)
+                    output = output_arr[trim_samples:]
+                else:
+                    log.warning("trim détecté %.2fs mais output trop court → no trim",
+                                trim_samples / NEUTTS_OUTPUT_SAMPLE_RATE)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ref residual detection failed: %s", exc)
     return output
 
 
-def _has_ref_residual_at_start(output, ref_wav_path,
-                               tail_window_s: float = 1.0,
-                               search_window_s: float = 3.0,
-                               correlation_threshold: float = 0.55) -> bool:
-    """Détecte si le début de ``output`` ressemble à la fin de la ref WAV
-    via corrélation d'enveloppe d'énergie (RMS sur fenêtre 10 ms).
+def _detect_ref_end_in_output(output, ref_wav_path,
+                              tail_window_s: float = 1.0,
+                              extra_search_s: float = 1.0,
+                              correlation_threshold: float = 0.55) -> int:
+    """Détecte combien de samples du début de ``output`` correspondent à
+    une ré-émission de la voix de référence, via corrélation glissante
+    d'enveloppe d'énergie.
 
-    L'enveloppe d'énergie est plus robuste que la corrélation directe sur
-    waveform : deux générations du même contenu auront des waveforms
-    différents (variations autorégressives) mais des enveloppes très
-    similaires (mêmes attaques, mêmes pauses, même rythme prosodique).
+    Algorithme :
+    1. Calcule l'enveloppe RMS (10 ms) des dernières ``tail_window_s``
+       secondes du WAV de ref.
+    2. Calcule l'enveloppe RMS des (durée_ref + extra_search_s) premières
+       secondes de l'output.
+    3. Slide l'enveloppe de la fin du ref sur celle de l'output, calcule
+       la corrélation Pearson normalisée à chaque position.
+    4. Si le pic de corrélation ≥ ``correlation_threshold``, le ref se
+       termine à (best_position + tail_window_s) → on retourne ce nombre
+       de samples comme quantité à trimer.
+    5. Sinon, retourne 0 (pas de résidu détecté).
 
-    Retourne True si la corrélation max dépasse ``correlation_threshold``
-    sur les ``search_window_s`` premières secondes de l'output.
+    Cette approche s'adapte automatiquement à la longueur du résidu :
+    qu'il soit complet (~durée_ref) ou partiel (juste les dernières
+    secondes), le ``trim_samples`` retourné est le bon offset où le
+    nouveau texte démarre.
     """
     try:
         import numpy as np  # type: ignore
         import soundfile as sf  # type: ignore
     except ImportError:
-        return False
+        return 0
     try:
         ref_audio, sr = sf.read(str(ref_wav_path))
     except Exception as exc:  # noqa: BLE001
         log.warning("ref WAV illisible pour détection résidu: %s", exc)
-        return False
+        return 0
     if sr != NEUTTS_OUTPUT_SAMPLE_RATE:
-        # Le WAV de la voix devrait toujours être en 24 kHz (cf. to_wav_24k_mono)
-        # mais on évite de se baser sur ça.
-        return False
+        return 0
     if ref_audio.ndim > 1:
         ref_audio = ref_audio[:, 0]
     ref_audio = np.asarray(ref_audio, dtype=np.float32)
@@ -312,13 +323,24 @@ def _has_ref_residual_at_start(output, ref_wav_path,
         out_arr = out_arr.squeeze()
 
     tail_n = int(tail_window_s * NEUTTS_OUTPUT_SAMPLE_RATE)
-    head_n = int(search_window_s * NEUTTS_OUTPUT_SAMPLE_RATE)
-    if len(ref_audio) < tail_n // 2 or len(out_arr) < tail_n + 1000:
-        return False
-    ref_tail = ref_audio[-tail_n:] if len(ref_audio) >= tail_n else ref_audio
-    out_head = out_arr[:min(len(out_arr), head_n)]
+    if len(ref_audio) < tail_n:
+        # Ref plus court que la fenêtre demandée → on prend tout
+        tail_n = len(ref_audio)
+    if tail_n < NEUTTS_OUTPUT_SAMPLE_RATE // 2:
+        return 0  # ref trop court pour matcher fiablement (<500 ms)
 
-    # Enveloppe RMS à granularité 10 ms (240 samples à 24 kHz)
+    # Fenêtre de recherche = durée totale du ref + extra (cas où le modèle
+    # ré-émet le ref complet, le tail apparaît à la fin de cette zone)
+    ref_duration_s = len(ref_audio) / NEUTTS_OUTPUT_SAMPLE_RATE
+    head_n = int((ref_duration_s + extra_search_s) * NEUTTS_OUTPUT_SAMPLE_RATE)
+    head_n = min(head_n, len(out_arr))
+    if head_n < tail_n + NEUTTS_OUTPUT_SAMPLE_RATE // 2:
+        return 0  # output trop court pour chercher
+
+    ref_tail = ref_audio[-tail_n:]
+    out_head = out_arr[:head_n]
+
+    # Enveloppe RMS à 10 ms (240 samples)
     win = NEUTTS_OUTPUT_SAMPLE_RATE // 100
     def _rms_env(arr):
         n = len(arr) // win
@@ -326,22 +348,22 @@ def _has_ref_residual_at_start(output, ref_wav_path,
             return np.zeros(0, dtype=np.float32)
         chunks = arr[: n * win].reshape(n, win)
         env = np.sqrt(np.mean(chunks ** 2, axis=1))
-        # Normalisation pour rendre la corrélation insensible au volume
         m = float(np.max(env))
         return env / m if m > 1e-6 else env
 
     ref_env = _rms_env(ref_tail)
     head_env = _rms_env(out_head)
     if len(ref_env) < 5 or len(head_env) < len(ref_env):
-        return False
+        return 0
 
-    # Corrélation glissante normalisée (Pearson-like)
+    # Corrélation glissante Pearson-like
     n_pos = len(head_env) - len(ref_env) + 1
-    best = 0.0
+    best_corr = 0.0
+    best_pos_frames = 0
     ref_centered = ref_env - float(np.mean(ref_env))
     ref_norm = float(np.linalg.norm(ref_centered))
     if ref_norm < 1e-6:
-        return False
+        return 0
     for i in range(n_pos):
         h = head_env[i:i + len(ref_env)]
         h_centered = h - float(np.mean(h))
@@ -349,10 +371,18 @@ def _has_ref_residual_at_start(output, ref_wav_path,
         if h_norm < 1e-6:
             continue
         corr = float(np.dot(ref_centered, h_centered) / (ref_norm * h_norm))
-        if corr > best:
-            best = corr
-    log.info("NeuTTS ref-residual corr max=%.2f (seuil=%.2f)", best, correlation_threshold)
-    return best >= correlation_threshold
+        if corr > best_corr:
+            best_corr = corr
+            best_pos_frames = i
+
+    log.info("NeuTTS ref-residual corr max=%.2f at frame %d (seuil=%.2f, %d frames searched)",
+             best_corr, best_pos_frames, correlation_threshold, n_pos)
+    if best_corr < correlation_threshold:
+        return 0
+
+    # ref_end = position du début du tail + durée du tail
+    ref_end_samples = best_pos_frames * win + len(ref_env) * win
+    return int(ref_end_samples)
 
 
 def _trim_to_silence_end(wav,
