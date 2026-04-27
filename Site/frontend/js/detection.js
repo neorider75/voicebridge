@@ -87,16 +87,29 @@
     var card = $('resultCard');
     card.innerHTML = '';
 
+    // Mapping verdict → couleur + libellé. 4 verdicts possibles (cf. backend) :
+    //  - ai_generated         (watermark Perth présent → certitude haute)
+    //  - ai_generated_unverified (spectral seul, pas de watermark)
+    //  - uncertain            (spectral indécis)
+    //  - human_unverified     (probable humain mais pas de preuve formelle)
     var verdictDiv = document.createElement('div');
     verdictDiv.style.fontSize = '1.4rem';
     verdictDiv.style.fontWeight = '800';
     verdictDiv.style.marginBottom = '0.75rem';
-    if (data.verdict === 'ai_generated') {
+    var v = data.verdict;
+    if (v === 'ai_generated') {
+      verdictDiv.style.color = 'var(--danger)';
+      verdictDiv.textContent = '🤖 Généré par IA — VoiceBridge confirmé';
+    } else if (v === 'ai_generated_unverified') {
       verdictDiv.style.color = 'var(--warning)';
-      verdictDiv.textContent = '🤖 Généré par IA';
+      verdictDiv.textContent = '⚠️ Probablement généré par IA';
+    } else if (v === 'uncertain') {
+      verdictDiv.style.color = 'var(--text2)';
+      verdictDiv.textContent = '❓ Indéterminé';
     } else {
+      // human_unverified ou ancien "human"
       verdictDiv.style.color = 'var(--success)';
-      verdictDiv.textContent = '✅ Non généré par IA';
+      verdictDiv.textContent = '✅ Probablement humain';
     }
     card.appendChild(verdictDiv);
 
@@ -106,6 +119,22 @@
     sub.style.marginBottom = '1rem';
     sub.textContent = data.summary + ' · Confiance ' + (data.confidence || 0) + ' %';
     card.appendChild(sub);
+
+    // Avertissement honnête sur la portée du verdict
+    var disclaimer = document.createElement('div');
+    disclaimer.style.fontSize = '0.72rem';
+    disclaimer.style.color = 'var(--text3)';
+    disclaimer.style.lineHeight = '1.5';
+    disclaimer.style.padding = '0.6rem 0.75rem';
+    disclaimer.style.background = 'var(--surface3)';
+    disclaimer.style.borderRadius = '6px';
+    disclaimer.style.marginBottom = '1rem';
+    if (v === 'ai_generated') {
+      disclaimer.innerHTML = '🛡️ Le watermark Perth a été détecté — preuve cryptographique que cet audio a été généré par VoiceBridge.';
+    } else {
+      disclaimer.innerHTML = '⚠️ <strong>L\'analyse spectrale est imparfaite.</strong> Le modèle utilisé (Deepfake-audio-detection-V2) reconnaît principalement des deepfakes pré-2023 et passe souvent à côté des générateurs récents (XTTS-v2, ElevenLabs, NeuTTS modernes). Verdict fiable uniquement si <strong>watermark VoiceBridge présent</strong>.';
+    }
+    card.appendChild(disclaimer);
 
     function row(k, v) {
       var d = document.createElement('div');
@@ -120,13 +149,22 @@
     }
 
     row('Watermark VoiceBridge',
-      data.watermark.checked ? (data.watermark.detected ? '✅ Présent' : '❌ Absent') : '⏭ Non vérifié');
+      data.watermark.checked ? (data.watermark.detected ? '✅ Présent (signature cryptographique)' : '❌ Absent') : '⏭ Non vérifié');
     row('Audio altéré',
       data.watermark.detected ? (data.watermark.tampered ? '⚠️ Oui' : '✅ Non') : '—');
     if (data.spectral && data.spectral.checked !== false) {
-      row('Analyse spectrale',
-        (data.spectral.label === 'fake' ? 'Synthétique' : 'Authentique')
-        + ' (' + (data.spectral.confidence || 0) + ' %)');
+      // Affichage avec les 2 probas si dispos
+      var label = data.spectral.label;
+      var labelTxt = label === 'fake' ? 'Synthétique'
+        : label === 'uncertain' ? 'Indécis'
+        : 'Authentique';
+      var probsTxt = '';
+      if (data.spectral.probs) {
+        probsTxt = ' [synth ' + (data.spectral.probs.fake || 0) + '% / auth ' + (data.spectral.probs.real || 0) + '%]';
+      } else {
+        probsTxt = ' (' + (data.spectral.confidence || 0) + ' %)';
+      }
+      row('Analyse spectrale', labelTxt + probsTxt);
     } else {
       row('Analyse spectrale', '⏭ Non vérifié');
     }
@@ -146,10 +184,21 @@
         ? (data.watermark.detected ? 'Présent' : 'Absent') : 'Non vérifié'),
       'Audio altéré : ' + (data.watermark.detected ? (data.watermark.tampered ? 'Oui' : 'Non') : '-'),
       'Analyse IA   : ' + (data.spectral && data.spectral.checked !== false
-        ? (data.spectral.label === 'fake' ? 'Synthétique' : 'Authentique')
-          + ' (' + (data.spectral.confidence || 0) + '%)'
+        ? (data.spectral.label === 'fake' ? 'Synthétique'
+            : data.spectral.label === 'uncertain' ? 'Indécis'
+            : 'Authentique')
+          + (data.spectral.probs
+              ? ' [synth ' + (data.spectral.probs.fake || 0) + '% / auth ' + (data.spectral.probs.real || 0) + '%]'
+              : ' (' + (data.spectral.confidence || 0) + '%)')
         : 'Non vérifié'),
-      'Verdict      : ' + (data.verdict === 'ai_generated' ? 'Généré par IA' : 'Non généré par IA'),
+      'Verdict      : ' + (
+        data.verdict === 'ai_generated' ? 'Généré par IA (watermark VoiceBridge)'
+        : data.verdict === 'ai_generated_unverified' ? 'Probablement généré par IA (analyse spectrale, fiabilité limitée)'
+        : data.verdict === 'uncertain' ? 'Indéterminé'
+        : 'Probablement humain (analyse spectrale, fiabilité limitée)'
+      ),
+      '',
+      'Note : l\'analyse spectrale Deepfake-audio-detection-V2 est principalement entraînée sur deepfakes pré-2023 et passe souvent à côté des générateurs récents (XTTS-v2, ElevenLabs, NeuTTS). Le watermark Perth est la seule preuve cryptographique fiable pour les audios VoiceBridge.',
     ];
     lastReport = lines.join('\n');
   }
