@@ -225,9 +225,11 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         except Exception as exc:  # noqa: BLE001
             log.warning("pitch_shift failed: %s", exc)
 
-    # Application du watermark Perth (idem NeuTTS qui le fait nativement,
-    # XTTS ne le fait pas par défaut). Permet à la détection deepfake de
-    # reconnaître l'audio comme généré par VoiceBridge avec certitude.
+    # IMPORTANT : on applique le watermark Perth EN DERNIER pour que tous
+    # les autres post-process (passe-haut, compression silences, pitch
+    # shift) ne le détruisent pas. Le watermark est conçu pour être robuste
+    # à des transformations légères (compression mp3, etc.) mais pas à un
+    # filtre passe-haut qui altère la phase fréquentielle.
     wav = _apply_perth_watermark(wav)
     return wav
 
