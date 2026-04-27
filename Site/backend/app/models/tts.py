@@ -263,16 +263,70 @@ def infer(text: str, ref_codes: Any, ref_text: str, language: str, quality: str)
             log.info("trimming %d samples (%.2fs) of ref audio prefix from infer output",
                      trim, trim / NEUTTS_OUTPUT_SAMPLE_RATE)
             output = output[trim:]
+            # Trim fin par détection de pause : la transition ref → nouveau
+            # texte produit en général un creux de silence court (le modèle
+            # respire). On cherche ce creux dans les ~600 ms post-trim et
+            # on coupe à sa fin pour attraper le résidu de ref que la
+            # multiplication par len(ref_codes) sous-estime parfois.
+            output = _trim_to_silence_end(output)
         else:
             log.warning("infer output (%d samples) shorter than expected ref prefix (%d) — pas de trim",
                         len(output), trim)
-
-    # On ne fait PAS de trim de silence supplémentaire ici : le détecteur
-    # d'énergie coupait parfois les premiers consonnes du 1er mot (h, s, f
-    # ont des attaques très douces). Mieux vaut laisser un petit silence
-    # résiduel que tronquer la voix. Si on observe régulièrement >300ms de
-    # silence, on retravaillera la calibration de SAMPLES_PER_REF_TOKEN.
     return output
+
+
+def _trim_to_silence_end(wav,
+                         search_window_s: float = 0.6,
+                         silence_threshold: float = 0.008,
+                         min_silence_ms: int = 60):
+    """Cherche la première plage de silence (≥ ``min_silence_ms`` ms,
+    amplitude < ``silence_threshold``) dans les ``search_window_s``
+    premières secondes du signal, et coupe à sa fin.
+
+    Si aucun silence trouvé, retourne le signal inchangé. Plus prudent
+    que `_trim_leading_silence` (désactivé) qui coupait toute portion
+    < threshold dès le début → bouffait les attaques de consonnes
+    douces. Ici on cherche un VRAI creux (silence + reprise).
+    """
+    try:
+        import numpy as np  # type: ignore
+    except ImportError:
+        return wav
+    arr = np.asarray(wav, dtype=np.float32)
+    if arr.ndim > 1:
+        arr = arr.squeeze()
+    if arr.size == 0:
+        return wav
+
+    sr = NEUTTS_OUTPUT_SAMPLE_RATE
+    win = int(search_window_s * sr)
+    min_sil = int(min_silence_ms * sr / 1000)
+    head = arr[: win]
+    if head.size < min_sil:
+        return wav
+
+    abs_head = np.abs(head)
+    is_silent = abs_head < silence_threshold
+
+    # Recherche : séquence de >= min_sil samples consécutifs silent,
+    # se terminant par un sample non-silent (= reprise de la parole).
+    n = len(is_silent)
+    i = 0
+    while i < n:
+        if is_silent[i]:
+            j = i
+            while j < n and is_silent[j]:
+                j += 1
+            run_len = j - i
+            if run_len >= min_sil and j < n:
+                # Trouvé ! On coupe juste après la fin du silence.
+                log.info("trim_to_silence_end: extra %d samples (%.2fs) trimmed",
+                         j, j / sr)
+                return arr[j:]
+            i = j
+        else:
+            i += 1
+    return arr
 
 
 def infer_stream(text: str, ref_codes: Any, ref_text: str, language: str, quality: str):
