@@ -285,6 +285,12 @@ async def generate(request: Request, payload: GeneratePayload):
         size_mb = round(wav_path.stat().st_size / 1e6, 2)
 
     voice = voices_store.get(payload.voice_id) or {}
+    # Texte tronqué pour l'affichage côté UI (200 caractères suffisent
+    # pour reconnaître l'enregistrement). Le full prompt n'est pas
+    # archivé pour respecter la politique privacy by design.
+    text_preview = (payload.text or "").strip()
+    if len(text_preview) > 200:
+        text_preview = text_preview[:197] + "…"
     rec = recordings_store.add(
         {
             "id": rec_id,
@@ -295,6 +301,8 @@ async def generate(request: Request, payload: GeneratePayload):
             "duration_seconds": round(duration, 1),
             "format": payload.format,
             "quality": payload.quality,
+            "engine": _resolve_engine(payload),
+            "text_preview": text_preview,
             "size_mb": size_mb,
         },
         retention=payload.retention,
