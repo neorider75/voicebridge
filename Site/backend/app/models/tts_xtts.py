@@ -130,7 +130,10 @@ def infer(text: str, voice_wav_path: Path, language: str) -> Any:
         "length_penalty": _read_env_float("VB_XTTS_LENGTH_PENALTY", 1.0),
         "repetition_penalty": _read_env_float("VB_XTTS_REPETITION_PENALTY", 2.0),
         "top_k": _read_env_int("VB_XTTS_TOP_K", 50),
-        "top_p": _read_env_float("VB_XTTS_TOP_P", 0.85),
+        # top_p 0.90 (vs 0.85 défaut Coqui) : pool de candidats légèrement
+        # élargi au nucleus sampling. Donne un poil de variation prosodique
+        # sans bouger temperature, donc sans risque de drift d'identité.
+        "top_p": _read_env_float("VB_XTTS_TOP_P", 0.90),
         "speed": _read_env_float("VB_XTTS_SPEED", 1.15),
         # gpt_cond_len = secondes de réf utilisées par le speaker encoder.
         # Défaut Coqui interne ~6s. Notre WAV est trimé à 15s, donc 10s
