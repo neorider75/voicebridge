@@ -33,6 +33,7 @@ from .routes import recordings as r_recordings
 from .routes import settings as r_settings
 from .routes import stt as r_stt
 from .routes import system as r_system
+from .routes import translate as r_translate
 from .routes import tts as r_tts
 from .routes import voices as r_voices
 
@@ -202,6 +203,7 @@ app.include_router(r_stt.router)
 app.include_router(r_recordings.router)
 app.include_router(r_detection.router)
 app.include_router(r_settings.router)
+app.include_router(r_translate.router)
 app.include_router(r_live.router)
 
 

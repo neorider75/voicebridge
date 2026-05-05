@@ -41,6 +41,7 @@
   //   1500 ms : très tolérant, latence forte
   // À ajuster selon hardware. Sur un GPU on pourrait redescendre à 100-200 ms.
   var JITTER_BUFFER_MS = 1000;
+  var warmupPending = false;   // true pendant le chargement du modèle de traduction
   var pendingChunks = [];          // AudioBuffers en attente de scheduling
   var pendingDurationMs = 0;       // total des durées accumulées
   var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
@@ -195,6 +196,10 @@
   // ── WebSocket ──
 
   function start() {
+    if (warmupPending) {
+      VB.notify('warning', 'Patientez, le modèle de traduction est en cours de chargement…');
+      return;
+    }
     var voiceId = $('liveVoiceSelect').value;
     if (!voiceId) { VB.notify('warning', 'Choisissez une voix'); return; }
     var lang = $('liveLang').value;
@@ -432,14 +437,74 @@
       }
     }
 
+    // Affiche/masque un message de statut sous les options de traduction.
+    function setWarmupStatus(msg, isError) {
+      var el = $('liveTranslateStatus');
+      if (!el) return;
+      el.style.display = msg ? '' : 'none';
+      el.textContent = msg || '';
+      el.style.color = isError ? 'var(--error, #e55)' : 'var(--text3)';
+    }
+
+    // Pre-warm : charge le modèle OPUS-MT avant le démarrage de la session.
+    function doWarmup() {
+      if (!translateTo) return;
+      var src = (sourceLang && sourceLang.value) || 'fr';
+      var tgt = translateTo.value || 'en';
+      if (src === tgt) return;
+
+      warmupPending = true;
+      var zone = $('liveMicZone');
+      if (zone) { zone.style.opacity = '0.45'; zone.style.pointerEvents = 'none'; }
+      setWarmupStatus('⏳ Chargement modèle de traduction…');
+
+      VB.api.get('/api/translate/warmup?src=' + src + '&tgt=' + tgt)
+        .then(function (d) {
+          warmupPending = false;
+          if (zone) { zone.style.opacity = ''; zone.style.pointerEvents = ''; }
+          setWarmupStatus('✅ Modèle prêt');
+          setTimeout(function () {
+            if ($('liveTranslateToggle') && $('liveTranslateToggle').checked) {
+              setWarmupStatus('');
+            }
+          }, 2000);
+        })
+        .catch(function (err) {
+          warmupPending = false;
+          if (zone) { zone.style.opacity = ''; zone.style.pointerEvents = ''; }
+          setWarmupStatus('⚠️ Échec chargement modèle : ' + (err.message || err), true);
+          console.warn('[live] translate warmup failed', err);
+        });
+    }
+
     toggle.addEventListener('change', function () {
       if (opts) opts.style.display = toggle.checked ? '' : 'none';
       if (wrap) wrap.style.display = toggle.checked ? '' : 'none';
-      if (toggle.checked) syncTranslateTo();
+      if (toggle.checked) {
+        syncTranslateTo();
+        doWarmup();
+      } else {
+        // Toggle off : annuler l'état de warmup et réactiver la zone micro.
+        warmupPending = false;
+        var zone = $('liveMicZone');
+        if (zone) { zone.style.opacity = ''; zone.style.pointerEvents = ''; }
+        setWarmupStatus('');
+      }
     });
 
     if (sourceLang) {
-      sourceLang.addEventListener('change', syncTranslateTo);
+      sourceLang.addEventListener('change', function () {
+        syncTranslateTo();
+        // Si la traduction est active, re-warm avec la nouvelle paire de langues.
+        if (toggle.checked) doWarmup();
+      });
+    }
+
+    // Re-warm si la langue cible change manuellement.
+    if (translateTo) {
+      translateTo.addEventListener('change', function () {
+        if (toggle.checked) doWarmup();
+      });
     }
   }
 
