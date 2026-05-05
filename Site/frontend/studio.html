@@ -262,6 +262,31 @@
         </div>
       </div>
 
+      <!-- Traduction Live -->
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+          <input type="checkbox" id="liveTranslateToggle" style="width:auto;margin:0">
+          🌐 Traduction Live (STT → traduire → TTS)
+        </label>
+      </div>
+      <div id="liveTranslateOptions" style="display:none">
+        <div class="grid-2">
+          <div class="field">
+            <label for="liveTranslateTo">Traduire vers</label>
+            <select id="liveTranslateTo">
+              <option value="en">🇬🇧 Anglais</option>
+              <option value="fr">🇫🇷 Français</option>
+            </select>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:0.15rem">
+            <div class="hint" style="margin:0">
+              💡 La voix clonée synthétise dans la langue cible.<br>
+              Au premier appel, le modèle de traduction (~300 Mo) est téléchargé.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="alert alert-info">
         💡 Le mode Live ne génère aucun fichier · Un buffer de 5 s assure la
         continuité en cas de micro-coupure réseau.
@@ -285,6 +310,12 @@
       </div>
 
       <div id="liveTranscript" style="margin-top:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;font-size:0.85rem;min-height:50px;max-height:200px;overflow-y:auto"></div>
+
+      <!-- Zone traduction : affichée uniquement si liveTranslateToggle est coché -->
+      <div id="liveTranslatedWrap" style="display:none;margin-top:0.5rem">
+        <div style="font-size:0.72rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.25rem">🌐 Traduction</div>
+        <div id="liveTranslated" style="background:var(--surface3);border:1px solid var(--accent2);border-radius:8px;padding:0.75rem;font-size:0.85rem;min-height:40px;max-height:150px;overflow-y:auto;color:var(--accent2)"></div>
+      </div>
 
       <audio id="liveAudio" autoplay style="width:100%;margin-top:0.75rem"></audio>
     </section>

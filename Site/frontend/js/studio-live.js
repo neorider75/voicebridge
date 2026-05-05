@@ -79,6 +79,16 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  function appendTranslated(text) {
+    var div = document.createElement('div');
+    div.style.padding = '0.25rem 0';
+    div.textContent = text;
+    var box = $('liveTranslated');
+    if (!box) return;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
   // ── Lecture streaming des chunks PCM 24 kHz via Web Audio API ──
   //
   // Chaque audio_pcm reçu est :
@@ -222,6 +232,9 @@
     ws = new WebSocket(proto + '//' + window.location.host + '/ws/stream');
     ws.binaryType = 'arraybuffer';
 
+    var translateEnabled = $('liveTranslateToggle') && $('liveTranslateToggle').checked;
+    var translateTo = ($('liveTranslateTo') && $('liveTranslateTo').value) || 'en';
+
     ws.addEventListener('open', function () {
       ws.send(JSON.stringify({
         type: 'configure',
@@ -229,6 +242,8 @@
         language: lang,
         output: 'browser',
         format: 'pcm16',  // indique au serveur qu'on envoie du PCM 16k int16 mono
+        translate: translateEnabled,
+        translate_to: translateTo,
       }));
     });
 
@@ -241,6 +256,11 @@
         startCapture();
       } else if (payload.type === 'transcript') {
         appendTranscript('🗣 ' + payload.text);
+      } else if (payload.type === 'translated') {
+        var flagTo = payload.tgt_lang === 'en' ? '🇬🇧' : '🇫🇷';
+        appendTranslated(flagTo + ' ' + payload.text);
+      } else if (payload.type === 'translation_error') {
+        VB.notify('warning', payload.message || 'Traduction échouée');
       } else if (payload.type === 'audio_pcm') {
         enqueuePcmChunk(payload.data);
       } else if (payload.type === 'audio_end') {
@@ -389,9 +409,44 @@
     });
   }
 
+  function bindTranslateToggle() {
+    var toggle = $('liveTranslateToggle');
+    var opts = $('liveTranslateOptions');
+    var wrap = $('liveTranslatedWrap');
+    var translateTo = $('liveTranslateTo');
+    var sourceLang = $('liveLang');
+    if (!toggle) return;
+
+    function syncTranslateTo() {
+      // Quand la langue source change, s'assurer que la cible est différente.
+      if (!translateTo || !sourceLang) return;
+      var src = sourceLang.value;
+      // Filtrer les options de la liste cible : on masque la langue identique à la source
+      Array.prototype.forEach.call(translateTo.options, function (opt) {
+        opt.hidden = (opt.value === src);
+      });
+      // Si la valeur sélectionnée est devenue cachée, choisir la première visible
+      if (translateTo.value === src) {
+        var first = Array.prototype.find.call(translateTo.options, function (o) { return !o.hidden; });
+        if (first) translateTo.value = first.value;
+      }
+    }
+
+    toggle.addEventListener('change', function () {
+      if (opts) opts.style.display = toggle.checked ? '' : 'none';
+      if (wrap) wrap.style.display = toggle.checked ? '' : 'none';
+      if (toggle.checked) syncTranslateTo();
+    });
+
+    if (sourceLang) {
+      sourceLang.addEventListener('change', syncTranslateTo);
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     bindMicZone();
     bindRadioGroups();
+    bindTranslateToggle();
     loadVoices();
   });
 })();

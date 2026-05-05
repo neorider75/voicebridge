@@ -136,8 +136,10 @@ async def stream(ws: WebSocket):
 
     # ── État de session ─────────────────────────────────────────────
     voice_id: str | None = None
-    language: str = "fr"
-    quality: str = "normal"  # Live → toujours Q4 (latence)
+    language: str = "fr"         # langue source (micro + STT)
+    quality: str = "normal"      # Live → toujours Q4 (latence)
+    translate: bool = False      # traduction Live activée
+    translate_to: str = "en"    # langue cible de la traduction + TTS
     ref_codes = None
     ref_text = ""
     vad_iter = None
@@ -150,7 +152,7 @@ async def stream(ws: WebSocket):
     pcm_carry = np.zeros(0, dtype=np.float32)
 
     async def configure(payload: dict) -> bool:
-        nonlocal voice_id, language, ref_codes, ref_text, vad_iter
+        nonlocal voice_id, language, ref_codes, ref_text, vad_iter, translate, translate_to
         try:
             voice_id = files.safe_id(str(payload.get("voice_id", "")))
         except ValueError:
@@ -160,6 +162,15 @@ async def stream(ws: WebSocket):
         if language not in ("fr", "en"):
             await _send_json(ws, {"type": "error", "message": "language fr ou en"})
             return False
+        # Traduction Live (optionnel)
+        translate = bool(payload.get("translate", False))
+        translate_to = str(payload.get("translate_to", "en"))
+        if translate_to not in ("fr", "en"):
+            await _send_json(ws, {"type": "error", "message": "translate_to fr ou en"})
+            return False
+        if translate and translate_to == language:
+            # Incohérent : même langue source et cible → désactiver silencieusement
+            translate = False
         voice = voices_store.get(voice_id)
         if not voice:
             await _send_json(ws, {"type": "error", "message": "voix introuvable"})
@@ -179,21 +190,27 @@ async def stream(ws: WebSocket):
         except Exception as exc:  # noqa: BLE001
             await _send_json(ws, {"type": "error", "message": f"VAD indisponible : {exc}"})
             return False
-        log.info("live: configured voice_id=%s lang=%s ref_text=%s",
-                 voice_id, language, "yes" if ref_text else "NO (will fallback)")
+        log.info("live: configured voice_id=%s lang=%s ref_text=%s translate=%s→%s",
+                 voice_id, language, "yes" if ref_text else "NO (will fallback)",
+                 "on" if translate else "off", translate_to)
         await _send_json(ws, {"type": "ready"})
         return True
 
-    async def stream_tts_chunks(text: str) -> None:
+    async def stream_tts_chunks(text: str, tts_lang: str | None = None) -> None:
         """Lance ``tts.infer_stream`` dans un thread (bloquant) et pousse les
-        chunks dans une asyncio.Queue. Coroutine consume + ws.send_json."""
+        chunks dans une asyncio.Queue. Coroutine consume + ws.send_json.
+
+        ``tts_lang`` : langue à passer à NeuTTS (peut différer de ``language``
+        quand la traduction est activée — on synthétise dans la langue cible).
+        """
+        lang = tts_lang or language
         loop = asyncio.get_event_loop()
         queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
         def producer():
             try:
                 for chunk_f32 in tts_model.infer_stream(
-                    text, ref_codes, ref_text, language, quality,
+                    text, ref_codes, ref_text, lang, quality,
                 ):
                     arr = np.asarray(chunk_f32)
                     if arr.ndim > 1:
@@ -258,8 +275,31 @@ async def stream(ws: WebSocket):
             return
 
         await _send_json(ws, {"type": "transcript", "text": text})
+
+        # ── Traduction optionnelle ──────────────────────────────────
+        tts_text = text
+        tts_lang = language
+        if translate:
+            try:
+                from ..services import translation as trans_svc
+                t_tr = _t.time()
+                translated = await asyncio.to_thread(
+                    trans_svc.translate, text, language, translate_to
+                )
+                log.info("live: translation done in %.2fs → %r",
+                         _t.time() - t_tr, translated[:80])
+                await _send_json(ws, {"type": "translated", "text": translated,
+                                      "src_lang": language, "tgt_lang": translate_to})
+                tts_text = translated
+                tts_lang = translate_to
+            except Exception as exc:  # noqa: BLE001
+                log.warning("live: translation failed (%s) — falling back to original", exc)
+                await _send_json(ws, {"type": "translation_error",
+                                      "message": f"Traduction échouée : {exc}"})
+                # On continue avec le texte original dans la langue source.
+
         t1 = _t.time()
-        await stream_tts_chunks(text)
+        await stream_tts_chunks(tts_text, tts_lang=tts_lang)
         log.info("live: TTS streaming done in %.2fs", _t.time() - t1)
 
     async def consume_pcm(pcm_chunk):
