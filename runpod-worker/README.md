@@ -133,7 +133,19 @@ curl -X POST http://localhost:8000/run \
 
 Les modèles sont téléchargés une fois dans le Network Volume pour ne pas
 les retélécharger à chaque cold start. Spawner un Pod éphémère sur EU-FR-1
-avec le Volume monté :
+avec le Volume monté.
+
+**Templates RunPod & disponibilité de `hf`** :
+- Templates **PyTorch officiels** (ex: `runpod/pytorch:2.4.0-py3.11-...`)
+  → `hf` est **déjà installé** (`huggingface_hub` est dans l'image).
+- Templates **Ubuntu officiels** (Ubuntu 22.04 / 24.04 nus)
+  → `hf` doit être installé. Sur Ubuntu 22.04+, PEP 668 bloque les installs
+  pip system-wide, il faut explicitement `--break-system-packages` (sans
+  risque dans un container éphémère) :
+
+  ```bash
+  pip3 install --break-system-packages "huggingface_hub[cli]>=0.34"
+  ```
 
 ```bash
 # Pod : runpod/pytorch:2.4.0-py3.11-cuda12.1.0-devel-ubuntu22.04

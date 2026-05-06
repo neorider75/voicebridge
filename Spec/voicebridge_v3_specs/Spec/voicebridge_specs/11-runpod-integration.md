@@ -67,6 +67,12 @@ Volume via un Pod éphémère. **Toujours utiliser `--include`** pour ne
 télécharger que le format utile (sinon HF tire tous les formats : safetensors
 + bin + flax + tf + fp16 + int8 → +20 Go inutiles).
 
+**Disponibilité de `hf` selon le template** :
+- Templates **PyTorch officiels** : `hf` déjà installé (huggingface_hub embarqué).
+- Templates **Ubuntu** (22.04/24.04 nus) : à installer (PEP 668 sur Ubuntu
+  22.04+ → ajouter `--break-system-packages`, sans risque en container) :
+  `pip3 install --break-system-packages "huggingface_hub[cli]>=0.34"`
+
 ```bash
 # Sur RunPod Console : créer un Pod éphémère
 # - GPU : RTX 4090

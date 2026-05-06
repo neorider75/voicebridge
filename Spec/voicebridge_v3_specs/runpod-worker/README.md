@@ -100,7 +100,18 @@ curl -X POST http://localhost:8000/run \
 > **⚠️ Toujours filtrer avec `--include`** : sans filtre, HF télécharge tous
 > les formats (safetensors + bin + flax + tf + fp16 + int8…) → +20 Go inutiles.
 
-Avant le premier déploiement, pré-télécharger les modèles dans le Network Volume :
+Avant le premier déploiement, pré-télécharger les modèles dans le Network Volume.
+
+**Disponibilité de `hf` selon le template Pod RunPod** :
+- Templates **PyTorch officiels** (ex: `runpod/pytorch:2.4.0-py3.11-...`)
+  → `hf` est **déjà installé**.
+- Templates **Ubuntu officiels** (22.04 / 24.04 nus)
+  → installer `hf` (PEP 668 sur Ubuntu 22.04+ exige `--break-system-packages`,
+  sans risque dans un container éphémère) :
+
+  ```bash
+  pip3 install --break-system-packages "huggingface_hub[cli]>=0.34"
+  ```
 
 ```bash
 # Spawn un Pod éphémère sur EU-FR-1 avec le Volume monté
