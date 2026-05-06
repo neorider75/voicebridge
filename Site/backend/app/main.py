@@ -27,6 +27,7 @@ from .models import tts as tts_module
 from .models import tts_xtts as tts_xtts_module
 from .models import vad as vad_module
 from .routes import auth as r_auth
+from .routes import cloud as r_cloud
 from .routes import detection as r_detection
 from .routes import live as r_live
 from .routes import recordings as r_recordings
@@ -204,6 +205,7 @@ app.include_router(r_recordings.router)
 app.include_router(r_detection.router)
 app.include_router(r_settings.router)
 app.include_router(r_translate.router)
+app.include_router(r_cloud.router)
 app.include_router(r_live.router)
 
 

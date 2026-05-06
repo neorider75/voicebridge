@@ -70,5 +70,15 @@ yt-dlp>=2024.1
 psutil>=5.9
 APScheduler>=3.10
 
+# --- V3 : intégrations cloud ---
+# Chiffrement Fernet des clés API (Décision 3 du doc 00-decisions-v3.md)
+cryptography>=42
+# Client HTTP/2 keep-alive vers RunPod Serverless
+httpx[http2]>=0.27
+# Upload .pth/.index vers RunPod Network Volume via API S3 (Décision 1)
+boto3>=1.34
+# Traduction GPT-4o(-mini) avec contexte (Décision 7)
+openai>=1.50
+
 # --- Dev / CI (optionnel — décommenter pour audits) ---
 # pip-audit>=2.7
