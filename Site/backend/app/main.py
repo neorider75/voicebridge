@@ -321,3 +321,44 @@ async def download_macos_app(request: Request):
     return FileResponse(
         fp, media_type="application/zip", filename="VoiceBridge.app.zip",
     )
+
+
+@app.get("/api/install/rvc-guide-pdf")
+async def download_rvc_guide(request: Request):
+    """Sert le guide utilisateur RVC en PDF.
+
+    Le PDF est buildé depuis ``docs/rvc-user-guide.md`` via le script
+    ``Site/install/scripts/build_rvc_guide_pdf.py`` (utilise WeasyPrint).
+    Si le PDF n'a pas encore été buildé, fallback sur le Markdown source.
+    """
+    # Cherche d'abord dans assets/ (PDF pré-buildé), puis dans docs/ (MD source)
+    backend_root = Path(__file__).resolve().parents[1]   # Site/backend/
+    repo_root = backend_root.parents[1]                   # repo root
+    pdf_path = backend_root / "assets" / "rvc-guide.pdf"
+    md_path = repo_root / "docs" / "rvc-user-guide.md"
+
+    if pdf_path.exists():
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename="VoiceBridge-V3-RVC-Guide.pdf",
+        )
+    if md_path.exists():
+        return FileResponse(
+            md_path,
+            media_type="text/markdown; charset=utf-8",
+            filename="VoiceBridge-V3-RVC-Guide.md",
+            headers={
+                "X-Pdf-Status": "not-built",
+                "X-Pdf-Build-Hint": (
+                    "Build : python Site/install/scripts/build_rvc_guide_pdf.py"
+                ),
+            },
+        )
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "not_available",
+            "message": "Ni le PDF ni le Markdown source ne sont présents.",
+        },
+    )

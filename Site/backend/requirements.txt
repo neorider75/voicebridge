@@ -87,3 +87,14 @@ openai>=1.50
 
 # --- Dev / CI (optionnel — décommenter pour audits) ---
 # pip-audit>=2.7
+
+# --- Build doc PDF (optionnel — pour rebuilder rvc-guide.pdf depuis MD) ---
+# Le script Site/install/scripts/build_rvc_guide_pdf.py utilise weasyprint.
+# Le PDF buildé est servi par /api/install/rvc-guide-pdf.
+# Décommenter pour rebuilder localement :
+#   markdown>=3.5
+#   weasyprint>=60
+#   pygments>=2.17
+# Note WeasyPrint exige des libs système (cairo, pango). Sur Ubuntu :
+#   sudo apt-get install libcairo2 libpango-1.0-0 libpangoft2-1.0-0 \
+#       libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info

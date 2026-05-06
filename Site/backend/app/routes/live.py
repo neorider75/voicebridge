@@ -78,9 +78,10 @@ TTS_SAMPLE_RATE = 24000
 
 # 32 ms / chunk Silero VAD → 5 s de buffer ≈ 156 chunks
 BUFFER_TICKS = 156
-SILENCE_FLUSH_TICKS = 13   # ~400 ms de silence → flush
-SPEECH_FLUSH_TICKS = 125   # ~4 s de parole continue → flush forcé
-VAD_CHUNK_SAMPLES = 512    # taille de bloc attendue par Silero VAD
+SILENCE_FLUSH_TICKS_CPU = 13    # ~400 ms (V1, marge contre faux flush sur respirations)
+SILENCE_FLUSH_TICKS_GPU = 8     # ~250 ms (V3 — Décision Q2.1, gain latence GPU)
+SPEECH_FLUSH_TICKS = 125        # ~4 s de parole continue → flush forcé
+VAD_CHUNK_SAMPLES = 512         # taille de bloc attendue par Silero VAD
 
 # Modes Live V3 (cf. doc 00-decisions-v3.md)
 MODE_CPU_V1 = "cpu-fr-en"
@@ -636,7 +637,10 @@ async def stream(ws: WebSocket):
             if ev is not None and "end" in ev:
                 in_speech = False
 
-            if (silence_count >= SILENCE_FLUSH_TICKS and speech_count > 0) \
+            silence_threshold = (SILENCE_FLUSH_TICKS_GPU
+                                 if mode != MODE_CPU_V1
+                                 else SILENCE_FLUSH_TICKS_CPU)
+            if (silence_count >= silence_threshold and speech_count > 0) \
                     or speech_count >= SPEECH_FLUSH_TICKS:
                 await flush_speech()
 
