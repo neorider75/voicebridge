@@ -124,6 +124,13 @@ curl -X POST http://localhost:8000/run \
 > un warning). On utilise `hf` partout. Si jamais tu vois un environnement
 > où seul `huggingface-cli` existe, fais : `pip install -U 'huggingface-hub>=0.34'`.
 
+> **⚠️ Toujours filtrer avec `--include`** : les repos HF contiennent souvent
+> plusieurs formats du même modèle (safetensors + bin + flax + tf + fp16 +
+> int8 + etc.). Télécharger sans filtre fait exploser la taille du Volume.
+> Exemples observés : `distil-large-v3` = 12 Go sans filtre vs 3 Go avec ;
+> `F5-TTS` = 20+ Go sans filtre vs 1.5 Go avec ; `opus-mt-*` = 1.2 Go
+> chacun sans filtre vs ~300 Mo avec.
+
 Les modèles sont téléchargés une fois dans le Network Volume pour ne pas
 les retélécharger à chaque cold start. Spawner un Pod éphémère sur EU-FR-1
 avec le Volume monté :
@@ -134,24 +141,29 @@ avec le Volume monté :
 
 export HF_HOME=/runpod-volume/hf-cache
 
-# STT
-hf download distil-whisper/distil-large-v3
+# ── STT — Whisper Distil-Large-V3 (~3 Go safetensors only) ──────────
+hf download distil-whisper/distil-large-v3 \
+  --include "*.safetensors" --include "*.json" --include "*.txt" \
+  --include "tokenizer*" --include "preprocessor_config.json" \
+  --include "generation_config.json"
 
-# Traduction (NLLB + OPUS-MT)
-hf download facebook/nllb-200-distilled-1.3B
-hf download Helsinki-NLP/opus-mt-fr-en
-hf download Helsinki-NLP/opus-mt-en-fr
-hf download Helsinki-NLP/opus-mt-fr-de
-hf download Helsinki-NLP/opus-mt-de-fr
-hf download Helsinki-NLP/opus-mt-fr-es
-hf download Helsinki-NLP/opus-mt-es-fr
-hf download Helsinki-NLP/opus-mt-fr-it
-hf download Helsinki-NLP/opus-mt-it-fr
+# ── Traduction — NLLB-200 distilled 1.3B (~5 Go safetensors only) ───
+hf download facebook/nllb-200-distilled-1.3B \
+  --include "*.safetensors" --include "*.json" \
+  --include "tokenizer*" --include "sentencepiece*"
 
-# TTS
-hf download SWivid/F5-TTS
+# ── Traduction — OPUS-MT (~300 Mo par paire) ────────────────────────
+for pair in fr-en en-fr fr-de de-fr fr-es es-fr fr-it it-fr; do
+  hf download Helsinki-NLP/opus-mt-$pair \
+    --include "*.safetensors" --include "*.json" --include "*.txt" \
+    --include "source.spm" --include "target.spm" --include "vocab.json"
+done
 
-# RVC base models
+# ── TTS — F5-TTS V1 Base only (~1.5 Go) ─────────────────────────────
+hf download SWivid/F5-TTS \
+  --include "F5TTS_v1_Base/*" --include "vocab.txt"
+
+# ── RVC base models (~400 Mo) ───────────────────────────────────────
 mkdir -p /runpod-volume/rvc_assets
 cd /runpod-volume/rvc_assets
 wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
@@ -160,7 +172,8 @@ wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 # (Détruire le Pod éphémère)
 ```
 
-Total dans le Volume : **~30 Go**.
+Total dans le Volume avec ces filtres : **~16 Go** (au lieu de 30+ Go sans
+filtre).
 
 ## Voix natives (Décision 2)
 

@@ -62,7 +62,10 @@ docker push <username>/voicebridge-worker:v3.0.0
 
 L'image fait ~15-20 Go (CUDA 12.1 + Python + modèles ML pré-téléchargés). Premier push long (~30 min sur connexion ADSL).
 
-**Note** : la première fois, il faut pré-télécharger les modèles dans le Volume via un Pod éphémère :
+**Note** : la première fois, il faut pré-télécharger les modèles dans le
+Volume via un Pod éphémère. **Toujours utiliser `--include`** pour ne
+télécharger que le format utile (sinon HF tire tous les formats : safetensors
++ bin + flax + tf + fp16 + int8 → +20 Go inutiles).
 
 ```bash
 # Sur RunPod Console : créer un Pod éphémère
@@ -73,19 +76,30 @@ L'image fait ~15-20 Go (CUDA 12.1 + Python + modèles ML pré-téléchargés). P
 
 # Sur le Pod :
 export HF_HOME=/runpod-volume/hf-cache
-hf download facebook/nllb-200-distilled-1.3B
-hf download distil-whisper/distil-large-v3
-hf download SWivid/F5-TTS
-hf download Helsinki-NLP/opus-mt-fr-en
-hf download Helsinki-NLP/opus-mt-en-fr
-hf download Helsinki-NLP/opus-mt-fr-de
-hf download Helsinki-NLP/opus-mt-de-fr
-hf download Helsinki-NLP/opus-mt-fr-es
-hf download Helsinki-NLP/opus-mt-es-fr
-hf download Helsinki-NLP/opus-mt-fr-it
-hf download Helsinki-NLP/opus-mt-it-fr
 
-# Télécharger le base model RVC
+# Whisper Distil-Large-V3 (~3 Go)
+hf download distil-whisper/distil-large-v3 \
+  --include "*.safetensors" --include "*.json" --include "*.txt" \
+  --include "tokenizer*" --include "preprocessor_config.json" \
+  --include "generation_config.json"
+
+# NLLB-200 distilled 1.3B (~5 Go)
+hf download facebook/nllb-200-distilled-1.3B \
+  --include "*.safetensors" --include "*.json" \
+  --include "tokenizer*" --include "sentencepiece*"
+
+# OPUS-MT (~300 Mo par paire)
+for pair in fr-en en-fr fr-de de-fr fr-es es-fr fr-it it-fr; do
+  hf download Helsinki-NLP/opus-mt-$pair \
+    --include "*.safetensors" --include "*.json" --include "*.txt" \
+    --include "source.spm" --include "target.spm" --include "vocab.json"
+done
+
+# F5-TTS V1 Base only (~1.5 Go)
+hf download SWivid/F5-TTS \
+  --include "F5TTS_v1_Base/*" --include "vocab.txt"
+
+# RVC base models (~400 Mo)
 mkdir -p /runpod-volume/rvc_assets
 cd /runpod-volume/rvc_assets
 wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
@@ -93,6 +107,8 @@ wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 
 # Détruire le Pod éphémère
 ```
+
+→ Total Volume avec ces filtres : **~16 Go** (au lieu de 30+ Go sans).
 
 ### Étape 5 : Créer l'endpoint Serverless
 
