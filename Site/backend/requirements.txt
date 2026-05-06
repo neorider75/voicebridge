@@ -70,6 +70,11 @@ yt-dlp>=2024.1
 psutil>=5.9
 APScheduler>=3.10
 
+# --- V3 : retraitement audio dataset RVC (Phase D) ---
+noisereduce>=3.0
+pydub>=0.25
+librosa>=0.10
+
 # --- V3 : intégrations cloud ---
 # Chiffrement Fernet des clés API (Décision 3 du doc 00-decisions-v3.md)
 cryptography>=42
