@@ -1,0 +1,53 @@
+# VoiceBridge Worker — RunPod Serverless
+# Container unifié : Whisper STT + F5-TTS + NLLB + OPUS-MT + RVC
+#
+# Build : docker build -t voicebridge-worker:v3.0.0 .
+# Push  : docker push <username>/voicebridge-worker:v3.0.0
+
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/runpod-volume/hf-cache \
+    TRANSFORMERS_CACHE=/runpod-volume/hf-cache \
+    HF_HUB_CACHE=/runpod-volume/hf-cache \
+    RVC_VOLUME_PATH=/runpod-volume/rvc_models \
+    LOG_LEVEL=INFO \
+    PYTHONPATH=/app \
+    TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
+
+# Système
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev \
+        python3-pip \
+        ffmpeg \
+        git \
+        wget curl \
+        libsndfile1 \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Symlink python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+# Pip up to date
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Installation des deps Python
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copie du code
+COPY handler.py .
+COPY models/ ./models/
+COPY utils/ ./utils/
+
+# Health check (optionnel — RunPod n'utilise pas mais utile pour test local)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
+  CMD python -c "import torch; assert torch.cuda.is_available()" || exit 1
+
+# Entrypoint
+CMD ["python", "-u", "handler.py"]

@@ -1,0 +1,44 @@
+# VoiceBridge Worker — Python deps (CUDA 12.1, PyTorch 2.4)
+
+# RunPod SDK
+runpod>=1.7
+
+# PyTorch + CUDA 12.1
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.0+cu121
+torchaudio==2.4.0+cu121
+
+# Transformers ecosystem
+transformers>=4.46
+accelerate>=0.30
+huggingface-hub>=0.26
+sentencepiece>=0.2     # tokenizers NLLB
+sacremoses>=0.1        # tokenizers OPUS-MT
+
+# CTranslate2 pour optimisation Whisper / OPUS-MT
+ctranslate2>=4.4
+faster-whisper>=1.0
+
+# Quantization
+bitsandbytes>=0.43
+
+# F5-TTS (récupéré depuis git, version épinglée)
+f5-tts @ git+https://github.com/SWivid/F5-TTS.git@v1.0.0
+
+# RVC dependencies
+fairseq>=0.12.2
+faiss-cpu>=1.7.4
+praat-parselmouth>=0.4
+pyworld>=0.3
+torchcrepe>=0.0.20
+ffmpeg-python>=0.2
+
+# Audio
+soundfile>=0.12
+librosa>=0.10
+numpy<2.0  # compat torch 2.4
+scipy>=1.10
+
+# Utils
+pydantic>=2
+msgpack>=1.0
