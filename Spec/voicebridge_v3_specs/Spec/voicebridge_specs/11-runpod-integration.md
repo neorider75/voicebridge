@@ -73,17 +73,17 @@ L'image fait ~15-20 Go (CUDA 12.1 + Python + modèles ML pré-téléchargés). P
 
 # Sur le Pod :
 export HF_HOME=/runpod-volume/hf-cache
-huggingface-cli download facebook/nllb-200-distilled-1.3B
-huggingface-cli download distil-whisper/distil-large-v3
-huggingface-cli download SWivid/F5-TTS
-huggingface-cli download Helsinki-NLP/opus-mt-fr-en
-huggingface-cli download Helsinki-NLP/opus-mt-en-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-de
-huggingface-cli download Helsinki-NLP/opus-mt-de-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-es
-huggingface-cli download Helsinki-NLP/opus-mt-es-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-it
-huggingface-cli download Helsinki-NLP/opus-mt-it-fr
+hf download facebook/nllb-200-distilled-1.3B
+hf download distil-whisper/distil-large-v3
+hf download SWivid/F5-TTS
+hf download Helsinki-NLP/opus-mt-fr-en
+hf download Helsinki-NLP/opus-mt-en-fr
+hf download Helsinki-NLP/opus-mt-fr-de
+hf download Helsinki-NLP/opus-mt-de-fr
+hf download Helsinki-NLP/opus-mt-fr-es
+hf download Helsinki-NLP/opus-mt-es-fr
+hf download Helsinki-NLP/opus-mt-fr-it
+hf download Helsinki-NLP/opus-mt-it-fr
 
 # Télécharger le base model RVC
 mkdir -p /runpod-volume/rvc_assets

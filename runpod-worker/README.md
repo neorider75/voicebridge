@@ -119,6 +119,11 @@ curl -X POST http://localhost:8000/run \
 
 ## Téléchargement des modèles ML (one-shot, avant le premier deployment)
 
+> **CLI HuggingFace** : depuis `huggingface-hub>=0.34`, le binaire s'appelle
+> `hf` (l'ancien `huggingface-cli` est déprécié, simple wrapper qui affiche
+> un warning). On utilise `hf` partout. Si jamais tu vois un environnement
+> où seul `huggingface-cli` existe, fais : `pip install -U 'huggingface-hub>=0.34'`.
+
 Les modèles sont téléchargés une fois dans le Network Volume pour ne pas
 les retélécharger à chaque cold start. Spawner un Pod éphémère sur EU-FR-1
 avec le Volume monté :
@@ -130,21 +135,21 @@ avec le Volume monté :
 export HF_HOME=/runpod-volume/hf-cache
 
 # STT
-huggingface-cli download distil-whisper/distil-large-v3
+hf download distil-whisper/distil-large-v3
 
 # Traduction (NLLB + OPUS-MT)
-huggingface-cli download facebook/nllb-200-distilled-1.3B
-huggingface-cli download Helsinki-NLP/opus-mt-fr-en
-huggingface-cli download Helsinki-NLP/opus-mt-en-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-de
-huggingface-cli download Helsinki-NLP/opus-mt-de-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-es
-huggingface-cli download Helsinki-NLP/opus-mt-es-fr
-huggingface-cli download Helsinki-NLP/opus-mt-fr-it
-huggingface-cli download Helsinki-NLP/opus-mt-it-fr
+hf download facebook/nllb-200-distilled-1.3B
+hf download Helsinki-NLP/opus-mt-fr-en
+hf download Helsinki-NLP/opus-mt-en-fr
+hf download Helsinki-NLP/opus-mt-fr-de
+hf download Helsinki-NLP/opus-mt-de-fr
+hf download Helsinki-NLP/opus-mt-fr-es
+hf download Helsinki-NLP/opus-mt-es-fr
+hf download Helsinki-NLP/opus-mt-fr-it
+hf download Helsinki-NLP/opus-mt-it-fr
 
 # TTS
-huggingface-cli download SWivid/F5-TTS
+hf download SWivid/F5-TTS
 
 # RVC base models
 mkdir -p /runpod-volume/rvc_assets

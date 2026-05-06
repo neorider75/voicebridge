@@ -365,19 +365,19 @@ CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
   pip install llama-cpp-python --force-reinstall --no-cache-dir
 
 # Téléchargement des modèles
-huggingface-cli download neuphonic/neutts-nano-french-q4-gguf \
+hf download neuphonic/neutts-nano-french-q4-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-fr-q4
-huggingface-cli download neuphonic/neutts-nano-q4-gguf \
+hf download neuphonic/neutts-nano-q4-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-en-q4
-huggingface-cli download neuphonic/neutts-nano-french-q8-gguf \
+hf download neuphonic/neutts-nano-french-q8-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-fr-q8
-huggingface-cli download neuphonic/neutts-nano-q8-gguf \
+hf download neuphonic/neutts-nano-q8-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-en-q8
-huggingface-cli download neuphonic/neucodec \
+hf download neuphonic/neucodec \
   --local-dir /var/voicebridge/data/models/neucodec
-huggingface-cli download kyutai/stt-1b-en_fr \
+hf download kyutai/stt-1b-en_fr \
   --local-dir /var/voicebridge/data/models/kyutai-1b
-huggingface-cli download MelodyMachine/Deepfake-audio-detection-V2 \
+hf download MelodyMachine/Deepfake-audio-detection-V2 \
   --local-dir /var/voicebridge/data/models/deepfake-detection-v2
 
 # Silero VAD via torch hub

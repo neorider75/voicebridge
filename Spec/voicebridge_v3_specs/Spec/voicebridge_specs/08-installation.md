@@ -139,31 +139,31 @@ CMAKE_ARGS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS" \
 echo "▸ Téléchargement des modèles ML (peut prendre 10-15 min)..."
 
 # NeuTTS Nano Q4 FR
-huggingface-cli download neuphonic/neutts-nano-french-q4-gguf \
+hf download neuphonic/neutts-nano-french-q4-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-fr-q4
 
 # NeuTTS Nano Q4 EN
-huggingface-cli download neuphonic/neutts-nano-q4-gguf \
+hf download neuphonic/neutts-nano-q4-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-en-q4
 
 # NeuTTS Nano Q8 FR (haute qualité)
-huggingface-cli download neuphonic/neutts-nano-french-q8-gguf \
+hf download neuphonic/neutts-nano-french-q8-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-fr-q8
 
 # NeuTTS Nano Q8 EN
-huggingface-cli download neuphonic/neutts-nano-q8-gguf \
+hf download neuphonic/neutts-nano-q8-gguf \
   --local-dir /var/voicebridge/data/models/neutts-nano-en-q8
 
 # NeuCodec
-huggingface-cli download neuphonic/neucodec \
+hf download neuphonic/neucodec \
   --local-dir /var/voicebridge/data/models/neucodec
 
 # Kyutai 1B (variante -trfs compatible transformers >= 4.53)
-huggingface-cli download kyutai/stt-1b-en_fr-trfs \
+hf download kyutai/stt-1b-en_fr-trfs \
   --local-dir /var/voicebridge/data/models/kyutai-1b
 
 # Deepfake-audio-detection-V2
-huggingface-cli download MelodyMachine/Deepfake-audio-detection-V2 \
+hf download MelodyMachine/Deepfake-audio-detection-V2 \
   --local-dir /var/voicebridge/data/models/deepfake-detection-v2
 
 # Silero VAD
