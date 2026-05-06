@@ -229,15 +229,76 @@
   <!-- ══════════════ LIVE ══════════════ -->
   <div class="studio-content" data-tab="live">
 
-    <!-- Step 1 : Configuration -->
+    <!-- Step 1 : Mode -->
     <section class="step" data-step="live-1">
       <div class="step-header">
         <div class="step-number">1</div>
-        <div class="step-title">Configuration</div>
+        <div class="step-title">Choisir le mode</div>
       </div>
 
       <div id="liveModelsAlert" class="alert alert-warning" style="display:none">
         ⚠️ Modèles non chargés — latence +3 à 5 s au premier appel
+      </div>
+
+      <!-- Cartes-modes V3 (Décision 2 — UX claire) -->
+      <div class="mode-cards" data-name="live-mode" id="liveModeCards">
+
+        <!-- cpu-fr-en : V1 défaut -->
+        <button class="mode-card selected" data-value="cpu-fr-en">
+          <div class="mode-card-head">
+            <span class="mode-card-icon">🔵</span>
+            <span class="mode-card-title">Authentique CPU FR/EN</span>
+            <span class="mode-card-badge">Gratuit</span>
+          </div>
+          <div class="mode-card-sub">Ta voix clonée, en français ou anglais.</div>
+          <div class="mode-card-meta">⏱ ~5-15s · Mode V1 · Aucun GPU requis</div>
+        </button>
+
+        <!-- gpu-clone -->
+        <button class="mode-card" data-value="gpu-clone" data-needs-runpod>
+          <div class="mode-card-head">
+            <span class="mode-card-icon">🟣</span>
+            <span class="mode-card-title">Multilingue – ta voix</span>
+            <span class="mode-card-badge mode-card-badge-gpu">GPU 1.2s</span>
+          </div>
+          <div class="mode-card-sub">Ta voix clonée parle dans la langue cible.</div>
+          <div class="mode-card-meta">⚠️ Garde un léger accent français selon la langue.<br>💡 Idéal si la langue cible est proche (EN, ES, IT).</div>
+        </button>
+
+        <!-- gpu-native -->
+        <button class="mode-card" data-value="gpu-native" data-needs-runpod>
+          <div class="mode-card-head">
+            <span class="mode-card-icon">🟢</span>
+            <span class="mode-card-title">Voix native</span>
+            <span class="mode-card-badge mode-card-badge-gpu">GPU 1.2s</span>
+          </div>
+          <div class="mode-card-sub">Une voix générique parle dans la langue cible.</div>
+          <div class="mode-card-meta">💡 À utiliser si tu ne veux pas exposer ta voix.<br>Langues : EN, ES, PT, IT.</div>
+        </button>
+
+        <!-- gpu-hybrid -->
+        <button class="mode-card" data-value="gpu-hybrid" data-needs-runpod data-needs-rvc>
+          <div class="mode-card-head">
+            <span class="mode-card-icon">⭐</span>
+            <span class="mode-card-title">Hybride accent natif <span style="font-size:0.7rem;color:var(--accent);font-weight:500">(recommandé)</span></span>
+            <span class="mode-card-badge mode-card-badge-gpu">GPU 2s</span>
+          </div>
+          <div class="mode-card-sub">Ta voix, avec un accent natif parfait dans la langue cible.</div>
+          <div class="mode-card-meta">💡 Le mieux des deux mondes — ta voix + accent local.<br>🎯 Nécessite un modèle RVC entraîné (<a href="/rvc">voir /rvc</a>).</div>
+        </button>
+      </div>
+
+      <div id="liveCloudHint" class="alert alert-warning" style="display:none;margin-top:0.75rem">
+        ⚠️ Les modes GPU nécessitent une configuration RunPod —
+        <a href="/settings#cloud">Réglages → Cloud</a>.
+      </div>
+    </section>
+
+    <!-- Step 2 : Configuration -->
+    <section class="step" data-step="live-2">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Configuration</div>
       </div>
 
       <div class="grid-2">
@@ -246,12 +307,25 @@
           <select id="liveVoiceSelect"></select>
         </div>
         <div class="field">
-          <label for="liveLang">Langue source</label>
+          <label for="liveLang">Langue source (mic)</label>
           <select id="liveLang">
             <option value="fr">🇫🇷 Français</option>
             <option value="en">🇬🇧 Anglais</option>
+            <option value="es" data-mode-gpu>🇪🇸 Espagnol</option>
+            <option value="pt" data-mode-gpu>🇵🇹 Portugais</option>
+            <option value="it" data-mode-gpu>🇮🇹 Italien</option>
+            <option value="de" data-mode-gpu>🇩🇪 Allemand</option>
           </select>
         </div>
+      </div>
+
+      <!-- Sélecteur RVC : visible uniquement si mode = gpu-hybrid -->
+      <div class="field" id="liveRvcField" style="display:none">
+        <label for="liveRvcSelect">Modèle RVC (timbre cible)</label>
+        <select id="liveRvcSelect">
+          <option value="">— Aucun modèle disponible —</option>
+        </select>
+        <div class="hint">💡 Le modèle RVC remplace le timbre par le tien. <a href="/rvc-import">Importer un .pth</a></div>
       </div>
 
       <div class="field">
@@ -277,14 +351,43 @@
             <select id="liveTranslateTo">
               <option value="en">🇬🇧 Anglais</option>
               <option value="fr">🇫🇷 Français</option>
+              <option value="es" data-mode-gpu>🇪🇸 Espagnol</option>
+              <option value="pt" data-mode-gpu>🇵🇹 Portugais</option>
+              <option value="it" data-mode-gpu>🇮🇹 Italien</option>
+              <option value="de" data-mode-gpu>🇩🇪 Allemand</option>
             </select>
           </div>
-          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:0.15rem">
-            <div class="hint" style="margin:0">
-              💡 La voix clonée synthétise dans la langue cible.<br>
-              Au premier appel, le modèle de traduction (~300 Mo) est téléchargé.
-            </div>
+          <div class="field">
+            <label for="liveProviderSelect">Provider de traduction</label>
+            <select id="liveProviderSelect">
+              <option value="opus-mt-cpu">OPUS-MT (CPU local) — gratuit · 80ms</option>
+              <option value="opus-mt-gpu" data-mode-gpu>OPUS-MT (GPU) — gratuit · 80ms</option>
+              <option value="nllb" data-mode-gpu>NLLB-200 — gratuit · 150ms · 200 langues</option>
+              <option value="gpt-4o-mini" data-needs-openai>GPT-4o-mini — ~0.0004€ · 600ms · contexte</option>
+              <option value="gpt-4o" data-needs-openai>GPT-4o — ~0.005€ · 1100ms · top qualité</option>
+            </select>
           </div>
+        </div>
+
+        <!-- Briefing GPT (visible uniquement si provider GPT) -->
+        <div class="field" id="liveBriefingField" style="display:none">
+          <label for="liveBriefingSelect">Briefing GPT (optionnel)</label>
+          <div class="grid-2" style="grid-template-columns:1fr auto;gap:0.5rem">
+            <select id="liveBriefingSelect">
+              <option value="">— Aucun —</option>
+            </select>
+            <a href="/briefings" class="btn btn-secondary" style="white-space:nowrap;padding:0.5rem 0.85rem;text-decoration:none">+ Gérer</a>
+          </div>
+          <textarea id="liveBriefingContent" rows="3" placeholder="Contexte de cette session (optionnel) — ex: réunion CODIR Limagrain, marges Q1…" style="margin-top:0.5rem;width:100%;padding:0.6rem 0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
+          <div class="hint">💡 Améliore la qualité de traduction. Sélectionnez un briefing sauvegardé ou tapez un contexte ad-hoc.</div>
+        </div>
+      </div>
+
+      <!-- Pré-warmup GPU + indicateur coût (visible si mode GPU) -->
+      <div class="field" id="liveGpuField" style="display:none">
+        <div class="grid-2" style="gap:0.75rem">
+          <button class="btn btn-secondary" id="btnLiveWarmup" type="button">🔥 Préchauffer GPU</button>
+          <div id="liveWarmupStatus" class="hint" style="display:flex;align-items:center;font-family:'DM Mono',monospace;font-size:0.75rem">Cliquez pour réduire la latence du 1er appel.</div>
         </div>
       </div>
 
@@ -294,10 +397,10 @@
       </div>
     </section>
 
-    <!-- Step 2 : Session live -->
-    <section class="step" data-step="live-2">
+    <!-- Step 3 : Session live -->
+    <section class="step" data-step="live-3">
       <div class="step-header">
-        <div class="step-number">2</div>
+        <div class="step-number">3</div>
         <div class="step-title">Session live</div>
       </div>
 
@@ -306,8 +409,15 @@
         <div class="mic-zone-label" id="liveMicLabel">Cliquez pour démarrer</div>
       </div>
 
-      <div id="liveStatus" style="margin-top:0.75rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text3)">
-        Inactif
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;gap:1rem">
+        <div id="liveStatus" style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--text3)">
+          Inactif
+        </div>
+        <!-- Indicateur de coût session (visible si mode GPU) -->
+        <div id="liveCostIndicator" style="display:none;font-family:'DM Mono',monospace;font-size:0.75rem;color:var(--text3)">
+          💰 <span id="liveCostValue">0.000€</span>
+          · <span id="liveCostDuration">0s</span>
+        </div>
       </div>
 
       <div id="liveTranscript" style="margin-top:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.75rem;font-size:0.85rem;min-height:50px;max-height:200px;overflow-y:auto"></div>

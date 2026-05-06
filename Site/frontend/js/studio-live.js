@@ -41,7 +41,13 @@
   //   1500 ms : très tolérant, latence forte
   // À ajuster selon hardware. Sur un GPU on pourrait redescendre à 100-200 ms.
   var JITTER_BUFFER_MS = 1000;
-  var warmupPending = false;   // true pendant le chargement du modèle de traduction
+  var warmupPending = false;     // true pendant le chargement du modèle de traduction
+  var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
+  var cloudStatus = {            // alimenté par /api/cloud/status
+    runpod_configured: false,
+    openai_configured: false,
+  };
+  var currentMode = 'cpu-fr-en';
   var pendingChunks = [];          // AudioBuffers en attente de scheduling
   var pendingDurationMs = 0;       // total des durées accumulées
   var hasStartedUtterance = false; // true dès qu'on a commencé à scheduler la phrase courante
@@ -78,6 +84,201 @@
     var box = $('liveTranscript');
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
+  }
+
+  // ── V3 : chargement état cloud + RVC + briefings + providers ──
+
+  function loadCloudStatus() {
+    return VB.api.get('/api/cloud/status').then(function (d) {
+      cloudStatus = {
+        runpod_configured: !!d.runpod_configured,
+        openai_configured: !!d.openai_configured,
+        default_live_mode: d.default_live_mode || 'cpu-fr-en',
+        default_translation_provider: d.default_translation_provider || 'opus-mt-cpu',
+      };
+      applyCloudGating();
+    }).catch(function () {
+      // Cloud endpoints pas dispo → on reste sur cpu-fr-en seulement
+      cloudStatus = { runpod_configured: false, openai_configured: false };
+      applyCloudGating();
+    });
+  }
+
+  function applyCloudGating() {
+    // Grise les cartes-modes qui dépendent de RunPod si non configuré
+    var hasRunpod = cloudStatus.runpod_configured;
+    $$('.mode-card[data-needs-runpod]').forEach(function (card) {
+      card.classList.toggle('disabled', !hasRunpod);
+    });
+    $('liveCloudHint').style.display = hasRunpod ? 'none' : '';
+
+    // Grise les options du provider qui dépendent d'OpenAI / RunPod
+    var providerSel = $('liveProviderSelect');
+    if (providerSel) {
+      Array.prototype.forEach.call(providerSel.options, function (opt) {
+        if (opt.dataset.needsOpenai !== undefined) {
+          opt.disabled = !cloudStatus.openai_configured;
+        }
+        if (opt.dataset.modeGpu !== undefined) {
+          opt.disabled = !hasRunpod;
+        }
+      });
+    }
+  }
+
+  function loadRvcModels() {
+    var sel = $('liveRvcSelect');
+    if (!sel) return;
+    VB.api.get('/api/rvc/models').then(function (d) {
+      sel.innerHTML = '';
+      var models = (d.models || []).filter(function (m) { return m.status === 'active'; });
+      if (!models.length) {
+        var opt = document.createElement('option');
+        opt.value = ''; opt.textContent = '— Aucun modèle disponible —';
+        sel.appendChild(opt);
+        return;
+      }
+      models.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name + ' (' + m.size_mb + ' Mo)';
+        sel.appendChild(opt);
+      });
+    }).catch(function () { /* RVC endpoint pas dispo, on ignore */ });
+  }
+
+  function loadBriefings() {
+    var sel = $('liveBriefingSelect');
+    if (!sel) return;
+    VB.api.get('/api/briefings').then(function (d) {
+      sel.innerHTML = '<option value="">— Aucun —</option>';
+      (d.briefings || []).forEach(function (b) {
+        var opt = document.createElement('option');
+        opt.value = b.id; opt.textContent = b.name;
+        opt.dataset.content = b.content || '';
+        sel.appendChild(opt);
+      });
+    }).catch(function () { /* briefings pas dispo */ });
+  }
+
+  // ── Mode cards ──
+
+  function setMode(mode) {
+    currentMode = mode;
+    $$('.mode-card', $('liveModeCards')).forEach(function (card) {
+      card.classList.toggle('selected', card.dataset.value === mode);
+    });
+    var isGpu = mode !== 'cpu-fr-en';
+    var isHybrid = mode === 'gpu-hybrid';
+
+    // RVC selector visible only in hybrid
+    if ($('liveRvcField')) $('liveRvcField').style.display = isHybrid ? '' : 'none';
+    // GPU pre-warmup + cost indicator visible only in GPU modes
+    if ($('liveGpuField')) $('liveGpuField').style.display = isGpu ? '' : 'none';
+    if ($('liveCostIndicator')) $('liveCostIndicator').style.display = isGpu ? '' : 'none';
+
+    // Restreint langues source si CPU V1 (fr/en seulement)
+    var langSel = $('liveLang');
+    if (langSel) {
+      Array.prototype.forEach.call(langSel.options, function (opt) {
+        if (opt.dataset.modeGpu !== undefined) {
+          opt.hidden = !isGpu;
+        }
+      });
+      if (langSel.options[langSel.selectedIndex] &&
+          langSel.options[langSel.selectedIndex].hidden) {
+        langSel.value = 'fr';
+      }
+    }
+    var transToSel = $('liveTranslateTo');
+    if (transToSel) {
+      Array.prototype.forEach.call(transToSel.options, function (opt) {
+        if (opt.dataset.modeGpu !== undefined) opt.hidden = !isGpu;
+      });
+    }
+    // Provider : par défaut adapté au mode
+    var providerSel = $('liveProviderSelect');
+    if (providerSel && isGpu && providerSel.value === 'opus-mt-cpu') {
+      providerSel.value = 'nllb';
+    } else if (providerSel && !isGpu) {
+      providerSel.value = 'opus-mt-cpu';
+    }
+    onProviderChange();
+  }
+
+  function bindModeCards() {
+    var cards = $$('.mode-card', $('liveModeCards'));
+    cards.forEach(function (card) {
+      card.addEventListener('click', function () {
+        if (card.classList.contains('disabled')) {
+          VB.notify('warning', 'Ce mode nécessite RunPod — Réglages → Cloud');
+          return;
+        }
+        setMode(card.dataset.value);
+      });
+    });
+  }
+
+  // ── Provider GPT → afficher briefing ──
+
+  function onProviderChange() {
+    var p = ($('liveProviderSelect') && $('liveProviderSelect').value) || 'opus-mt-cpu';
+    var isGpt = p === 'gpt-4o-mini' || p === 'gpt-4o';
+    if ($('liveBriefingField')) $('liveBriefingField').style.display = isGpt ? '' : 'none';
+  }
+
+  function onBriefingSelect() {
+    var sel = $('liveBriefingSelect');
+    var ta = $('liveBriefingContent');
+    if (!sel || !ta) return;
+    var opt = sel.options[sel.selectedIndex];
+    if (opt && opt.dataset.content !== undefined) ta.value = opt.dataset.content;
+  }
+
+  // ── Pré-warmup GPU manuel (Décision 5) ──
+
+  function doGpuWarmup() {
+    if (!cloudStatus.runpod_configured) {
+      VB.notify('warning', 'RunPod non configuré');
+      return;
+    }
+    var components = ['whisper', 'f5tts', 'nllb'];
+    if (currentMode === 'gpu-hybrid') components.push('rvc');
+    gpuWarmupPending = true;
+    var btn = $('btnLiveWarmup');
+    var status = $('liveWarmupStatus');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = '⏳ Chargement modèles GPU sur RunPod… (3-15s au premier appel)';
+
+    VB.api.post('/api/cloud/runpod/warmup', { components: components })
+      .then(function (d) {
+        gpuWarmupPending = false;
+        if (btn) btn.disabled = false;
+        if (status) status.textContent = '✅ GPU prêt (' + (d.loaded || []).join(', ') + ')';
+        setTimeout(function () {
+          if (status) status.textContent = '✅ GPU chaud · 1ère phrase rapide';
+        }, 2500);
+      })
+      .catch(function (err) {
+        gpuWarmupPending = false;
+        if (btn) btn.disabled = false;
+        if (status) status.textContent = '⚠️ Échec : ' + (err.message || err);
+      });
+  }
+
+  // ── Cost update ──
+
+  function applyCostUpdate(payload) {
+    var v = $('liveCostValue');
+    var d = $('liveCostDuration');
+    var ind = $('liveCostIndicator');
+    if (!v || !d || !ind) return;
+    ind.style.display = '';
+    var cost = (payload.session_cost_eur || 0).toFixed(4);
+    v.textContent = cost + '€';
+    var dur = payload.duration_seconds || 0;
+    var mins = Math.floor(dur / 60), secs = dur % 60;
+    d.textContent = (mins > 0 ? mins + 'm ' : '') + secs + 's';
   }
 
   function appendTranslated(text) {
@@ -239,16 +440,33 @@
 
     var translateEnabled = $('liveTranslateToggle') && $('liveTranslateToggle').checked;
     var translateTo = ($('liveTranslateTo') && $('liveTranslateTo').value) || 'en';
+    var provider = ($('liveProviderSelect') && $('liveProviderSelect').value) || 'opus-mt-cpu';
+    var rvcModelId = ($('liveRvcSelect') && $('liveRvcSelect').value) || null;
+    var briefing = ($('liveBriefingContent') && $('liveBriefingContent').value) || '';
+
+    // Validation côté UI : mode hybride exige un modèle RVC
+    if (currentMode === 'gpu-hybrid' && !rvcModelId) {
+      VB.notify('error', 'Le mode hybride exige un modèle RVC — importe-en un sur /rvc-import');
+      try { ws.close(); } catch (e) {}
+      return;
+    }
 
     ws.addEventListener('open', function () {
       ws.send(JSON.stringify({
         type: 'configure',
+        // V1 (rétrocompat) :
         voice_id: voiceId,
         language: lang,
         output: 'browser',
-        format: 'pcm16',  // indique au serveur qu'on envoie du PCM 16k int16 mono
+        format: 'pcm16',
         translate: translateEnabled,
         translate_to: translateTo,
+        // V3 :
+        mode: currentMode,
+        translation_provider: provider,
+        target_lang: translateEnabled ? translateTo : lang,
+        rvc_model_id: rvcModelId,
+        briefing: (provider === 'gpt-4o-mini' || provider === 'gpt-4o') ? briefing : '',
       }));
     });
 
@@ -270,6 +488,8 @@
         enqueuePcmChunk(payload.data);
       } else if (payload.type === 'audio_end') {
         onAudioEnd();
+      } else if (payload.type === 'cost_update') {
+        applyCostUpdate(payload);
       } else if (payload.type === 'error') {
         VB.notify('error', payload.message || 'Erreur');
         stop();
@@ -512,6 +732,28 @@
     bindMicZone();
     bindRadioGroups();
     bindTranslateToggle();
+    bindModeCards();
+
+    // V3 : provider + briefing handlers
+    var providerSel = $('liveProviderSelect');
+    if (providerSel) providerSel.addEventListener('change', onProviderChange);
+    var briefingSel = $('liveBriefingSelect');
+    if (briefingSel) briefingSel.addEventListener('change', onBriefingSelect);
+    var btnWarmup = $('btnLiveWarmup');
+    if (btnWarmup) btnWarmup.addEventListener('click', doGpuWarmup);
+
+    // Loaders
     loadVoices();
+    loadCloudStatus().then(function () {
+      // Une fois cloud status connu, charger RVC + briefings + appliquer mode défaut
+      loadRvcModels();
+      loadBriefings();
+      // Mode par défaut : si RunPod pas configuré, force cpu-fr-en
+      var defaultMode = cloudStatus.runpod_configured
+        ? (cloudStatus.default_live_mode || 'cpu-fr-en')
+        : 'cpu-fr-en';
+      setMode(defaultMode);
+      onProviderChange();
+    });
   });
 })();

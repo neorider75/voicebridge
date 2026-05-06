@@ -226,6 +226,54 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,99,
   border-color: var(--accent); color: var(--accent2);
 }
 
+/* ── MODE CARDS V3 (sélecteur 4 modes Live) ── */
+.mode-cards {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;
+}
+@media (max-width: 700px) { .mode-cards { grid-template-columns: 1fr; } }
+
+.mode-card {
+  display: block; text-align: left; cursor: pointer;
+  padding: 0.85rem 1rem;
+  background: var(--surface2); border: 2px solid var(--border);
+  border-radius: 10px; transition: all 0.18s; user-select: none;
+  font-family: inherit; color: var(--text);
+}
+.mode-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+.mode-card.selected {
+  background: rgba(108,99,255,0.08);
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(108,99,255,0.18);
+}
+.mode-card.disabled {
+  opacity: 0.45; cursor: not-allowed; pointer-events: none;
+}
+.mode-card.disabled::after {
+  content: " · non configuré"; font-size: 0.7rem; color: var(--warning);
+}
+.mode-card-head {
+  display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
+}
+.mode-card-icon { font-size: 1.1rem; }
+.mode-card-title {
+  font-weight: 700; font-size: 0.92rem; flex: 1;
+  letter-spacing: -0.01em;
+}
+.mode-card-badge {
+  font-size: 0.65rem; font-weight: 700;
+  padding: 0.15rem 0.45rem; border-radius: 99px;
+  background: var(--surface3); color: var(--text3);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.mode-card-badge-gpu { background: rgba(108,99,255,0.15); color: var(--accent2); }
+.mode-card-sub {
+  font-size: 0.78rem; color: var(--text2); margin-bottom: 0.35rem;
+}
+.mode-card-meta {
+  font-size: 0.7rem; color: var(--text3); line-height: 1.45;
+}
+.mode-card-meta a { color: var(--accent2); text-decoration: underline; }
+
 /* ── DIVIDER ── */
 hr { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
 
