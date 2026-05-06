@@ -66,6 +66,7 @@ API_TOKEN=""
 MINIMAL=0
 WITH_UFW=0
 FRESH=0
+SKIP_CLOUD=0
 for arg in "$@"; do
   case "$arg" in
     --minimal)
@@ -76,6 +77,9 @@ for arg in "$@"; do
       ;;
     --fresh)
       FRESH=1
+      ;;
+    --skip-cloud)
+      SKIP_CLOUD=1
       ;;
     -h|--help)
       cat <<EOF
@@ -101,6 +105,10 @@ sautées avec un message "déjà fait — skip".
                 réexécute toutes les phases. Ne supprime PAS les modèles
                 déjà téléchargés ni /var/voicebridge/data/. Pour une
                 désinstallation complète, utiliser uninstall.sh.
+
+  --skip-cloud  Saute la phase 14 (configuration RunPod + OpenAI). Les
+                clés peuvent être saisies plus tard via l'UI Réglages →
+                Cloud, ou via "manage.py set-runpod-config".
 EOF
       exit 0
       ;;
@@ -178,7 +186,7 @@ trap 'fail "Échec en ligne $LINENO. Voir $LOG_INSTALL pour les détails."' ERR
 # ---------------------------------------------------------------------------
 
 phase1_checks() {
-  banner "Phase 1 / 14 — Vérifications"
+  banner "Phase 1 / 15 — Vérifications"
 
   if [[ $EUID -ne 0 ]]; then
     fail "Ce script doit être lancé en root (sudo)."
@@ -243,7 +251,7 @@ ask_password() {
 }
 
 phase2_questions() {
-  banner "Phase 2 / 14 — Configuration"
+  banner "Phase 2 / 15 — Configuration"
 
   # Reprise : si phase déjà passée, on restaure DOMAIN/EMAIL depuis l'état
   # et on ne re-pose le mdp QUE si phase 8 (config.json) est à refaire.
@@ -314,7 +322,7 @@ phase2_questions() {
 # ---------------------------------------------------------------------------
 
 phase3_recap() {
-  banner "Phase 3 / 14 — Récapitulatif"
+  banner "Phase 3 / 15 — Récapitulatif"
   cat <<EOF
   Domaine        : $DOMAIN
   Email SSL      : $EMAIL
@@ -355,7 +363,7 @@ detect_python() {
 }
 
 phase4_system() {
-  banner "Phase 4 / 14 — Paquets système (apt)"
+  banner "Phase 4 / 15 — Paquets système (apt)"
 
   step "apt update + upgrade"
   apt-get update -y
@@ -415,7 +423,7 @@ phase4_system() {
 # ---------------------------------------------------------------------------
 
 phase5_app_code() {
-  banner "Phase 5 / 14 — Récupération du code applicatif"
+  banner "Phase 5 / 15 — Récupération du code applicatif"
 
   if [[ -d "$APP_DIR/.git" ]]; then
     step "Mise à jour du dépôt existant"
@@ -492,7 +500,7 @@ hf_download() {
 }
 
 phase6_models() {
-  banner "Phase 6 / 14 — Téléchargement des modèles ML (10-15 min)"
+  banner "Phase 6 / 15 — Téléchargement des modèles ML (10-15 min)"
 
   if (( MINIMAL )); then
     warn "Mode --minimal : phase 6 sautée. Relance sans --minimal pour télécharger les modèles."
@@ -537,7 +545,7 @@ phase6_models() {
 # ---------------------------------------------------------------------------
 
 phase7_default_voices() {
-  banner "Phase 7 / 14 — Voix par défaut (Juliette + Dave)"
+  banner "Phase 7 / 15 — Voix par défaut (Juliette + Dave)"
 
   if (( MINIMAL )); then
     warn "Mode --minimal : phase 7 sautée."
@@ -639,7 +647,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 phase8_config() {
-  banner "Phase 8 / 14 — Configuration applicative"
+  banner "Phase 8 / 15 — Configuration applicative"
 
   step "Génération des secrets"
   local pw_hash sess_secret api_token api_token_hash
@@ -688,7 +696,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 phase9_macos_app() {
-  banner "Phase 9 / 14 — Préparation VoiceBridge.app pour macOS"
+  banner "Phase 9 / 15 — Préparation VoiceBridge.app pour macOS"
 
   # Le bundle est versionné dans le repo : Site/macos-app/release/VoiceBridge.app.zip
   # (généré par Site/macos-app/build.sh --zip côté Mac).
@@ -725,7 +733,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 phase10_nginx() {
-  banner "Phase 10 / 14 — Nginx + SSL"
+  banner "Phase 10 / 15 — Nginx + SSL"
 
   step "Écriture de /etc/nginx/sites-available/voicebridge"
   cat > /etc/nginx/sites-available/voicebridge <<EOF
@@ -789,7 +797,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 phase11_systemd() {
-  banner "Phase 11 / 14 — Service systemd"
+  banner "Phase 11 / 15 — Service systemd"
 
   install -m 0644 "$APP_DIR/Site/backend/voicebridge.service" /etc/systemd/system/voicebridge.service
   systemctl daemon-reload
@@ -810,7 +818,7 @@ phase11_systemd() {
 # ---------------------------------------------------------------------------
 
 phase12_firewall() {
-  banner "Phase 12 / 14 — fail2ban + UFW (optionnel)"
+  banner "Phase 12 / 15 — fail2ban + UFW (optionnel)"
 
   # fail2ban (toujours activé : ne change rien d'autre que la défense SSH)
   step "Configuration fail2ban (anti-bruteforce SSH)"
@@ -851,7 +859,7 @@ EOF
 # ---------------------------------------------------------------------------
 
 phase13_cron() {
-  banner "Phase 13 / 14 — Cron jobs"
+  banner "Phase 13 / 15 — Cron jobs"
 
   cat > /etc/cron.d/voicebridge <<EOF
 # Nettoyage horaire des fichiers audio expirés
@@ -864,10 +872,223 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Phase 14 — Récap final
+# Phase 14 — Configuration cloud (RunPod + OpenAI, optionnel V3)
 # ---------------------------------------------------------------------------
 
-phase14_recap() {
+# Helper Python : chiffre une chaîne avec services/secrets.py et patche
+# config.json (utilise la master key auto-bootstrappée).
+_vb_set_encrypted() {
+  # Args : <config_key> <plaintext>
+  # On passe le plaintext via stdin pour ne pas fuiter dans la liste des
+  # arguments visible par 'ps'.
+  local key="$1"
+  local plaintext="$2"
+  printf '%s' "$plaintext" | sudo -u "$SERVICE_USER" \
+    "$VENV_DIR/bin/python" -c "
+import sys
+sys.path.insert(0, '$APP_DIR/Site/backend')
+from app.services import secrets as s
+from app import config as cfg
+plain = sys.stdin.read()
+cfg.set_many({'$key': s.encrypt(plain)})
+print('OK')
+" >/dev/null
+}
+
+_vb_set_plain() {
+  local key="$1"
+  local val="$2"
+  sudo -u "$SERVICE_USER" \
+    "$VENV_DIR/bin/python" -c "
+import sys
+sys.path.insert(0, '$APP_DIR/Site/backend')
+from app import config as cfg
+cfg.set_many({'$key': '''${val//\'/\\\'}'''})
+" >/dev/null
+}
+
+_vb_test_runpod() {
+  sudo -u "$SERVICE_USER" \
+    "$VENV_DIR/bin/python" -c "
+import sys
+sys.path.insert(0, '$APP_DIR/Site/backend')
+from app.services import runpod_client
+try:
+    r = runpod_client.ping()
+    print('OK', r.get('latency_ms'), r.get('datacenter'))
+except Exception as e:
+    print('FAIL', e)
+    sys.exit(1)
+"
+}
+
+_vb_test_openai() {
+  sudo -u "$SERVICE_USER" \
+    "$VENV_DIR/bin/python" -c "
+import sys
+sys.path.insert(0, '$APP_DIR/Site/backend')
+from app.services import openai_client
+try:
+    r = openai_client.ping()
+    print('OK', r.get('latency_ms'))
+except Exception as e:
+    print('FAIL', e)
+    sys.exit(1)
+"
+}
+
+phase14_cloud_config() {
+  banner "Phase 14 / 15 — Configuration cloud (RunPod + OpenAI, optionnel)"
+
+  if (( SKIP_CLOUD )); then
+    warn "Mode --skip-cloud : phase sautée. Configurez plus tard via UI Réglages → Cloud."
+    return 0
+  fi
+
+  cat <<EOF
+La V3 ajoute trois modes Live qui requièrent un GPU (RunPod) :
+  • gpu-clone   — ta voix multilingue
+  • gpu-native  — voix native dans la langue cible
+  • gpu-hybrid  — ta voix avec accent natif (RVC)
+
+Et la traduction haute qualité GPT-4o(-mini) via OpenAI (optionnel).
+
+Si tu n'as pas encore de compte RunPod / OpenAI, tu peux saisir les clés
+plus tard depuis Réglages → Cloud (web UI). Le mode V1 cpu-fr-en marche
+sans aucune de ces clés.
+
+EOF
+
+  read -rp "Configurer maintenant ? [Y/n] : " configure_now
+  configure_now=${configure_now:-Y}
+  if [[ ! "$configure_now" =~ ^[Yy]$ ]]; then
+    warn "Phase cloud sautée — configurable plus tard via UI."
+    return 0
+  fi
+
+  # ── RunPod ──────────────────────────────────────────────────────
+  echo
+  echo -e "${C_BOLD}── RunPod Serverless ──${C_RESET}"
+  echo
+  echo "Pré-requis (à faire dans la console runpod.io AVANT de continuer) :"
+  echo "  1. Créer un compte sur https://runpod.io"
+  echo "  2. Storage → New Network Volume — taille 30 Go suffit, datacenter"
+  echo "     EU-FR-1 (recommandé pour latence FR) ou EU-RO-1"
+  echo "  3. ⚠️  Au déploiement de l'endpoint Serverless, configurer le"
+  echo "     mount path explicitement à /runpod-volume (PAS le défaut UI"
+  echo "     /workspace — sinon le worker ne trouve aucun modèle)"
+  echo "  4. Settings → API Keys → Create"
+  echo "  5. Storage → ton Volume → S3 Credentials → Create"
+  echo "  6. Pré-télécharger les modèles (~17 Go) dans le Volume :"
+  echo "     voir runpod-worker/README.md (utiliser hf download avec --include)"
+  echo
+
+  read -rp "As-tu un compte RunPod prêt ? [y/N] : " has_runpod
+  if [[ "$has_runpod" =~ ^[Yy]$ ]]; then
+    local rp_key rp_endpoint rp_volume rp_dc rp_s3a rp_s3s
+
+    read -rsp "▸ RunPod API key (rpa_…) : " rp_key; echo
+    read -rp  "▸ Endpoint ID Serverless        : " rp_endpoint
+    read -rp  "▸ Volume ID                     : " rp_volume
+    read -rp  "▸ Datacenter [EU-FR-1] : " rp_dc
+    rp_dc=${rp_dc:-EU-FR-1}
+    read -rsp "▸ S3 access key                 : " rp_s3a; echo
+    read -rsp "▸ S3 secret key                 : " rp_s3s; echo
+
+    if [[ -n "$rp_key" ]]; then
+      step "Chiffrement RunPod API key"
+      _vb_set_encrypted "runpod_api_key_encrypted" "$rp_key"
+    fi
+    if [[ -n "$rp_endpoint" ]]; then
+      _vb_set_plain "runpod_endpoint_id" "$rp_endpoint"
+    fi
+    if [[ -n "$rp_volume" ]]; then
+      _vb_set_plain "runpod_volume_id" "$rp_volume"
+    fi
+    if [[ -n "$rp_dc" ]]; then
+      _vb_set_plain "runpod_datacenter" "$rp_dc"
+    fi
+    if [[ -n "$rp_s3a" ]]; then
+      _vb_set_encrypted "runpod_s3_access_key_encrypted" "$rp_s3a"
+    fi
+    if [[ -n "$rp_s3s" ]]; then
+      _vb_set_encrypted "runpod_s3_secret_key_encrypted" "$rp_s3s"
+    fi
+    ok "Configuration RunPod sauvegardée (chiffrée Fernet)"
+
+    echo
+    step "Test de connexion RunPod (peut prendre 10-30s avec cold start)…"
+    if _vb_test_runpod; then
+      ok "RunPod OK"
+    else
+      warn "Test échoué. Vérifie les clés depuis Réglages → Cloud → Tester."
+      warn "L'installation continue (les clés sont stockées, juste non testées)."
+    fi
+  else
+    warn "RunPod non configuré — modes GPU indisponibles tant que les clés ne"
+    warn "sont pas saisies via Réglages → Cloud."
+  fi
+
+  # ── OpenAI ──────────────────────────────────────────────────────
+  echo
+  echo -e "${C_BOLD}── OpenAI (traduction GPT-4o-mini / GPT-4o) ──${C_RESET}"
+  echo
+  echo "OpenAI est optionnel : il améliore la qualité de traduction Live"
+  echo "avec contexte conversationnel et briefings métier. Sans clé, NLLB"
+  echo "(GPU) et OPUS-MT (CPU local) restent disponibles gratuitement."
+  echo
+
+  read -rp "As-tu une clé OpenAI ? [y/N] : " has_openai
+  if [[ "$has_openai" =~ ^[Yy]$ ]]; then
+    local oai_key
+    read -rsp "▸ Clé OpenAI (sk-…) : " oai_key; echo
+    if [[ -n "$oai_key" ]]; then
+      _vb_set_encrypted "openai_api_key_encrypted" "$oai_key"
+      ok "Clé OpenAI sauvegardée (chiffrée Fernet)"
+      step "Test de connexion OpenAI…"
+      if _vb_test_openai; then
+        ok "OpenAI OK"
+      else
+        warn "Test échoué. Vérifie la clé depuis Réglages → Cloud → Tester."
+      fi
+    fi
+  else
+    warn "OpenAI non configuré — providers gpt-4o(-mini) indisponibles tant"
+    warn "que la clé n'est pas saisie via Réglages → Cloud."
+  fi
+
+  # ── Mode Live par défaut ───────────────────────────────────────
+  echo
+  echo -e "${C_BOLD}── Mode Live par défaut ──${C_RESET}"
+  echo "  1) cpu-fr-en  (V1, gratuit, FR/EN seulement) [recommandé si pas de RunPod]"
+  echo "  2) gpu-clone  (multilingue, ta voix)"
+  echo "  3) gpu-native (multilingue, voix générique)"
+  echo "  4) gpu-hybrid (multilingue, ta voix + accent natif via RVC)"
+  echo
+  read -rp "Mode par défaut [1] : " default_mode_choice
+  case "${default_mode_choice:-1}" in
+    1) _vb_set_plain "default_live_mode" "cpu-fr-en" ;;
+    2) _vb_set_plain "default_live_mode" "gpu-clone" ;;
+    3) _vb_set_plain "default_live_mode" "gpu-native" ;;
+    4) _vb_set_plain "default_live_mode" "gpu-hybrid" ;;
+    *) _vb_set_plain "default_live_mode" "cpu-fr-en" ;;
+  esac
+  ok "Mode Live par défaut configuré"
+
+  # Force un reload du backend pour qu'il prenne la nouvelle config
+  if systemctl is-active --quiet voicebridge 2>/dev/null; then
+    step "Redémarrage de voicebridge.service pour appliquer la config"
+    systemctl restart voicebridge
+    sleep 2
+    ok "Service redémarré"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Phase 15 — Récap final
+# ---------------------------------------------------------------------------
+
+phase15_recap() {
   banner "✅ Installation terminée"
   cat <<EOF
 
@@ -884,11 +1105,19 @@ phase14_recap() {
   Service : systemctl status voicebridge
   Restart : systemctl restart voicebridge
 
+  ⚠️  Sauvegarde critique :
+    - $DATA_DIR/.master_key — Master key Fernet (chmod 400)
+      Sans ce fichier, les clés API tierces (RunPod, OpenAI, S3)
+      stockées dans config.json deviennent indéchiffrables.
+      À inclure dans tout backup de $DATA_DIR.
+
   Étapes suivantes :
   1. Ouvrez https://$DOMAIN dans votre navigateur
   2. Connectez-vous avec votre mot de passe
   3. Téléchargez VoiceBridge.app (Réglages → Installation)
   4. Configurez Teams pour utiliser BlackHole comme micro
+  5. (V3) Si tu n'as pas configuré RunPod en phase 14, fais-le depuis
+     Réglages → Cloud pour activer les modes GPU.
 
 EOF
 }
@@ -934,8 +1163,9 @@ main() {
   run_phase phase11 phase11_systemd
   run_phase phase12 phase12_firewall
   run_phase phase13 phase13_cron
+  run_phase phase14 phase14_cloud_config
 
-  phase14_recap
+  phase15_recap
 }
 
 main "$@"
