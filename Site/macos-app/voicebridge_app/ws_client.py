@@ -27,12 +27,21 @@ log = logging.getLogger("voicebridge.ws")
 class WSClient:
     def __init__(self, server_url: str, api_token: str, audio_pipeline,
                  voice_id: str, language: str = "fr",
+                 mode: str = "cpu-fr-en",
+                 translation_provider: str = "opus-mt-cpu",
+                 target_lang: str | None = None,
+                 rvc_model_id: str | None = None,
                  on_state_change=None) -> None:
         self.server_url = server_url
         self.api_token = api_token
         self.audio = audio_pipeline
         self.voice_id = voice_id
         self.language = language
+        # V3 (Phase H)
+        self.mode = mode
+        self.translation_provider = translation_provider
+        self.target_lang = target_lang or language
+        self.rvc_model_id = rvc_model_id
         self.on_state_change = on_state_change or (lambda *a, **kw: None)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -70,12 +79,44 @@ class WSClient:
     def set_voice(self, voice_id: str, language: str) -> None:
         self.voice_id = voice_id
         self.language = language
+        self._send_reconfigure()
+
+    def set_mode(self, mode: str, translation_provider: str | None = None,
+                 target_lang: str | None = None,
+                 rvc_model_id: str | None = None) -> None:
+        """V3 : change le mode Live (cpu-fr-en / gpu-clone / gpu-native /
+        gpu-hybrid) et les paramètres associés. Renvoie un configure au serveur."""
+        self.mode = mode
+        if translation_provider is not None:
+            self.translation_provider = translation_provider
+        if target_lang is not None:
+            self.target_lang = target_lang
+        if rvc_model_id is not None:
+            self.rvc_model_id = rvc_model_id
+        self._send_reconfigure()
+
+    def _build_configure(self) -> dict:
+        return {
+            "type": "configure",
+            "voice_id": self.voice_id,
+            "language": self.language,
+            "output": "blackhole",
+            # V3
+            "mode": self.mode,
+            "translation_provider": self.translation_provider,
+            "target_lang": self.target_lang,
+            "rvc_model_id": self.rvc_model_id,
+        }
+
+    def _send_reconfigure(self) -> None:
         ws = self._ws
         loop = self._loop
         if ws and loop:
-            payload = {"type": "configure", "voice_id": voice_id,
-                       "language": language, "output": "blackhole"}
-            asyncio.run_coroutine_threadsafe(ws.send(json.dumps(payload)), loop)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    ws.send(json.dumps(self._build_configure())), loop)
+            except Exception:  # noqa: BLE001
+                pass
 
     # ── Internal ────────────────────────────────────────────────────
 
@@ -104,13 +145,8 @@ class WSClient:
                     self._ws = ws
                     attempt = 0
                     self.on_state_change("connected")
-                    # Configure
-                    await ws.send(json.dumps({
-                        "type": "configure",
-                        "voice_id": self.voice_id,
-                        "language": self.language,
-                        "output": "blackhole",
-                    }))
+                    # Configure (payload complet V3 : mode + provider + RVC)
+                    await ws.send(json.dumps(self._build_configure()))
                     async for msg in ws:
                         await self._handle_message(msg)
             except Exception as exc:  # noqa: BLE001
@@ -171,6 +207,17 @@ class WSClient:
         elif ptype == "transcript":
             # Texte transcrit — purement informatif côté app macOS.
             pass
+        elif ptype == "translated":
+            # V3 : phrase traduite côté serveur — log only.
+            pass
+        elif ptype == "cost_update":
+            # V3 : coût session en mode GPU. Affichable dans la barre menu
+            # via on_state_change. Pour V3.0 on log juste.
+            log.info("cost: %.4f€ (durée %ds, GPU=%s, GPT=%s)",
+                     payload.get("session_cost_eur", 0),
+                     payload.get("duration_seconds", 0),
+                     payload.get("provider_breakdown", {}).get("runpod_gpu", 0),
+                     payload.get("provider_breakdown", {}).get("openai", 0))
         elif ptype == "ready":
             self.on_state_change("ready")
         elif ptype == "error":

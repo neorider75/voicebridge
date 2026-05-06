@@ -44,6 +44,18 @@ ICON_CONNECTED = "🟢"
 ICON_PAUSED = "🟡"
 ICON_DISCONNECTED = "🔴"
 
+# Modes Live V3 (cf. doc 00-decisions-v3.md)
+MODE_CPU_V1 = "cpu-fr-en"
+MODE_GPU_CLONE = "gpu-clone"
+MODE_GPU_NATIVE = "gpu-native"
+MODE_GPU_HYBRID = "gpu-hybrid"
+MODES_LABELS = {
+    MODE_CPU_V1: "🔵 Authentique CPU FR/EN",
+    MODE_GPU_CLONE: "🟣 Multilingue – ma voix",
+    MODE_GPU_NATIVE: "🟢 Voix native",
+    MODE_GPU_HYBRID: "⭐ Hybride accent natif",
+}
+
 
 class VoiceBridgeApp(rumps.App):
     def __init__(self) -> None:
@@ -54,6 +66,22 @@ class VoiceBridgeApp(rumps.App):
         self.voice_id = cfg.kr_get("default_voice") or "juliette"
         self.language = "fr"
 
+        # ── État cloud V3 (alimenté par _refresh_cloud_status au boot) ──
+        self.runpod_configured = False
+        self.openai_configured = False
+        self.cloud_default_mode = MODE_CPU_V1
+        self.cloud_default_provider = "opus-mt-cpu"
+
+        # Mode Live V3 — Décision 4 :
+        # 1) premier lancement → cpu-fr-en
+        # 2) sinon last_mode mémorisé localement
+        # 3) validation : si mode gpu-* mais runpod absent → fallback cpu-fr-en
+        last_mode = cfg.kr_get("last_live_mode") or MODE_CPU_V1
+        self.mode = last_mode if last_mode in MODES_LABELS else MODE_CPU_V1
+        self.translation_provider = "opus-mt-cpu"
+        self.target_lang = self.language
+        self.rvc_model_id: str | None = cfg.kr_get("default_rvc_model_id") or None
+
         self.audio = audio_mod.AudioPipeline(on_chunk_captured=self._on_capture)
         self.ws: WSClient | None = None
 
@@ -61,12 +89,21 @@ class VoiceBridgeApp(rumps.App):
         # voice_item est un PARENT de sous-menu : la liste des voix
         # disponibles est peuplée par _refresh_voice_submenu() (fetch HTTP).
         self.voice_item = rumps.MenuItem(f"Voix : {self.voice_id}")
+        # V3 — sous-menu Mode (4 modes, parent submenu)
+        self.mode_item = rumps.MenuItem(f"Mode : {MODES_LABELS.get(self.mode, self.mode)}")
+        # V3 — sous-menu Modèle RVC (visible si mode=gpu-hybrid)
+        self.rvc_item = rumps.MenuItem("Modèle RVC : (aucun)")
+        # V3 — bouton préchauffe GPU
+        self.warmup_item = rumps.MenuItem("🔥 Préchauffer GPU", callback=self._on_warmup_gpu)
         self.pause_item = rumps.MenuItem("⏸ Mettre en pause", callback=self._toggle_pause)
         self.preferences_item = rumps.MenuItem("Préférences…", callback=self._open_preferences)
         self.quit_item = rumps.MenuItem("⏹ Quitter", callback=self._on_quit)
 
         self.menu = [
+            self.mode_item,
             self.voice_item,
+            self.rvc_item,
+            self.warmup_item,
             None,
             self.pause_item,
             None,
@@ -80,6 +117,14 @@ class VoiceBridgeApp(rumps.App):
             rumps.alert("Bienvenue !", "Configurez la clé API dans les Préférences pour démarrer.")
             self._open_preferences(None)
         else:
+            # 1. Récupère l'état cloud → ajuste les visibilités
+            self._refresh_cloud_status()
+            # 2. Valide le mode mémorisé selon état cloud
+            self._validate_mode_against_cloud()
+            # 3. Construit les sous-menus + lance pipeline
+            self._refresh_mode_submenu()
+            self._refresh_rvc_submenu()
+            self._update_v3_menu_visibility()
             self._start_pipeline()
             self._refresh_voice_submenu()
 
@@ -122,6 +167,11 @@ class VoiceBridgeApp(rumps.App):
 
         if self._test_connection():
             rumps.alert("Connexion OK", "La clé est valide. Le pipeline démarre.")
+            self._refresh_cloud_status()
+            self._validate_mode_against_cloud()
+            self._refresh_mode_submenu()
+            self._refresh_rvc_submenu()
+            self._update_v3_menu_visibility()
             self._start_pipeline()
             self._refresh_voice_submenu()
         else:
@@ -193,6 +243,181 @@ class VoiceBridgeApp(rumps.App):
                 pass
         return _cb
 
+    # ── V3 : Cloud status ──────────────────────────────────────────
+
+    def _refresh_cloud_status(self) -> None:
+        """GET /api/cloud/status → alimente runpod_configured / openai_configured.
+
+        Si l'endpoint n'existe pas (serveur V1), tout reste False et seul
+        le mode cpu-fr-en sera disponible.
+        """
+        if not self.server_url or not self.api_token:
+            return
+        try:
+            url = self.server_url.rstrip("/") + "/api/cloud/status"
+            req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
+            with urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                self.runpod_configured = bool(data.get("runpod_configured"))
+                self.openai_configured = bool(data.get("openai_configured"))
+                self.cloud_default_mode = data.get("default_live_mode") or MODE_CPU_V1
+                self.cloud_default_provider = data.get("default_translation_provider") or "opus-mt-cpu"
+        except Exception as exc:  # noqa: BLE001
+            log.info("cloud status indisponible (serveur V1 ?) : %s", exc)
+            self.runpod_configured = False
+            self.openai_configured = False
+
+    def _validate_mode_against_cloud(self) -> None:
+        """Si mode mémorisé est GPU mais RunPod pas configuré → fallback cpu-fr-en."""
+        if self.mode != MODE_CPU_V1 and not self.runpod_configured:
+            log.info("mode %s indisponible (runpod absent) → fallback cpu-fr-en", self.mode)
+            self.mode = MODE_CPU_V1
+            cfg.kr_set("last_live_mode", MODE_CPU_V1)
+
+    # ── V3 : Sous-menu Mode ────────────────────────────────────────
+
+    def _refresh_mode_submenu(self, _sender=None) -> None:
+        for k in list(self.mode_item.keys()):
+            del self.mode_item[k]
+        for mode_id, label in MODES_LABELS.items():
+            mark = "✓ " if mode_id == self.mode else "    "
+            disabled = (mode_id != MODE_CPU_V1 and not self.runpod_configured)
+            display = mark + label + (" (non configuré)" if disabled else "")
+            cb = None if disabled else self._make_mode_select_cb(mode_id)
+            self.mode_item[mode_id] = rumps.MenuItem(display, callback=cb)
+        self.mode_item.title = f"Mode : {MODES_LABELS.get(self.mode, self.mode)}"
+
+    def _make_mode_select_cb(self, mode_id: str):
+        def _cb(_sender):
+            if mode_id == MODE_GPU_HYBRID and not self.rvc_model_id:
+                rumps.alert("Modèle RVC requis",
+                            "Le mode hybride exige un modèle RVC. "
+                            "Sélectionnes-en un dans le sous-menu \"Modèle RVC\" "
+                            "ou importes-en un sur la page /rvc-import.")
+                return
+            self.mode = mode_id
+            cfg.kr_set("last_live_mode", mode_id)
+            self._refresh_mode_submenu()
+            self._update_v3_menu_visibility()
+            if self.ws:
+                self.ws.set_mode(self.mode,
+                                  translation_provider=self.translation_provider,
+                                  target_lang=self.target_lang,
+                                  rvc_model_id=self.rvc_model_id)
+            log.info("mode → %s", mode_id)
+            try:
+                rumps.notification("VoiceBridge", "Mode actif", MODES_LABELS.get(mode_id, mode_id))
+            except Exception:  # noqa: BLE001
+                pass
+        return _cb
+
+    # ── V3 : Sous-menu Modèle RVC ──────────────────────────────────
+
+    def _fetch_rvc_models(self) -> list:
+        if not self.server_url or not self.api_token:
+            return []
+        try:
+            url = self.server_url.rstrip("/") + "/api/rvc/models"
+            req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
+            with urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode("utf-8"))
+                return data.get("models", []) if isinstance(data, dict) else []
+        except Exception as exc:  # noqa: BLE001
+            log.info("fetch RVC models failed: %s", exc)
+            return []
+
+    def _refresh_rvc_submenu(self, _sender=None) -> None:
+        for k in list(self.rvc_item.keys()):
+            del self.rvc_item[k]
+        # Action "Rafraîchir" en premier
+        self.rvc_item["__refresh"] = rumps.MenuItem(
+            "🔄 Rafraîchir la liste", callback=self._refresh_rvc_submenu)
+        self.rvc_item["__sep"] = None
+
+        models = [m for m in self._fetch_rvc_models() if m.get("status") == "active"]
+        if not models:
+            self.rvc_item["__none"] = rumps.MenuItem(
+                "(aucun modèle — voir /rvc-import)")
+            self.rvc_item.title = "Modèle RVC : (aucun)"
+            return
+
+        # Si le modèle mémorisé n'existe plus, on l'oublie
+        if self.rvc_model_id and not any(m["id"] == self.rvc_model_id for m in models):
+            self.rvc_model_id = None
+            cfg.kr_set("default_rvc_model_id", None)
+
+        active_name = "(aucun)"
+        for m in models:
+            mark = "✓ " if m["id"] == self.rvc_model_id else "    "
+            label = mark + m.get("name", m["id"])
+            self.rvc_item[m["id"]] = rumps.MenuItem(
+                label, callback=self._make_rvc_select_cb(m["id"], m.get("name", m["id"])))
+            if m["id"] == self.rvc_model_id:
+                active_name = m.get("name", m["id"])
+        self.rvc_item.title = f"Modèle RVC : {active_name}"
+
+    def _make_rvc_select_cb(self, model_id: str, name: str):
+        def _cb(_sender):
+            self.rvc_model_id = model_id
+            cfg.kr_set("default_rvc_model_id", model_id)
+            self._refresh_rvc_submenu()
+            if self.ws and self.mode == MODE_GPU_HYBRID:
+                self.ws.set_mode(self.mode, rvc_model_id=model_id)
+            try:
+                rumps.notification("VoiceBridge", "Modèle RVC actif", name)
+            except Exception:  # noqa: BLE001
+                pass
+        return _cb
+
+    # ── V3 : Préchauffe GPU ────────────────────────────────────────
+
+    def _on_warmup_gpu(self, _sender) -> None:
+        if not self.runpod_configured:
+            rumps.alert("RunPod non configuré",
+                        "Va dans Réglages → Cloud sur le panel web pour saisir ta clé RunPod.")
+            return
+        components = ["whisper", "f5tts", "nllb"]
+        if self.mode == MODE_GPU_HYBRID:
+            components.append("rvc")
+        try:
+            url = self.server_url.rstrip("/") + "/api/cloud/runpod/warmup"
+            body = json.dumps({"components": components}).encode("utf-8")
+            req = Request(url, data=body, method="POST",
+                           headers={"Authorization": f"Bearer {self.api_token}",
+                                    "Content-Type": "application/json"})
+            with urlopen(req, timeout=120) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            loaded = ", ".join(data.get("loaded", []))
+            try:
+                rumps.notification("VoiceBridge", "GPU prêt",
+                                   "Modèles chargés : " + loaded)
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception as exc:  # noqa: BLE001
+            log.warning("warmup failed: %s", exc)
+            rumps.alert("Préchauffe échouée", str(exc))
+
+    # ── V3 : Visibilité conditionnelle des items menu ──────────────
+
+    def _update_v3_menu_visibility(self) -> None:
+        """Active/désactive les items selon le mode actuel.
+
+        rumps ne permet pas de retirer/réinsérer dynamiquement un item du menu
+        principal proprement. On change le titre + on grise via callback=None
+        pour les items non pertinents.
+        """
+        is_gpu = self.mode != MODE_CPU_V1
+        is_hybrid = self.mode == MODE_GPU_HYBRID
+        # Préchauffage seulement utile en mode GPU
+        self.warmup_item.title = ("🔥 Préchauffer GPU" if is_gpu
+                                   else "🔥 Préchauffer GPU (mode CPU — inutile)")
+        # Item RVC : visible mais désactivé si pas hybride
+        if not is_hybrid:
+            self.rvc_item.title = "Modèle RVC : (mode hybride uniquement)"
+        else:
+            # Reconstruit le titre à partir de la sélection courante
+            self._refresh_rvc_submenu()
+
     def _test_connection(self) -> bool:
         try:
             url = self.server_url.rstrip("/") + "/api/auth/check"
@@ -229,6 +454,10 @@ class VoiceBridgeApp(rumps.App):
             audio_pipeline=self.audio,
             voice_id=self.voice_id,
             language=self.language,
+            mode=self.mode,
+            translation_provider=self.translation_provider,
+            target_lang=self.target_lang,
+            rvc_model_id=self.rvc_model_id,
             on_state_change=self._on_ws_state,
         )
         self.ws.start()
