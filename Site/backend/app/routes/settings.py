@@ -37,13 +37,27 @@ async def get_settings():
         "model_unload_after_minutes": cfg.get("model_unload_after_minutes", 15),
         "default_tts_engine": cfg.get("default_tts_engine", "neutts"),
         "domain": cfg.get("domain", ""),
+        # V3
+        "default_live_mode": cfg.get("default_live_mode", "cpu-fr-en"),
+        "default_translation_provider": cfg.get("default_translation_provider", "opus-mt-cpu"),
+        "translation_glossary": cfg.get("translation_glossary", {}),
+        "translation_history_size": cfg.get("translation_history_size", 5),
     }
+
+
+_VALID_LIVE_MODES = ("cpu-fr-en", "gpu-clone", "gpu-native", "gpu-hybrid")
+_VALID_PROVIDERS = ("opus-mt-cpu", "opus-mt-gpu", "nllb", "gpt-4o-mini", "gpt-4o")
 
 
 class SettingsUpdate(BaseModel):
     default_retention: str | None = Field(default=None, pattern="^(session|24h|48h)$")
     model_unload_after_minutes: int | None = Field(default=None, ge=5, le=240)
     default_tts_engine: str | None = Field(default=None, pattern="^(neutts|xtts)$")
+    # V3
+    default_live_mode: str | None = Field(default=None)
+    default_translation_provider: str | None = Field(default=None)
+    translation_glossary: dict[str, str] | None = Field(default=None)
+    translation_history_size: int | None = Field(default=None, ge=0, le=20)
 
 
 @router.put("")
@@ -55,6 +69,35 @@ async def update_settings(payload: SettingsUpdate):
         updates["model_unload_after_minutes"] = payload.model_unload_after_minutes
     if payload.default_tts_engine is not None:
         updates["default_tts_engine"] = payload.default_tts_engine
+    # V3 :
+    if payload.default_live_mode is not None:
+        if payload.default_live_mode not in _VALID_LIVE_MODES:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                "error": "invalid_default_live_mode",
+                "message": f"valeurs autorisées : {_VALID_LIVE_MODES}"})
+        updates["default_live_mode"] = payload.default_live_mode
+    if payload.default_translation_provider is not None:
+        if payload.default_translation_provider not in _VALID_PROVIDERS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                "error": "invalid_translation_provider",
+                "message": f"valeurs autorisées : {_VALID_PROVIDERS}"})
+        updates["default_translation_provider"] = payload.default_translation_provider
+    if payload.translation_glossary is not None:
+        # Limite raisonnable : 100 entrées max, ~120 chars par entrée
+        gl = payload.translation_glossary
+        if len(gl) > 100:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                "error": "glossary_too_large",
+                "message": "max 100 entrées dans le glossaire"})
+        for k, v in gl.items():
+            if len(k) > 100 or len(v) > 200:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                    "error": "glossary_entry_too_long",
+                    "message": f"entrée trop longue : {k!r}"})
+        updates["translation_glossary"] = gl
+    if payload.translation_history_size is not None:
+        updates["translation_history_size"] = payload.translation_history_size
+
     if updates:
         config.set_many(updates)
         log.info("settings updated keys=%s", list(updates.keys()))

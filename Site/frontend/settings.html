@@ -40,6 +40,9 @@
     <div class="settings-nav">
       <button class="settings-nav-item active" data-panel="server">Serveur</button>
       <button class="settings-nav-item" data-panel="api">API</button>
+      <button class="settings-nav-item" data-panel="cloud">Cloud</button>
+      <button class="settings-nav-item" data-panel="translation">Traduction</button>
+      <button class="settings-nav-item" data-panel="rvc">RVC</button>
       <button class="settings-nav-item" data-panel="security">Sécurité</button>
       <button class="settings-nav-item" data-panel="install">Installation</button>
     </div>
@@ -174,6 +177,145 @@
             <button class="btn btn-secondary" id="btnCopyKey" style="margin-top:0.6rem">📋 Copier</button>
             <div class="hint" style="margin-top:0.5rem;color:var(--warning)">⚠️ Copiez maintenant · Ne sera plus affichée · Ancienne clé révoquée</div>
           </div>
+        </div>
+      </div>
+
+      <!-- ────────── Cloud (V3) ────────── -->
+      <div class="settings-panel" data-panel="cloud">
+
+        <div class="card">
+          <div class="card-title">RunPod Serverless</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+            Compute GPU à la demande pour les modes Live multilingues (clone, native, hybride).
+            Configure ton compte sur <a href="https://runpod.io" target="_blank" rel="noopener" style="color:var(--accent2)">runpod.io</a> puis colle les clés ci-dessous.
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="rpApiKey">API key</label>
+              <input type="password" id="rpApiKey" placeholder="rpa_••••••" autocomplete="off">
+              <div class="hint">Settings → API Keys → Create</div>
+            </div>
+            <div class="field">
+              <label for="rpEndpointId">Endpoint ID</label>
+              <input type="text" id="rpEndpointId" placeholder="abc123def">
+              <div class="hint">Serverless → ton endpoint déployé</div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="rpVolumeId">Volume ID</label>
+              <input type="text" id="rpVolumeId" placeholder="vol_xyz789">
+              <div class="hint">Storage → ton Network Volume EU-FR-1</div>
+            </div>
+            <div class="field">
+              <label for="rpDatacenter">Datacenter</label>
+              <select id="rpDatacenter">
+                <option value="EU-FR-1">EU-FR-1 (Paris)</option>
+                <option value="EU-NL-1">EU-NL-1 (Amsterdam)</option>
+                <option value="EU-CZ-1">EU-CZ-1 (Prague)</option>
+                <option value="US-CA-2">US-CA-2 (Californie)</option>
+                <option value="US-OR-1">US-OR-1 (Oregon)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="font-size:0.78rem;font-weight:600;margin-top:1rem;margin-bottom:0.4rem">Credentials S3 (pour upload .pth RVC)</div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="rpS3Access">S3 access key</label>
+              <input type="password" id="rpS3Access" placeholder="•••••••••" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="rpS3Secret">S3 secret key</label>
+              <input type="password" id="rpS3Secret" placeholder="•••••••••" autocomplete="off">
+              <div class="hint">Storage → Volume → S3 Credentials → Create</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center">
+            <button class="btn btn-primary" id="btnSaveRunpod">💾 Enregistrer</button>
+            <button class="btn btn-secondary" id="btnTestRunpod">🧪 Tester la connexion</button>
+            <span id="runpodTestStatus" style="font-family:'DM Mono',monospace;font-size:0.78rem"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">OpenAI</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+            Pour la traduction GPT-4o(-mini) avec contexte conversationnel et briefings métier (Studio Live).
+            Récupère ta clé sur <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--accent2)">platform.openai.com</a>.
+          </div>
+
+          <div class="field">
+            <label for="oaiApiKey">API key</label>
+            <input type="password" id="oaiApiKey" placeholder="sk-•••••••••" autocomplete="off">
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center">
+            <button class="btn btn-primary" id="btnSaveOpenai">💾 Enregistrer</button>
+            <button class="btn btn-secondary" id="btnTestOpenai">🧪 Tester la connexion</button>
+            <span id="openaiTestStatus" style="font-family:'DM Mono',monospace;font-size:0.78rem"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">État cloud actuel</div>
+          <div id="cloudStatusSummary" style="font-family:'DM Mono',monospace;font-size:0.78rem;line-height:1.7">…</div>
+        </div>
+      </div>
+
+      <!-- ────────── Traduction (V3) ────────── -->
+      <div class="settings-panel" data-panel="translation">
+        <div class="card">
+          <div class="card-title">Provider par défaut</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+            Pré-sélectionné dans le Studio Live. Modifiable à chaque session.
+          </div>
+          <div id="providerList"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Glossaire métier</div>
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+            Termes spécifiques injectés dans le prompt GPT à chaque traduction.
+            Ignoré pour OPUS-MT et NLLB. Format : terme → traduction préférée (ou laisser vide pour "ne pas traduire").
+          </div>
+          <div id="glossaryList"></div>
+          <div style="display:flex;gap:0.4rem;margin-top:0.6rem">
+            <input type="text" id="glossaryNewKey" placeholder="Terme FR (ex: CODIR)" style="flex:1">
+            <input type="text" id="glossaryNewVal" placeholder="Traduction (ex: Executive Committee)" style="flex:1">
+            <button class="btn btn-secondary" id="btnAddGlossary">+ Ajouter</button>
+          </div>
+          <button class="btn btn-primary" id="btnSaveGlossary" style="margin-top:0.75rem">💾 Enregistrer le glossaire</button>
+        </div>
+      </div>
+
+      <!-- ────────── RVC (V3) ────────── -->
+      <div class="settings-panel" data-panel="rvc">
+        <div class="card">
+          <div class="card-title">Modèles RVC</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:0.75rem">
+            <div>
+              <div style="font-size:1.5rem;font-weight:800" id="rvcModelsCount">0</div>
+              <div style="font-size:0.78rem;color:var(--text3)">modèle(s) actif(s)</div>
+            </div>
+            <div style="display:flex;gap:0.4rem">
+              <a href="/rvc-import" class="btn btn-secondary" style="text-decoration:none">+ Importer</a>
+              <a href="/rvc" class="btn btn-primary" style="text-decoration:none">→ Voir tous</a>
+            </div>
+          </div>
+          <div id="rvcModelsSummary" style="font-size:0.78rem;color:var(--text3);font-family:'DM Mono',monospace;line-height:1.7"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Enregistrer un nouveau dataset</div>
+          <p class="hint" style="margin-bottom:0.75rem">
+            Wizard guidé pour créer ton dataset (5 blocs, ~20 min) avec retraitement
+            automatique et export ZIP prêt pour Kaggle.
+          </p>
+          <a href="/recording-session" class="btn btn-primary" style="text-decoration:none">🎤 Démarrer un enregistrement</a>
         </div>
       </div>
 
