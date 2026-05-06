@@ -270,6 +270,11 @@ _HTML_PAGES = {
     "/recordings": "recordings.html",
     "/detection": "detection.html",
     "/settings": "settings.html",
+    # V3 (Phase F)
+    "/rvc": "rvc.html",
+    "/rvc-import": "rvc-import.html",
+    "/recording-session": "recording-session.html",
+    "/briefings": "briefings.html",
 }
 
 for _path, _file in _HTML_PAGES.items():

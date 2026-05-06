@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Modèles RVC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo"><span class="logo-icon">🎤</span><span>VoiceBridge</span></a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/rvc"        class="nav-item" data-nav="/rvc">Modèles RVC</a>
+    <a href="/briefings"  class="nav-item" data-nav="/briefings">Briefings</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Modèles RVC</h1>
+  <p class="page-sub">Voice Conversion — pour le mode "Hybride accent natif" en Live (ta voix avec un accent parfait dans une autre langue)</p>
+
+  <!-- Tabs -->
+  <div class="source-tabs">
+    <button class="source-tab active" data-tab="my-models">📁 Mes modèles</button>
+    <button class="source-tab" data-tab="tutorial">🎓 Comment entraîner mon modèle</button>
+  </div>
+
+  <!-- Tab : my-models -->
+  <section class="source-content active" data-tab="my-models">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;gap:1rem;flex-wrap:wrap">
+      <div>
+        <div id="rvcCount" style="color:var(--text3);font-size:0.82rem"></div>
+        <a href="/api/install/rvc-guide-pdf" style="font-size:0.78rem;color:var(--accent2)" download>📄 Télécharger le guide PDF (10 pages)</a>
+      </div>
+      <a href="/recording-session" class="btn btn-secondary">🎤 Enregistrer un dataset</a>
+      <a href="/rvc-import" class="btn btn-primary">+ Importer un .pth</a>
+    </div>
+
+    <div id="rvcModelsList"></div>
+
+    <!-- Test result modal/area -->
+    <div id="rvcTestArea" class="card" style="display:none;margin-top:1rem">
+      <div class="card-title">🧪 Test du modèle</div>
+      <div id="rvcTestProgress" class="extract-progress visible" style="margin-bottom:0.75rem"></div>
+      <div id="rvcTestResult" style="display:none">
+        <audio controls id="rvcTestAudio" style="width:100%"></audio>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Tab : tutorial Kaggle -->
+  <section class="source-content" data-tab="tutorial">
+    <div class="card">
+      <div class="card-title">Pourquoi Kaggle ?</div>
+      <div style="font-size:0.85rem;line-height:1.6;color:var(--text2)">
+        L'entraînement RVC nécessite un GPU pendant 3-6 heures. <strong>Kaggle offre 30h de GPU gratuit/semaine</strong>
+        (vérification téléphone requise). C'est la solution la plus accessible. Aucune donnée ne quitte ton compte
+        Kaggle privé.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 1 — Préparer le dataset</div>
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem">
+        <li>Va dans <a href="/recording-session" style="color:var(--accent2)">Enregistrement guidé</a> ou prépare ton ZIP de clips manuellement.</li>
+        <li>Le wizard te guide à travers 5 blocs textes (~20 min audio total).</li>
+        <li>Le retraitement automatique (~5 min) découpe en clips propres + génère le ZIP prêt pour Kaggle.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 2 — Créer un compte Kaggle</div>
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem">
+        <li>Va sur <a href="https://kaggle.com" target="_blank" rel="noopener" style="color:var(--accent2)">kaggle.com</a> et crée un compte (gratuit).</li>
+        <li>Vérifie ton numéro de téléphone — <strong>obligatoire</strong> pour accéder au GPU.</li>
+        <li>Settings → Account → Phone verification.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 3 — Forker le notebook RVC</div>
+      <p class="hint" style="margin-bottom:0.75rem">
+        Le notebook officiel <strong>"Applio RVC Trainer"</strong> est pré-configuré pour 300 epochs (~3h, qualité standard) ou 500 epochs (~6h, haute qualité).
+      </p>
+      <a href="https://www.kaggle.com/code/lemonpepper/applio-rvc-trainer" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none">
+        🔗 Notebook Applio RVC Trainer
+      </a>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 4 — Uploader ton dataset</div>
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem">
+        <li>Sur Kaggle → <strong>"+ New Dataset"</strong></li>
+        <li>Drag & drop ton ZIP VoiceBridge (export depuis le wizard d'enregistrement).</li>
+        <li>Nom : <code>voicebridge-rvc-{ton-prenom}</code></li>
+        <li>Visibilité : <strong>Privé</strong></li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 5 — Lancer l'entraînement</div>
+      <ol style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem">
+        <li>Ouvre ton fork du notebook Applio.</li>
+        <li>Settings → Accelerator : <strong>GPU T4 x2</strong> (gratuit).</li>
+        <li>"Add data" → ton dataset privé.</li>
+        <li>Modifier la 1ère cellule : nom du modèle = <code>{ton-prenom}_v1</code>.</li>
+        <li>Run All → attendre 3-6h. Reviens régulièrement (Kaggle déconnecte après 1h d'inactivité).</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 6 — Récupérer le modèle</div>
+      <p class="hint" style="margin-bottom:0.75rem">À la fin du training, dans <code>/kaggle/working/</code> :</p>
+      <ul style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem">
+        <li><code>model.pth</code> (~150 Mo) — le modèle RVC</li>
+        <li><code>added_*.index</code> (~50 Mo) — l'index FAISS (qualité +)</li>
+      </ul>
+      <p class="hint" style="margin-top:0.75rem">Télécharge les deux fichiers sur ton ordinateur.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Étape 7 — Importer dans VoiceBridge</div>
+      <a href="/rvc-import" class="btn btn-primary" style="text-decoration:none">+ Importer un .pth</a>
+    </div>
+
+    <div class="alert alert-warning" style="margin-top:1rem">
+      ⚠️ Kaggle peut temporairement suspendre l'accès GPU si tu dépasses 30h/semaine ou en cas d'usage abusif détecté.
+    </div>
+  </section>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/progress.js"></script>
+<script src="/js/rvc.js"></script>
+</body>
+</html>

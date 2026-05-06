@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Briefings GPT</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo"><span class="logo-icon">🎤</span><span>VoiceBridge</span></a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/rvc"        class="nav-item" data-nav="/rvc">Modèles RVC</a>
+    <a href="/briefings"  class="nav-item" data-nav="/briefings">Briefings</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Briefings GPT</h1>
+  <p class="page-sub">Contextes réutilisables pour la traduction GPT Live · Glossaire métier dans Réglages → Traduction</p>
+
+  <div class="alert alert-info" style="margin-bottom:1rem">
+    💡 Un briefing décrit le <strong>contexte d'une session</strong> (réunion, sujet, ton attendu) pour aider GPT-4o à traduire avec la bonne terminologie. Sélectionnable dans Studio Live mode GPT.
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div id="briefingsCount" style="color:var(--text3);font-size:0.82rem"></div>
+    <button class="btn btn-primary" id="btnNewBriefing">+ Nouveau briefing</button>
+  </div>
+
+  <!-- Liste des briefings -->
+  <div id="briefingsList"></div>
+
+  <!-- Editor (caché par défaut) -->
+  <div id="briefingEditor" class="card" style="display:none;margin-top:1rem">
+    <div class="card-title" id="editorTitle">Nouveau briefing</div>
+    <div class="field">
+      <label for="briefingName">Nom (max 80 caractères)</label>
+      <input type="text" id="briefingName" maxlength="80" placeholder="ex : CODIR mensuel">
+    </div>
+    <div class="field">
+      <label for="briefingContent">Contenu (max 4000 caractères)</label>
+      <textarea id="briefingContent" rows="8" placeholder="Réunion CODIR Limagrain, agenda mensuel, présents : DG, DAF, DRH, DOP. Ton formel et synthétique. Glossaire spécifique : ..." style="width:100%;padding:0.75rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical;line-height:1.5"></textarea>
+      <div class="hint" id="charCount" style="margin-top:0.3rem"></div>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+      <button class="btn btn-secondary" id="btnCancelEdit">Annuler</button>
+      <button class="btn btn-primary" id="btnSaveBriefing">Enregistrer</button>
+    </div>
+  </div>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/briefings.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Importer un modèle RVC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/voices.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo"><span class="logo-icon">🎤</span><span>VoiceBridge</span></a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/rvc"        class="nav-item" data-nav="/rvc">Modèles RVC</a>
+    <a href="/briefings"  class="nav-item" data-nav="/briefings">Briefings</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <div class="breadcrumb">
+    <a href="/rvc">Modèles RVC</a>
+    <span>›</span>
+    <span class="current">Importer un .pth</span>
+  </div>
+
+  <h1 class="page-title">Importer un modèle RVC</h1>
+  <p class="page-sub">Upload .pth + .index entraînés sur Kaggle vers le RunPod Network Volume</p>
+
+  <div id="cloudCheckAlert" class="alert alert-warning" style="display:none">
+    ⚠️ RunPod n'est pas configuré — <a href="/settings#cloud">Réglages → Cloud</a>.
+  </div>
+
+  <!-- Étape 1 : fichiers -->
+  <section class="step" data-step="rvc-1">
+    <div class="step-header">
+      <div class="step-number">1</div>
+      <div class="step-title">Fichiers</div>
+    </div>
+
+    <div class="grid-2" style="gap:1rem">
+      <div>
+        <label>Modèle (.pth, max 500 Mo) <span style="color:var(--error)">*</span></label>
+        <div class="drop-zone" id="dropPth" style="margin-top:0.5rem">
+          <div style="font-size:2rem;margin-bottom:0.4rem">📦</div>
+          <div style="font-size:0.85rem;color:var(--text2)">Glisse-dépose ou clique</div>
+          <input type="file" id="pthFileInput" accept=".pth" style="display:none">
+          <div id="pthFileName" style="margin-top:0.6rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--accent2);display:none"></div>
+        </div>
+      </div>
+      <div>
+        <label>Index FAISS (.index, optionnel mais recommandé)</label>
+        <div class="drop-zone" id="dropIndex" style="margin-top:0.5rem">
+          <div style="font-size:2rem;margin-bottom:0.4rem">📑</div>
+          <div style="font-size:0.85rem;color:var(--text2)">Glisse-dépose ou clique</div>
+          <input type="file" id="indexFileInput" accept=".index" style="display:none">
+          <div id="indexFileName" style="margin-top:0.6rem;font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--accent2);display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hint" style="margin-top:0.75rem">
+      💡 Le .index améliore la fidélité du timbre (FAISS lookup). Le .pth seul fonctionne mais le résultat est moins proche.
+    </div>
+  </section>
+
+  <!-- Étape 2 : métadonnées -->
+  <section class="step" data-step="rvc-2">
+    <div class="step-header">
+      <div class="step-number">2</div>
+      <div class="step-title">Métadonnées</div>
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="rvcName">Nom (max 80 caractères) <span style="color:var(--error)">*</span></label>
+        <input type="text" id="rvcName" maxlength="80" placeholder="ex : JC voice v1">
+      </div>
+      <div class="field">
+        <label for="rvcVoiceId">Voix associée (optionnel)</label>
+        <select id="rvcVoiceId">
+          <option value="">— Aucune —</option>
+        </select>
+        <div class="hint">💡 Lier ce modèle à une voix permet de pré-sélectionner ce RVC dès qu'on choisit cette voix en Studio Live.</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="rvcDescription">Description (optionnel)</label>
+      <textarea id="rvcDescription" rows="2" placeholder="ex: Entraîné sur 18 min d'audio le 26/04/2026, 500 epochs Kaggle T4×2"
+        style="width:100%;padding:0.6rem 0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
+    </div>
+  </section>
+
+  <hr>
+
+  <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+    <a href="/rvc" class="btn btn-secondary" style="text-decoration:none">Annuler</a>
+    <button class="btn btn-primary" id="btnUploadRvc">⬆ Uploader vers RunPod</button>
+  </div>
+
+  <!-- Progress -->
+  <div id="uploadProgressArea" class="extract-progress" style="margin-top:1rem"></div>
+
+  <!-- Done -->
+  <div id="uploadDone" class="alert alert-success" style="display:none;margin-top:1rem;text-align:center">
+    <div style="font-size:1.6rem;margin-bottom:0.25rem">✅</div>
+    <div><strong>Modèle importé avec succès</strong></div>
+    <div style="font-size:0.78rem;color:var(--text2);margin-top:0.5rem">
+      <a href="/rvc" style="color:var(--accent2)">Voir mes modèles</a>
+      &nbsp;ou&nbsp;
+      <a href="/studio" style="color:var(--accent2)">Tester en Live</a>
+    </div>
+  </div>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/progress.js"></script>
+<script src="/js/rvc-import.js"></script>
+</body>
+</html>

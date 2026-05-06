@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Enregistrer un dataset RVC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/voices.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo"><span class="logo-icon">🎤</span><span>VoiceBridge</span></a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/rvc"        class="nav-item" data-nav="/rvc">Modèles RVC</a>
+    <a href="/briefings"  class="nav-item" data-nav="/briefings">Briefings</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <div class="breadcrumb">
+    <a href="/rvc">Modèles RVC</a>
+    <span>›</span>
+    <span class="current">Enregistrer un dataset</span>
+  </div>
+
+  <h1 class="page-title">Enregistrer un dataset RVC</h1>
+  <p class="page-sub">Wizard guidé en 5 blocs (~20 min). À la fin, un ZIP propre prêt pour l'entraînement Kaggle.</p>
+
+  <!-- Étape 0 : nom de session (avant démarrage) -->
+  <section class="step" data-step="rec-0" id="stepIntro">
+    <div class="step-header">
+      <div class="step-number">0</div>
+      <div class="step-title">Préparation</div>
+    </div>
+
+    <div class="grid-2">
+      <div class="field">
+        <label for="recName">Nom de la session</label>
+        <input type="text" id="recName" maxlength="80" placeholder="ex : JC voice v1">
+      </div>
+      <div class="field">
+        <label for="recLanguage">Langue</label>
+        <select id="recLanguage">
+          <option value="fr">🇫🇷 Français</option>
+          <option value="en">🇬🇧 Anglais</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="alert alert-info">
+      💡 <strong>Conseils micro</strong> : pièce calme, micro à 15-20 cm de la bouche, sans souffle direct. Vise 4 minutes par bloc. Si tu fais une pause, le silence sera coupé automatiquement au retraitement.
+    </div>
+
+    <button class="btn btn-primary" id="btnStartSession">▶ Démarrer la session</button>
+  </section>
+
+  <!-- Étape 1-5 : enregistrement des blocs -->
+  <section class="step" data-step="rec-blocks" id="stepBlocks" style="display:none">
+    <div class="step-header">
+      <div class="step-number" id="currentBlockNum">1</div>
+      <div class="step-title" id="currentBlockTitle">Bloc 1 — Présentation</div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;font-size:0.78rem;color:var(--text3);font-family:'DM Mono',monospace">
+      <div>Bloc <span id="blockProgress">1/5</span></div>
+      <div>Total session : <span id="totalDuration">0:00</span></div>
+    </div>
+
+    <label>Texte à lire (à voix haute)</label>
+    <div class="ref-text-box" id="blockText" style="margin-bottom:1rem"></div>
+
+    <div class="mic-zone" id="recMicZone">
+      <div class="mic-zone-icon">🎤</div>
+      <div class="mic-zone-label" id="recMicLabel">Cliquez pour démarrer ce bloc</div>
+    </div>
+
+    <div style="margin-top:0.75rem;text-align:center;font-family:'DM Mono',monospace;font-size:0.85rem">
+      ⏱ <span id="blockDuration">0:00</span>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;justify-content:space-between;margin-top:1rem">
+      <button class="btn btn-secondary" id="btnPrevBlock">← Bloc précédent</button>
+      <button class="btn btn-primary" id="btnNextBlock">Bloc suivant →</button>
+    </div>
+  </section>
+
+  <!-- Étape 6 : process -->
+  <section class="step" data-step="rec-process" id="stepProcess" style="display:none">
+    <div class="step-header">
+      <div class="step-number">6</div>
+      <div class="step-title">Retraitement automatique</div>
+    </div>
+
+    <div class="alert alert-info" style="margin-bottom:1rem">
+      🔧 Ce traitement (~5 min) découpe ton audio en clips propres, supprime le bruit de fond, normalise le volume, et calcule un score qualité. Tu peux ensuite valider et télécharger le ZIP.
+    </div>
+
+    <div id="processProgressArea" class="extract-progress visible"></div>
+
+    <div id="processDone" style="display:none;margin-top:1rem">
+      <div class="alert alert-success">✅ Retraitement terminé</div>
+      <div style="display:flex;gap:0.5rem;margin-top:1rem">
+        <button class="btn btn-primary" id="btnGoValidate">→ Valider & télécharger</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Étape 7 : validation -->
+  <section class="step" data-step="rec-validate" id="stepValidate" style="display:none">
+    <div class="step-header">
+      <div class="step-number">7</div>
+      <div class="step-title">Validation</div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+        <div>
+          <div style="font-size:2rem;font-weight:800" id="qualityScore">— / 100</div>
+          <div style="font-size:0.78rem;color:var(--text3);font-family:'DM Mono',monospace" id="qualityDetails"></div>
+        </div>
+        <button class="btn btn-primary" id="btnDownloadZip">📥 Télécharger ZIP</button>
+      </div>
+    </div>
+
+    <div id="clipsList"></div>
+  </section>
+</main>
+
+<script src="/js/theme.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/notify.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/progress.js"></script>
+<script src="/js/recording-session.js"></script>
+</body>
+</html>
