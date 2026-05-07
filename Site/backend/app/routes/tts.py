@@ -149,8 +149,11 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
                        + ". Supprimez-la et recréez-la."})
 
     engine = _resolve_engine(payload)
-    log.info("tts.generate engine=%s voice_id=%s lang=%s quality=%s",
-             engine, voice_id, voice.get("language"), payload.quality)
+    synth_lang = _resolve_synthesis_lang(payload, voice)
+    log.info("tts.generate engine=%s voice_id=%s voice_lang=%s synth_lang=%s "
+             "quality=%s translate=%s",
+             engine, voice_id, voice.get("language"), synth_lang,
+             payload.quality, "yes" if payload.translate else "no")
 
     if engine == "xtts":
         wav_data = _synthesize_xtts(payload, voice, voice_id)
@@ -161,8 +164,37 @@ def _synthesize(payload: GeneratePayload) -> tuple[Path | None, bytes, str]:
     return None, wav_bytes, voice["name"]
 
 
+def _resolve_synthesis_lang(payload: GeneratePayload, voice: dict) -> str:
+    """Détermine la langue à utiliser pour la synthèse (sélection backbone NeuTTS
+    ou param language XTTS).
+
+    Si traduction active : on synthétise dans target_lang (le texte a été
+    traduit avant arrivée ici). Sinon : langue de la voix de référence.
+    """
+    if payload.translate and payload.target_lang:
+        src = payload.source_lang or voice.get("language") or "fr"
+        if payload.target_lang != src:
+            return payload.target_lang
+    return voice.get("language", "fr")
+
+
 def _synthesize_neutts(payload: GeneratePayload, voice: dict, voice_id: str):
-    """Pipeline NeuTTS : ref_codes (.pt) + ref_text (.txt) → infer."""
+    """Pipeline NeuTTS : ref_codes (.pt) + ref_text (.txt) → infer.
+
+    Quand traduction active, la langue passée au backbone NeuTTS est la langue
+    CIBLE (target_lang) et non la langue d'origine de la voix. NeuTTS ne supporte
+    que fr et en pour le backbone — pour les autres langues il faut XTTS.
+    """
+    synth_lang = _resolve_synthesis_lang(payload, voice)
+
+    if synth_lang not in ("fr", "en"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+            "error": "neutts_lang_unsupported",
+            "message": (f"NeuTTS supporte uniquement fr et en (demandé : "
+                        f"{synth_lang}). Bascule sur l'engine XTTS-v2 pour "
+                        f"synthétiser dans cette langue."),
+        })
+
     encoded = voices_store.encoded_path(voice_id)
     if not encoded.exists():
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
@@ -193,7 +225,7 @@ def _synthesize_neutts(payload: GeneratePayload, voice: dict, voice_id: str):
             text=payload.text,
             ref_codes=ref_codes,
             ref_text=ref_text,
-            language=voice["language"],
+            language=synth_lang,
             quality=payload.quality,
             ref_wav_path=voices_store.wav_path(voice_id),
         )
@@ -204,8 +236,14 @@ def _synthesize_neutts(payload: GeneratePayload, voice: dict, voice_id: str):
 
 
 def _synthesize_xtts(payload: GeneratePayload, voice: dict, voice_id: str):
-    """Pipeline XTTS-v2 : pas de pré-encodage, on lit directement le WAV."""
+    """Pipeline XTTS-v2 : pas de pré-encodage, on lit directement le WAV.
+
+    XTTS-v2 est multilingue (17 langues) — la langue cible peut différer
+    de la langue d'enregistrement de la voix.
+    """
     from ..models import tts_xtts  # noqa: WPS433  (lazy : coqui-tts est lourd)
+
+    synth_lang = _resolve_synthesis_lang(payload, voice)
 
     wav_path = voices_store.wav_path(voice_id)
     if not wav_path.exists():
@@ -217,7 +255,7 @@ def _synthesize_xtts(payload: GeneratePayload, voice: dict, voice_id: str):
         return tts_xtts.infer(
             text=payload.text,
             voice_wav_path=wav_path,
-            language=voice["language"],
+            language=synth_lang,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
