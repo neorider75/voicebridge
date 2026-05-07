@@ -9,11 +9,10 @@ runpod>=1.7
 # --extra-index-url (pip cherche sur PyPI et ne trouve pas la wheel CUDA).
 
 # Transformers ecosystem
-# /!\ torchao pin : transformers/accelerate tirent torchao en transitive,
-# et torchao 0.5+ utilise une API torch.library introduite avec torch 2.5+
-# (RuntimeError: infer_schema, type torch.Tensor non supporté). On est sur
-# torch 2.4 → on pin torchao<0.5 pour rester compatible.
-torchao<0.5
+# /!\ Le Dockerfile désinstalle fbgemm_gpu + torchao après ce pip install
+# (transitive deps de transformers/accelerate qui exigent torch 2.5+, on est
+# sur 2.4). Symptôme sans le uninstall : "infer_schema unsupported type
+# torch.Tensor" au load NLLB. Sans elles, transformers utilise ses fallbacks.
 transformers>=4.46
 accelerate>=0.30
 huggingface-hub>=0.26

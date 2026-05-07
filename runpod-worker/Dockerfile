@@ -52,6 +52,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Désinstaller les libs torch.library incompatibles avec torch 2.4 :
+# - fbgemm_gpu (récent) utilise une API custom_op introduite avec torch 2.5+
+# - torchao 0.5+ pareil
+# Toutes deux sont tirées en transitive par transformers/accelerate.
+# Symptôme sans ce uninstall : "infer_schema(func): Parameter input has
+# unsupported type torch.Tensor" au load NLLB. Sans elles, transformers
+# utilise ses chemins de fallback (qui marchent très bien pour notre cas).
+RUN pip uninstall -y fbgemm_gpu torchao 2>/dev/null || true
+
 # Copie du code
 COPY handler.py .
 COPY models/ ./models/

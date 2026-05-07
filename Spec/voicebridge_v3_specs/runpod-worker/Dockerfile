@@ -45,6 +45,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Désinstalle fbgemm_gpu + torchao (transitive deps incompat torch 2.4)
+RUN pip uninstall -y fbgemm_gpu torchao 2>/dev/null || true
+
 # Copie du code
 COPY handler.py .
 COPY models/ ./models/
