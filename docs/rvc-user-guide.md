@@ -111,9 +111,9 @@ sudo ./install.sh --fresh   # repart de zéro (rare)
 ### 4.2 Création du Network Volume
 
 1. Console RunPod → **Storage** → **+ New Network Volume**
-2. **Taille : 30 Go** suffit largement (occupation réelle ~17 Go avec
-   les filtres `--include`, le reste pour tes modèles RVC à ~200 Mo
-   chacun)
+2. **Taille : 30 Go** suffit largement (occupation réelle ~14 Go avec
+   les filtres `--include` et Whisper CTranslate2, le reste pour tes
+   modèles RVC à ~200 Mo chacun)
 3. **Datacenter** :
    - **EU-FR-1 (Paris)** — recommandé pour latence depuis la France
    - **EU-RO-1 (Roumanie)** — alternative testée et stable
@@ -145,7 +145,7 @@ sudo ./install.sh --fresh   # repart de zéro (rare)
 
 Avant le premier déploiement de l'endpoint Serverless, tu dois pré-charger
 les modèles dans le Network Volume pour que les workers ne les
-retéléchargent pas à chaque cold start (~17 Go au total avec filtres).
+retéléchargent pas à chaque cold start (~14 Go au total).
 
 ### 5.1 Spawn d'un Pod éphémère
 
@@ -196,11 +196,11 @@ Le binaire moderne s'appelle simplement `hf`. La syntaxe est identique.
 export HF_HOME=/runpod-volume/hf-cache
 mkdir -p /runpod-volume/hf-cache /runpod-volume/rvc_assets
 
-# ── STT — Whisper Distil-Large-V3 (~3 Go) ──
-hf download distil-whisper/distil-large-v3 \
-  --include "*.safetensors" --include "*.json" --include "*.txt" \
-  --include "tokenizer*" --include "preprocessor_config.json" \
-  --include "generation_config.json"
+# ── STT — Whisper Distil-Large-V3 CTranslate2 (~750 Mo) ──
+# /!\ utiliser le repo Systran (pré-converti CTranslate2 model.bin), PAS
+# distil-whisper/* qui est en safetensors PyTorch et fait planter
+# faster-whisper avec "Unable to open file 'model.bin'".
+hf download Systran/faster-distil-whisper-large-v3
 
 # ── Traduction — NLLB-200 distilled 1.3B (~5 Go) ──
 hf download facebook/nllb-200-distilled-1.3B \
@@ -230,8 +230,10 @@ hf download facebook/hubert-base-ls960 \
 wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 ```
 
-Total Volume après ces commandes : **~17 Go**. Reste ~12 Go pour ~60
-modèles RVC utilisateur (à 200 Mo chacun).
+Total Volume après ces commandes : **~14 Go** (Whisper CT2 750 Mo +
+NLLB 5 Go + 6 OPUS-MT 1.8 Go + F5-TTS 1.5 Go + Hubert 360 Mo + rmvpe
+200 Mo + cache ct2 généré au 1er run ~5 Go).
+Reste ~16 Go pour ~80 modèles RVC utilisateur (à 200 Mo chacun).
 
 ### 5.5 Stop du Pod éphémère
 

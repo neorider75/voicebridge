@@ -18,7 +18,7 @@ log = logging.getLogger("voicebridge.whisper")
 
 
 # Modèle distillé : qualité ~équivalente à Large V3 mais 6x plus rapide
-MODEL_ID = "distil-whisper/distil-large-v3"
+MODEL_ID = "Systran/faster-distil-whisper-large-v3"
 HF_CACHE = os.environ.get("HF_HOME", "/runpod-volume/hf-cache")
 
 

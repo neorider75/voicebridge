@@ -153,11 +153,11 @@ avec le Volume monté.
 
 export HF_HOME=/runpod-volume/hf-cache
 
-# ── STT — Whisper Distil-Large-V3 (~3 Go safetensors only) ──────────
-hf download distil-whisper/distil-large-v3 \
-  --include "*.safetensors" --include "*.json" --include "*.txt" \
-  --include "tokenizer*" --include "preprocessor_config.json" \
-  --include "generation_config.json"
+# ── STT — Whisper Distil-Large-V3 CTranslate2 (~750 Mo) ──────────
+# /!\ utiliser le repo Systran pré-converti (model.bin), PAS le repo
+# distil-whisper qui est en safetensors PyTorch et incompatible avec
+# faster-whisper (CTranslate2). Cf. wrapper models/whisper.py.
+hf download Systran/faster-distil-whisper-large-v3
 
 # ── Traduction — NLLB-200 distilled 1.3B (~5 Go safetensors only) ───
 hf download facebook/nllb-200-distilled-1.3B \
@@ -189,8 +189,9 @@ wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 # (Détruire le Pod éphémère)
 ```
 
-Total dans le Volume avec ces filtres : **~16 Go** (au lieu de 30+ Go sans
-filtre).
+Total dans le Volume avec ces filtres : **~14 Go** (Whisper en CTranslate2
+~750 Mo + NLLB 5 Go + 6 OPUS-MT ~1.8 Go + F5-TTS V1 1.5 Go + Hubert 360 Mo
++ rmvpe 200 Mo + cache ct2 ~5 Go).
 
 ## Voix natives (Décision 2)
 

@@ -121,11 +121,8 @@ Avant le premier déploiement, pré-télécharger les modèles dans le Network V
 # Sur le Pod :
 export HF_HOME=/runpod-volume/hf-cache
 
-# STT — Whisper Distil-Large-V3 (~3 Go)
-hf download distil-whisper/distil-large-v3 \
-  --include "*.safetensors" --include "*.json" --include "*.txt" \
-  --include "tokenizer*" --include "preprocessor_config.json" \
-  --include "generation_config.json"
+# STT — Whisper Distil-Large-V3 CTranslate2 (~750 Mo, repo Systran)
+hf download Systran/faster-distil-whisper-large-v3
 
 # NLLB-200 distilled 1.3B (~5 Go)
 hf download facebook/nllb-200-distilled-1.3B \
@@ -152,7 +149,7 @@ wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 # Détruire le Pod éphémère
 ```
 
-Total ~16 Go dans le Volume avec ces filtres.
+Total ~14 Go dans le Volume avec ces filtres (Whisper CT2 + filtres HF).
 
 ## Coûts estimés
 

@@ -83,11 +83,8 @@ télécharger que le format utile (sinon HF tire tous les formats : safetensors
 # Sur le Pod :
 export HF_HOME=/runpod-volume/hf-cache
 
-# Whisper Distil-Large-V3 (~3 Go)
-hf download distil-whisper/distil-large-v3 \
-  --include "*.safetensors" --include "*.json" --include "*.txt" \
-  --include "tokenizer*" --include "preprocessor_config.json" \
-  --include "generation_config.json"
+# Whisper Distil-Large-V3 CTranslate2 (~750 Mo, repo Systran pré-converti)
+hf download Systran/faster-distil-whisper-large-v3
 
 # NLLB-200 distilled 1.3B (~5 Go)
 hf download facebook/nllb-200-distilled-1.3B \
@@ -114,7 +111,7 @@ wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 # Détruire le Pod éphémère
 ```
 
-→ Total Volume avec ces filtres : **~16 Go** (au lieu de 30+ Go sans).
+→ Total Volume avec ces filtres : **~14 Go** (Whisper CT2 + filtres HF).
 
 ### Étape 5 : Créer l'endpoint Serverless
 

@@ -157,7 +157,7 @@ SPEECH_MIN_TICKS = 12  # 400ms au lieu de 16 (500ms)
 
 ```python
 # runpod-worker/models/whisper.py
-MODEL_ID = "distil-whisper/distil-large-v3"  # au lieu de "openai/whisper-large-v3"
+MODEL_ID = "Systran/faster-distil-whisper-large-v3"  # CT2 pré-converti pour faster-whisper
 ```
 
 #### C2. CTranslate2 pour Whisper (faster-whisper)
