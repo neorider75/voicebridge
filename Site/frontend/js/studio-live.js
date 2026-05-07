@@ -40,7 +40,34 @@
   //   1000 ms : OK la plupart du temps, latence visible
   //   1500 ms : très tolérant, latence forte
   // À ajuster selon hardware. Sur un GPU on pourrait redescendre à 100-200 ms.
-  var JITTER_BUFFER_MS = 1000;
+  // Compromis : augmenter ce buffer = plus de latence perçue mais moins de
+  // hachage. Sur un CPU plus lent que real-time pour NeuTTS Q4, il faut
+  // beaucoup de buffer pour ne pas underrun. En mode GPU les chunks arrivent
+  // en rafale après synthèse → on peut être plus tolérant côté buffer.
+  //   500 ms : OK courtes phrases, hache sur les longues
+  //   1000 ms : OK la plupart du temps, latence visible
+  //   1500 ms : très tolérant, latence forte mais zéro hachage
+  // (override via localStorage.vbJitterMs)
+  var JITTER_BUFFER_MS = parseInt(
+    localStorage.getItem('vbJitterMs') || '1500', 10);
+
+  // Marge de sécurité quand on schedule un chunk : si nextPlayAt <=
+  // currentTime + SAFETY, on reset à currentTime + SAFETY pour éviter de
+  // démarrer dans le passé. Doit être > la jitter du main thread browser
+  // (typique 30-80ms quand UI charge).
+  // (override via localStorage.vbScheduleSafetyMs)
+  var SCHEDULE_SAFETY_MS = parseInt(
+    localStorage.getItem('vbScheduleSafetyMs') || '100', 10);
+
+  // Mode "wait_full" : attendre audio_end avant de démarrer la lecture →
+  // zéro coupure garantie mais latence +durée_phrase. Activable via
+  // localStorage.vbWaitFull = "1"
+  var WAIT_FULL_PHRASE = (localStorage.getItem('vbWaitFull') === '1');
+
+  // Fade in/out aux frontières de chunks (ms) pour masquer les clicks
+  // de jonction si le buffer n'est pas exactement aligné en sample.
+  var CHUNK_FADE_MS = 3;
+
   var warmupPending = false;     // true pendant le chargement du modèle de traduction
   var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
   var cloudStatus = {            // alimenté par /api/cloud/status
@@ -333,26 +360,58 @@
   function scheduleBuffer(ctx, audioBuffer) {
     var src = ctx.createBufferSource();
     src.buffer = audioBuffer;
-    src.connect(ctx.destination);
+
+    // Fade in/out pour masquer les micro-clicks aux jonctions des chunks.
+    // GainNode entre la source et la destination : ramp de 0→1 sur les
+    // premières ms, puis 1→0 sur les dernières.
+    var safety = SCHEDULE_SAFETY_MS / 1000;
+    var fade = CHUNK_FADE_MS / 1000;
+    var dur = audioBuffer.duration;
     var now = ctx.currentTime;
-    var startAt = (nextPlayAt <= now + 0.02) ? now + 0.02 : nextPlayAt;
+    var startAt = (nextPlayAt <= now + safety) ? (now + safety) : nextPlayAt;
+
+    if (CHUNK_FADE_MS > 0 && dur > 2 * fade) {
+      var gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, startAt);
+      gain.gain.linearRampToValueAtTime(1, startAt + fade);
+      gain.gain.setValueAtTime(1, startAt + dur - fade);
+      gain.gain.linearRampToValueAtTime(0, startAt + dur);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+    } else {
+      src.connect(ctx.destination);
+    }
+
     src.start(startAt);
-    nextPlayAt = startAt + audioBuffer.duration;
+    nextPlayAt = startAt + dur;
+
+    // Détection underrun : si on a dû reset à `now + safety`, c'est qu'on
+    // a perdu le slot précédent → log pour diagnostic.
+    if (startAt > nextPlayAt - dur + 0.001 && nextPlayAt - dur > now) {
+      // OK : on est en avance comme prévu, pas d'underrun
+    } else if (startAt === now + safety && hasStartedUtterance) {
+      console.warn('[live] underrun: reset start to now+' + SCHEDULE_SAFETY_MS + 'ms');
+    }
   }
 
   function enqueuePcmChunk(b64) {
     try {
       var ctx = ensurePlaybackCtx();
       if (ctx.state === 'suspended') {
-        // Tentative de resume — peut être no-op si le contexte n'a pas
-        // d'autorisation user-gesture, auquel cas on log et on poursuit
-        // (le scheduling fonctionnera dès que le user fera un autre geste).
         ctx.resume().catch(function (err) {
           console.warn('[live] resume during chunk failed', err);
         });
       }
       var audioBuffer = decodePcmChunk(b64, ctx);
-      console.log('[live] +chunk dur=' + (audioBuffer.duration * 1000).toFixed(0) + 'ms, ctxState=' + ctx.state);
+
+      // Mode "wait_full" : on bufferise TOUS les chunks de la phrase
+      // jusqu'à audio_end avant de commencer la lecture. Latence +durée
+      // mais zéro underrun garanti. Activable via localStorage.vbWaitFull.
+      if (WAIT_FULL_PHRASE) {
+        pendingChunks.push(audioBuffer);
+        pendingDurationMs += audioBuffer.duration * 1000;
+        return;
+      }
 
       if (hasStartedUtterance) {
         scheduleBuffer(ctx, audioBuffer);
@@ -380,10 +439,16 @@
   }
 
   function onAudioEnd() {
-    // Le serveur signale la fin de la phrase. Si on a accumulé des chunks
-    // sans atteindre JITTER_BUFFER_MS (utterance courte), on flush quand
-    // même pour ne pas garder les chunks en attente indéfiniment.
-    if (!hasStartedUtterance && pendingChunks.length > 0 && playbackCtx) {
+    // Le serveur signale la fin de la phrase.
+    // - Mode normal : si on a accumulé des chunks sans atteindre
+    //   JITTER_BUFFER_MS (utterance courte), on flush.
+    // - Mode wait_full : on flush TOUT maintenant (c'est le moment où
+    //   on a la phrase complète bufferisée).
+    if ((WAIT_FULL_PHRASE || !hasStartedUtterance)
+        && pendingChunks.length > 0 && playbackCtx) {
+      console.log('[live] audio_end → flush ' + pendingChunks.length
+                + ' chunks (' + pendingDurationMs.toFixed(0) + 'ms)'
+                + (WAIT_FULL_PHRASE ? ' [wait_full mode]' : ''));
       flushPending(playbackCtx);
     }
     // Reset pour la prochaine phrase : on ré-accumulera JITTER_BUFFER_MS.
