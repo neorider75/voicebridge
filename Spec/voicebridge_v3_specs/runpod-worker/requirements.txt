@@ -8,6 +8,8 @@ runpod>=1.7
 # (pip install ... --index-url https://download.pytorch.org/whl/cu121).
 
 # Transformers ecosystem
+# /!\ torchao<0.5 : 0.5+ exige torch 2.5+, on est sur 2.4
+torchao<0.5
 transformers>=4.46
 accelerate>=0.30
 huggingface-hub>=0.26
