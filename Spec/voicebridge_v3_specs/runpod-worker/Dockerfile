@@ -48,6 +48,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Désinstalle fbgemm_gpu + torchao (transitive deps incompat torch 2.4)
 RUN pip uninstall -y fbgemm_gpu torchao 2>/dev/null || true
 
+# Sanity check faster-whisper (affiché dans les logs Docker au build)
+RUN python -c "import faster_whisper; print('✅ faster-whisper OK')" \
+    || echo "⚠️  WARNING: faster-whisper unavailable, will fallback to transformers"
+
 # Copie du code
 COPY handler.py .
 COPY models/ ./models/

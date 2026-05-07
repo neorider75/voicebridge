@@ -61,6 +61,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # utilise ses chemins de fallback (qui marchent très bien pour notre cas).
 RUN pip uninstall -y fbgemm_gpu torchao 2>/dev/null || true
 
+# Sanity check : faster-whisper s'importe correctement après les uninstalls ?
+# Affiche dans les logs Docker au build pour diagnostic. Ne fait pas planter
+# le build si manquant (le wrapper Python a un fallback transformers de toute
+# façon — cf. models/whisper.py).
+RUN python -c "import faster_whisper; print('✅ faster-whisper OK')" \
+    || echo "⚠️  WARNING: faster-whisper unavailable, will fallback to transformers"
+
 # Copie du code
 COPY handler.py .
 COPY models/ ./models/
