@@ -109,6 +109,55 @@
         </div>
       </div>
 
+      <!-- ── Traduction (V3, optionnelle) ── -->
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+          <input type="checkbox" id="ttsTranslateToggle" style="width:auto;margin:0">
+          🌐 Traduire le texte avant synthèse
+        </label>
+      </div>
+      <div id="ttsTranslateOptions" style="display:none">
+        <div class="grid-2">
+          <div class="field">
+            <label for="ttsSourceLang">Langue source</label>
+            <select id="ttsSourceLang">
+              <option value="fr">🇫🇷 Français</option>
+              <option value="en">🇬🇧 Anglais</option>
+              <option value="es">🇪🇸 Espagnol</option>
+              <option value="pt">🇵🇹 Portugais</option>
+              <option value="it">🇮🇹 Italien</option>
+              <option value="de">🇩🇪 Allemand</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ttsTargetLang">Langue cible</label>
+            <select id="ttsTargetLang">
+              <option value="en">🇬🇧 Anglais</option>
+              <option value="fr">🇫🇷 Français</option>
+              <option value="es">🇪🇸 Espagnol</option>
+              <option value="pt">🇵🇹 Portugais</option>
+              <option value="it">🇮🇹 Italien</option>
+              <option value="de">🇩🇪 Allemand</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="ttsProvider">Provider de traduction</label>
+          <select id="ttsProvider">
+            <option value="opus-mt-cpu">OPUS-MT (CPU local) — gratuit · 80ms</option>
+            <option value="opus-mt-gpu">OPUS-MT (GPU) — gratuit · 80ms</option>
+            <option value="nllb">NLLB-200 — gratuit · 150ms · 200 langues</option>
+            <option value="gpt-4o-mini">GPT-4o-mini — ~0.0004€ · 600ms · contexte</option>
+            <option value="gpt-4o">GPT-4o — ~0.005€ · 1100ms · top qualité</option>
+          </select>
+        </div>
+        <div class="field" id="ttsBriefingField" style="display:none">
+          <label for="ttsBriefing">Briefing GPT (optionnel)</label>
+          <textarea id="ttsBriefing" rows="2" placeholder="Contexte de cette traduction (optionnel) — ex: jargon métier, ton attendu…" style="width:100%;padding:0.6rem 0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
+          <div class="hint">💡 Améliore la qualité GPT. Ignoré pour OPUS-MT et NLLB.</div>
+        </div>
+      </div>
+
       <button class="btn btn-primary" id="btnGenerate">🎙 Générer</button>
     </section>
 
@@ -120,6 +169,14 @@
       </div>
 
       <div class="alert" id="resultNotice"></div>
+
+      <!-- Affichage du texte traduit (visible si traduction utilisée) -->
+      <div id="ttsTranslatedWrap" style="display:none;margin-bottom:0.75rem;padding:0.75rem;background:var(--surface3);border:1px solid var(--accent2);border-radius:8px">
+        <div style="font-size:0.72rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.35rem">🌐 Texte traduit (synthétisé)</div>
+        <div id="ttsTranslatedText" style="font-size:0.85rem;color:var(--accent2);line-height:1.5"></div>
+        <div id="ttsTranslatedMeta" style="font-size:0.7rem;color:var(--text3);margin-top:0.4rem;font-family:'DM Mono',monospace"></div>
+      </div>
+
       <div class="audio-player-wrap">
         <audio id="resultAudio" controls preload="none"></audio>
       </div>
@@ -207,6 +264,49 @@
             <button class="radio-option" data-value="24h">24h</button>
             <button class="radio-option" data-value="48h">48h</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Traduction (V3, optionnelle) ── -->
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+          <input type="checkbox" id="sttTranslateToggle" style="width:auto;margin:0">
+          🌐 Traduire la transcription avant synthèse
+        </label>
+      </div>
+      <div id="sttTranslateOptions" style="display:none">
+        <div class="grid-2">
+          <div class="field">
+            <label for="sttTargetLang">Langue cible</label>
+            <select id="sttTargetLang">
+              <option value="en">🇬🇧 Anglais</option>
+              <option value="fr">🇫🇷 Français</option>
+              <option value="es">🇪🇸 Espagnol</option>
+              <option value="pt">🇵🇹 Portugais</option>
+              <option value="it">🇮🇹 Italien</option>
+              <option value="de">🇩🇪 Allemand</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sttProvider">Provider</label>
+            <select id="sttProvider">
+              <option value="opus-mt-cpu">OPUS-MT (CPU local) — gratuit</option>
+              <option value="opus-mt-gpu">OPUS-MT (GPU) — gratuit</option>
+              <option value="nllb">NLLB-200 — 200 langues</option>
+              <option value="gpt-4o-mini">GPT-4o-mini — qualité + contexte</option>
+              <option value="gpt-4o">GPT-4o — top qualité</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="sttBriefingField" style="display:none">
+          <label for="sttBriefing">Briefing GPT (optionnel)</label>
+          <textarea id="sttBriefing" rows="2" placeholder="Contexte pour GPT…" style="width:100%;padding:0.6rem 0.85rem;background:var(--surface3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical"></textarea>
+        </div>
+        <button class="btn btn-secondary" id="sttBtnPreviewTranslate" style="margin-top:0.4rem">🔍 Aperçu de la traduction</button>
+        <div id="sttTranslatedPreview" style="display:none;margin-top:0.6rem;padding:0.65rem;background:var(--surface3);border:1px solid var(--accent2);border-radius:6px">
+          <div style="font-size:0.7rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.3rem">Traduction</div>
+          <div id="sttTranslatedText" style="font-size:0.85rem;color:var(--accent2);line-height:1.5"></div>
+          <div id="sttTranslatedMeta" style="font-size:0.68rem;color:var(--text3);margin-top:0.3rem;font-family:'DM Mono',monospace"></div>
         </div>
       </div>
 

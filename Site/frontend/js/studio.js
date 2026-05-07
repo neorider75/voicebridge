@@ -165,6 +165,20 @@
         quality: quality, retention: retention, engine: engine,
       };
 
+      // ── V3 : params traduction optionnels ──
+      var translateOn = $('ttsTranslateToggle') && $('ttsTranslateToggle').checked;
+      if (translateOn) {
+        payload.translate = true;
+        payload.source_lang = $('ttsSourceLang') ? $('ttsSourceLang').value : 'fr';
+        payload.target_lang = $('ttsTargetLang') ? $('ttsTargetLang').value : 'en';
+        payload.translation_provider = $('ttsProvider') ? $('ttsProvider').value : 'opus-mt-cpu';
+        var briefing = $('ttsBriefing') ? $('ttsBriefing').value.trim() : '';
+        var prov = payload.translation_provider;
+        if ((prov === 'gpt-4o-mini' || prov === 'gpt-4o') && briefing) {
+          payload.briefing = briefing;
+        }
+      }
+
       // Pour rétention "session" : binaire direct. Pour 24h/48h : JSON.
       fetch('/api/tts/generate', {
         method: 'POST',
@@ -192,12 +206,29 @@
             throw new Error(msg);
           });
         }
+        // Si traduction utilisée, on la récupère soit du JSON (rétention),
+        // soit du header X-Translation-Meta (mode session/streaming).
+        var translationMeta = null;
+        try {
+          var hdr = r.headers.get('X-Translation-Meta');
+          if (hdr) translationMeta = JSON.parse(hdr);
+        } catch (e) { /* ignore */ }
+
         if (ct.indexOf('application/json') >= 0) {
-          return r.json().then(function (d) { showResult({ url: d.url, format: format, retention: retention, expires_at: d.expires_at }); });
+          return r.json().then(function (d) {
+            if (d.translation) translationMeta = d.translation;
+            showResult({
+              url: d.url, format: format, retention: retention,
+              expires_at: d.expires_at, translation: translationMeta,
+            });
+          });
         }
         return r.blob().then(function (blob) {
           var url = URL.createObjectURL(blob);
-          showResult({ url: url, format: format, retention: 'session', blob: blob });
+          showResult({
+            url: url, format: format, retention: 'session', blob: blob,
+            translation: translationMeta,
+          });
         });
       }).catch(function (e) {
         VB.notify('error', e.message || 'Erreur de génération');
@@ -237,8 +268,44 @@
       notice.textContent = '✅ Enregistré jusqu\'au ' + payload.expires_at;
     }
 
+    // Affichage de la traduction si utilisée
+    var wrap = $('ttsTranslatedWrap');
+    if (payload.translation && payload.translation.translated_text) {
+      var t = payload.translation;
+      $('ttsTranslatedText').textContent = t.translated_text;
+      $('ttsTranslatedMeta').textContent =
+        '🌐 ' + (t.src_lang || '?') + ' → ' + (t.tgt_lang || '?')
+        + ' · ' + (t.provider || '?')
+        + (t.latency_ms ? ' · ' + t.latency_ms + 'ms' : '')
+        + (t.cost_eur ? ' · ' + t.cost_eur.toFixed(4) + '€' : '');
+      wrap.style.display = '';
+    } else if (wrap) {
+      wrap.style.display = 'none';
+    }
+
     VB.notify('success', 'Génération terminée');
     setStepDone(2, true);
+  }
+
+  // ── V3 : binding du toggle traduction TTS ──
+  function bindTtsTranslateToggle() {
+    var toggle = $('ttsTranslateToggle');
+    var opts = $('ttsTranslateOptions');
+    var providerSel = $('ttsProvider');
+    var briefingField = $('ttsBriefingField');
+    if (!toggle) return;
+
+    toggle.addEventListener('change', function () {
+      if (opts) opts.style.display = toggle.checked ? '' : 'none';
+    });
+
+    if (providerSel) {
+      providerSel.addEventListener('change', function () {
+        var p = providerSel.value;
+        var isGpt = p === 'gpt-4o-mini' || p === 'gpt-4o';
+        if (briefingField) briefingField.style.display = isGpt ? '' : 'none';
+      });
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -246,6 +313,7 @@
     bindRadioGroups();
     bindCounter();
     bindGenerate();
+    bindTtsTranslateToggle();
     loadVoices();
   });
 })();

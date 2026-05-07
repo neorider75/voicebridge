@@ -229,18 +229,49 @@
       var btn = $('sttBtnGenerate');
       btn.disabled = true; btn.textContent = '⏳ Génération…';
 
+      var payload = { text: text, voice_id: voiceId, format: format,
+                       quality: quality, retention: retention };
+
+      // ── V3 : params traduction optionnels ──
+      var translateOn = $('sttTranslateToggle') && $('sttTranslateToggle').checked;
+      if (translateOn) {
+        payload.translate = true;
+        // Source = la langue de transcription utilisée en step 1
+        payload.source_lang = $('sttLang') ? $('sttLang').value : 'fr';
+        payload.target_lang = $('sttTargetLang') ? $('sttTargetLang').value : 'en';
+        payload.translation_provider = $('sttProvider') ? $('sttProvider').value : 'opus-mt-cpu';
+        var briefing = $('sttBriefing') ? $('sttBriefing').value.trim() : '';
+        var prov = payload.translation_provider;
+        if ((prov === 'gpt-4o-mini' || prov === 'gpt-4o') && briefing) {
+          payload.briefing = briefing;
+        }
+      }
+
       fetch('/api/tts/generate', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, voice_id: voiceId, format: format, quality: quality, retention: retention }),
+        body: JSON.stringify(payload),
       }).then(function (r) {
         var ct = r.headers.get('content-type') || '';
         if (!r.ok) return readErrorMessage(r).then(function (msg) { throw new Error(msg); });
+
+        // Récupère translation_meta si présent
+        var translationMeta = null;
+        try {
+          var hdr = r.headers.get('X-Translation-Meta');
+          if (hdr) translationMeta = JSON.parse(hdr);
+        } catch (e) { /* ignore */ }
+
         if (ct.indexOf('application/json') >= 0) {
-          return r.json().then(function (d) { showResult({ url: d.url, format: format, retention: retention, expires_at: d.expires_at }); });
+          return r.json().then(function (d) {
+            if (d.translation) translationMeta = d.translation;
+            showResult({ url: d.url, format: format, retention: retention,
+                         expires_at: d.expires_at, translation: translationMeta });
+          });
         }
         return r.blob().then(function (blob) {
-          showResult({ url: URL.createObjectURL(blob), format: format, retention: 'session' });
+          showResult({ url: URL.createObjectURL(blob), format: format,
+                       retention: 'session', translation: translationMeta });
         });
       }).catch(function (e) {
         VB.notify('error', e.message || 'Erreur de génération');
@@ -248,6 +279,58 @@
         btn.disabled = false; btn.textContent = '🎙 Générer';
       });
     });
+  }
+
+  // ── V3 : aperçu de la traduction (avant de cliquer Générer) ──
+  function bindSttPreviewTranslate() {
+    var btn = $('sttBtnPreviewTranslate');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var text = ($('sttTranscript').value || '').trim();
+      if (!text) { VB.notify('warning', 'Transcription vide'); return; }
+      var src = $('sttLang') ? $('sttLang').value : 'fr';
+      var tgt = $('sttTargetLang') ? $('sttTargetLang').value : 'en';
+      var provider = $('sttProvider') ? $('sttProvider').value : 'opus-mt-cpu';
+      var briefing = $('sttBriefing') ? $('sttBriefing').value.trim() : '';
+
+      btn.disabled = true; btn.textContent = '⏳ Traduction…';
+      VB.api.post('/api/stt/translate', {
+        text: text, source_lang: src, target_lang: tgt,
+        translation_provider: provider, briefing: briefing,
+      }).then(function (d) {
+        $('sttTranslatedText').textContent = d.translated || '';
+        $('sttTranslatedMeta').textContent =
+          '🌐 ' + d.src + ' → ' + d.tgt + ' · ' + (d.provider || '?')
+          + (d.latency_ms ? ' · ' + d.latency_ms + 'ms' : '')
+          + (d.cost_eur ? ' · ' + d.cost_eur.toFixed(4) + '€' : '');
+        $('sttTranslatedPreview').style.display = '';
+      }).catch(function (err) {
+        VB.notify('error', err.message || 'Traduction échouée');
+      }).finally(function () {
+        btn.disabled = false; btn.textContent = '🔍 Aperçu de la traduction';
+      });
+    });
+  }
+
+  // ── V3 : binding du toggle traduction STT ──
+  function bindSttTranslateToggle() {
+    var toggle = $('sttTranslateToggle');
+    var opts = $('sttTranslateOptions');
+    var providerSel = $('sttProvider');
+    var briefingField = $('sttBriefingField');
+    if (!toggle) return;
+
+    toggle.addEventListener('change', function () {
+      if (opts) opts.style.display = toggle.checked ? '' : 'none';
+    });
+
+    if (providerSel) {
+      providerSel.addEventListener('change', function () {
+        var p = providerSel.value;
+        var isGpt = p === 'gpt-4o-mini' || p === 'gpt-4o';
+        if (briefingField) briefingField.style.display = isGpt ? '' : 'none';
+      });
+    }
   }
 
   function showResult(payload) {
@@ -274,6 +357,13 @@
       document.body.appendChild(a); a.click(); a.remove();
     };
 
+    // Si traduction utilisée, afficher meta dans la notice
+    if (payload.translation && payload.translation.translated_text) {
+      var t = payload.translation;
+      notice.textContent += ' · 🌐 ' + (t.src_lang || '?') + '→' +
+                            (t.tgt_lang || '?') + ' via ' + (t.provider || '?');
+    }
+
     VB.notify('success', 'Génération terminée');
   }
 
@@ -297,5 +387,7 @@
     bindRadioGroups();
     bindRecord();
     bindGenerate();
+    bindSttTranslateToggle();
+    bindSttPreviewTranslate();
   });
 })();

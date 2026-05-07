@@ -15,6 +15,7 @@ Pipeline :
 from __future__ import annotations
 
 import io
+import json
 import logging
 import wave
 from pathlib import Path
@@ -59,6 +60,15 @@ class GeneratePayload(BaseModel):
     # Engine TTS : "neutts" (NeuTTS Nano, défaut, rapide) ou "xtts"
     # (Coqui XTTS-v2, plus naturel, 5-10x plus lent à inférer).
     engine: str | None = Field(default=None)
+    # ── V3 : traduction optionnelle avant synthèse ──
+    # Si translate=True, le texte est traduit de source_lang → target_lang
+    # via translation_router avant d'être envoyé au TTS. Le résultat audio
+    # est synthétisé dans la langue cible avec la voix sélectionnée.
+    translate: bool = Field(default=False)
+    source_lang: str | None = Field(default=None)         # langue du `text` (auto-détect si None)
+    target_lang: str | None = Field(default=None)         # langue cible
+    translation_provider: str | None = Field(default=None)  # opus-mt-cpu | -gpu | nllb | gpt-4o-mini | gpt-4o
+    briefing: str = Field(default="")                     # contexte GPT (ignoré pour autres providers)
 
 
 def _require_ml() -> None:
@@ -230,11 +240,59 @@ def _wav_duration_seconds(wav_bytes: bytes) -> float:
     return frames / float(rate) if rate else 0.0
 
 
+def _maybe_translate(payload: GeneratePayload, voice_lang: str | None) -> tuple[str, dict | None]:
+    """Si translate=True, traduit ``payload.text`` via translation_router.
+
+    Returns:
+        (text_to_synthesize, translation_meta | None)
+        translation_meta est un dict avec source/target/provider/cost si trad.
+    """
+    if not payload.translate or not payload.target_lang:
+        return payload.text, None
+    src = payload.source_lang or voice_lang or "fr"
+    tgt = payload.target_lang
+    if src == tgt:
+        return payload.text, None  # no-op silencieux
+
+    from ..services import translation_router
+    try:
+        result = translation_router.translate(
+            text=payload.text,
+            src=src,
+            tgt=tgt,
+            provider=payload.translation_provider,
+            briefing=payload.briefing or "",
+            fallback=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("TTS translation failed: %s — falling back to original", exc)
+        return payload.text, {"error": str(exc), "src": src, "tgt": tgt}
+
+    log.info("TTS translation %s→%s via %s in %dms",
+             src, tgt, result.provider, result.latency_ms)
+    return result.translated, {
+        "src_lang": src,
+        "tgt_lang": tgt,
+        "provider": result.provider,
+        "translated_text": result.translated,
+        "latency_ms": result.latency_ms,
+        "cost_eur": round(result.cost_eur, 5),
+    }
+
+
 @router.post("/generate")
 @limiter.limit("60/minute")
 async def generate(request: Request, payload: GeneratePayload):
     _require_ml()
     _validate(payload)
+
+    # Pré-traduction si demandée (Décision 7 — symétrique au Live)
+    voice = voices_store.get(files.safe_id(payload.voice_id)) or {}
+    text_for_tts, translation_meta = _maybe_translate(payload, voice.get("language"))
+    # On remplace le texte du payload pour le passer au pipeline existant
+    # (NeuTTS / XTTS prennent payload.text)
+    if translation_meta and "translated_text" in translation_meta:
+        payload.text = text_for_tts
 
     _, wav_bytes, voice_name = _synthesize(payload)
     duration = _wav_duration_seconds(wav_bytes)
@@ -255,15 +313,21 @@ async def generate(request: Request, payload: GeneratePayload):
             finally:
                 tmp_wav.unlink(missing_ok=True)
                 tmp_mp3.unlink(missing_ok=True)
+            headers = {"Content-Disposition": "attachment; filename=voicebridge.mp3"}
+            if translation_meta:
+                headers["X-Translation-Meta"] = json.dumps(translation_meta)
             return StreamingResponse(
                 iter([mp3_bytes]),
                 media_type="audio/mpeg",
-                headers={"Content-Disposition": "attachment; filename=voicebridge.mp3"},
+                headers=headers,
             )
+        headers = {"Content-Disposition": "attachment; filename=voicebridge.wav"}
+        if translation_meta:
+            headers["X-Translation-Meta"] = json.dumps(translation_meta)
         return StreamingResponse(
             iter([wav_bytes]),
             media_type="audio/wav",
-            headers={"Content-Disposition": "attachment; filename=voicebridge.wav"},
+            headers=headers,
         )
 
     # Rétention 24h / 48h : on persiste sur disque.
@@ -292,27 +356,30 @@ async def generate(request: Request, payload: GeneratePayload):
     text_preview = (payload.text or "").strip()
     if len(text_preview) > 200:
         text_preview = text_preview[:197] + "…"
-    rec = recordings_store.add(
-        {
-            "id": rec_id,
-            "mode": "tts",
-            "voice_id": payload.voice_id,
-            "voice_name": voice.get("name", voice_name),
-            "voice_language": voice.get("language"),
-            "duration_seconds": round(duration, 1),
-            "format": payload.format,
-            "quality": payload.quality,
-            "engine": _resolve_engine(payload),
-            "text_preview": text_preview,
-            "size_mb": size_mb,
-        },
-        retention=payload.retention,
-    )
-    return JSONResponse({
+    rec_meta = {
+        "id": rec_id,
+        "mode": "tts",
+        "voice_id": payload.voice_id,
+        "voice_name": voice.get("name", voice_name),
+        "voice_language": voice.get("language"),
+        "duration_seconds": round(duration, 1),
+        "format": payload.format,
+        "quality": payload.quality,
+        "engine": _resolve_engine(payload),
+        "text_preview": text_preview,
+        "size_mb": size_mb,
+    }
+    if translation_meta:
+        rec_meta["translation"] = translation_meta
+    rec = recordings_store.add(rec_meta, retention=payload.retention)
+    response = {
         "id": rec_id,
         "url": f"/api/recordings/{rec_id}/audio",
         "expires_at": rec["expires_at"],
-    })
+    }
+    if translation_meta:
+        response["translation"] = translation_meta
+    return JSONResponse(response)
 
 
 def _noop():  # pragma: no cover

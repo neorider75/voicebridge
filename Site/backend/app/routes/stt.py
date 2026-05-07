@@ -106,6 +106,50 @@ async def transcribe(
             src_path.unlink(missing_ok=True)
 
 
+@router.post("/translate")
+async def stt_translate(request: Request):
+    """Traduit un texte (typiquement la transcription STT) avant de
+    l'envoyer à TTS. Utilisé par le wizard STT phase 2.5 (preview de la
+    traduction avant validation et synthèse).
+
+    Body JSON : {text, source_lang, target_lang, translation_provider, briefing?}
+    Returns : {translated, src, tgt, provider, latency_ms, cost_eur}
+    """
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    src = body.get("source_lang") or body.get("src") or "fr"
+    tgt = body.get("target_lang") or body.get("tgt") or "en"
+    provider = body.get("translation_provider") or body.get("provider")
+    briefing = body.get("briefing", "")
+
+    if not text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+            "error": "empty_text", "message": "text est requis"})
+    if src == tgt:
+        return {"translated": text, "src": src, "tgt": tgt,
+                "provider": "noop", "latency_ms": 0, "cost_eur": 0.0}
+
+    from ..services import translation_router
+    try:
+        result = translation_router.translate(
+            text=text, src=src, tgt=tgt,
+            provider=provider, briefing=briefing, fallback=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("STT translate failed")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "translation_failed", "message": str(exc)})
+
+    return {
+        "translated": result.translated,
+        "src": result.src,
+        "tgt": result.tgt,
+        "provider": result.provider,
+        "latency_ms": result.latency_ms,
+        "cost_eur": round(result.cost_eur, 5),
+    }
+
+
 @router.get("/preview/{filename}")
 async def stt_preview(filename: str):
     # ``filename`` est de la forme ``stt_xxxx.wav`` ; on valide via files.safe_id
