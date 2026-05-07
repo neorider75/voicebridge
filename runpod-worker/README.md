@@ -178,7 +178,12 @@ hf download SWivid/F5-TTS \
 # ── RVC base models (~400 Mo) ───────────────────────────────────────
 mkdir -p /runpod-volume/rvc_assets
 cd /runpod-volume/rvc_assets
-wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
+# hubert_base.pt n'est plus utilisé (le code charge maintenant
+# facebook/hubert-base-ls960 via transformers — téléchargé auto au 1er run
+# dans HF_HOME). Si tu veux pré-télécharger pour éviter le DL au cold start :
+hf download facebook/hubert-base-ls960 \
+  --include "*.safetensors" --include "*.json" --include "*.txt"
+# rmvpe reste utilisé pour la détection F0
 wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 
 # (Détruire le Pod éphémère)

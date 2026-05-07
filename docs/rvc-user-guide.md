@@ -223,7 +223,10 @@ hf download SWivid/F5-TTS \
 
 # ── RVC base models (~400 Mo) ──
 cd /runpod-volume/rvc_assets
-wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
+# Hubert via transformers (remplace hubert_base.pt + fairseq retiré)
+hf download facebook/hubert-base-ls960 \
+  --include "*.safetensors" --include "*.json" --include "*.txt"
+# rmvpe pour la détection F0
 wget https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt
 ```
 

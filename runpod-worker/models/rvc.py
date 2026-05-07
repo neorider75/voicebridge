@@ -31,6 +31,12 @@ log = logging.getLogger("voicebridge.rvc")
 
 RVC_VOLUME_PATH = os.environ.get("RVC_VOLUME_PATH", "/runpod-volume/rvc_models")
 RVC_ASSETS_PATH = "/runpod-volume/rvc_assets"
+HF_CACHE = os.environ.get("HF_HOME", "/runpod-volume/hf-cache")
+
+# Hubert via transformers (facebook/hubert-base-ls960). Téléchargé une fois
+# dans HF_HOME, ~360 Mo. Layer 12 pour RVC v2 (équivalent fairseq output_layer=12).
+HUBERT_MODEL_ID = "facebook/hubert-base-ls960"
+HUBERT_OUTPUT_LAYER = 12   # RVC v2 (utiliser 9 pour RVC v1 si besoin)
 
 # Streaming chunk en samples (24000 sample_rate × 0.2s = 4800 samples)
 STREAM_CHUNK_SAMPLES = 4800
@@ -45,32 +51,32 @@ class RVCRouter:
         self._init_shared_models()
 
     def _init_shared_models(self):
-        """Charge hubert_base + rmvpe une fois, partagés entre tous les RVCModel."""
-        hubert_path = os.path.join(RVC_ASSETS_PATH, "hubert_base.pt")
+        """Charge hubert (via transformers) + rmvpe, partagés entre tous les RVCModel.
+
+        Hubert : facebook/hubert-base-ls960 via transformers.HubertModel.
+        Téléchargé automatiquement dans HF_HOME au 1er appel (~360 Mo).
+        Note : remplace l'ancien hubert_base.pt + fairseq (retiré pour conflit
+        hydra-core avec f5-tts).
+        """
         rmvpe_path = os.path.join(RVC_ASSETS_PATH, "rmvpe.pt")
 
-        if not os.path.exists(hubert_path):
-            log.warning("hubert_base.pt missing at %s", hubert_path)
-            self.hubert = None
-            self.rmvpe = None
-            return
-
         try:
-            from fairseq import checkpoint_utils
-            models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
-                [hubert_path], suffix=""
-            )
-            self.hubert = models[0].to("cuda").half().eval()
-            log.info("hubert_base loaded")
-        except Exception as e:
-            log.exception("Failed to load hubert_base: %s", e)
+            from transformers import HubertModel  # type: ignore
+            log.info("Loading Hubert (%s) via transformers...", HUBERT_MODEL_ID)
+            self.hubert = HubertModel.from_pretrained(
+                HUBERT_MODEL_ID,
+                cache_dir=HF_CACHE,
+            ).to("cuda").half().eval()
+            log.info("Hubert loaded (transformers backend)")
+        except Exception as e:  # noqa: BLE001
+            log.exception("Failed to load Hubert: %s", e)
             self.hubert = None
 
         try:
             from rvc.rmvpe import RMVPE
             self.rmvpe = RMVPE(rmvpe_path, is_half=True, device="cuda")
             log.info("rmvpe loaded")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             log.warning("RMVPE not loaded (will use crepe/pm fallback): %s", e)
             self.rmvpe = None
 
@@ -197,8 +203,18 @@ class RVCModel:
         import torch
 
         with torch.no_grad():
+            # Hubert via transformers : input_values shape (batch, samples)
+            # → output_hidden_states pour récupérer le layer 12 (RVC v2)
             audio_tensor = torch.from_numpy(audio_16k).float().to("cuda").unsqueeze(0)
-            feats = self.hubert.extract_features(audio_tensor)[0]
+            outputs = self.hubert(
+                input_values=audio_tensor,
+                output_hidden_states=True,
+            )
+            # hidden_states est un tuple (n_layers + 1) : index 0 = embeddings,
+            # 1..12 = sortie de chaque layer transformer.
+            # Pour RVC v2, on prend le layer 12 (le dernier).
+            layer_idx = HUBERT_OUTPUT_LAYER if self.version == "v2" else 9
+            feats = outputs.hidden_states[layer_idx]
 
         if self.f0:
             if self.rmvpe:

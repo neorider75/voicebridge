@@ -27,7 +27,6 @@ bitsandbytes>=0.43
 f5-tts>=1.0.0
 
 # RVC dependencies
-fairseq>=0.12.2
 faiss-cpu>=1.7.4
 praat-parselmouth>=0.4
 pyworld>=0.3

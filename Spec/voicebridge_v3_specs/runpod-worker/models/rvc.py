@@ -30,6 +30,9 @@ log = logging.getLogger("voicebridge.rvc")
 
 RVC_VOLUME_PATH = os.environ.get("RVC_VOLUME_PATH", "/runpod-volume/rvc_models")
 RVC_ASSETS_PATH = "/runpod-volume/rvc_assets"
+HF_CACHE = os.environ.get("HF_HOME", "/runpod-volume/hf-cache")
+HUBERT_MODEL_ID = "facebook/hubert-base-ls960"
+HUBERT_OUTPUT_LAYER = 12
 
 # Streaming chunk en samples (24000 sample_rate * 0.2s = 4800 samples)
 STREAM_CHUNK_SAMPLES = 4800
@@ -45,34 +48,24 @@ class RVCRouter:
         self._init_shared_models()
     
     def _init_shared_models(self):
-        """Charge hubert_base + rmvpe une fois, partagés entre tous les RVCModel."""
-        import torch
-        hubert_path = os.path.join(RVC_ASSETS_PATH, "hubert_base.pt")
+        """Charge hubert (transformers) + rmvpe, partagés entre tous les RVCModel."""
         rmvpe_path = os.path.join(RVC_ASSETS_PATH, "rmvpe.pt")
-        
-        if not os.path.exists(hubert_path):
-            log.warning("hubert_base.pt missing at %s", hubert_path)
-            self.hubert = None
-            self.rmvpe = None
-            return
-        
+
         try:
-            from fairseq import checkpoint_utils
-            models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
-                [hubert_path], suffix=""
-            )
-            self.hubert = models[0].to("cuda").half().eval()
-            log.info("hubert_base loaded")
-        except Exception as e:
-            log.exception("Failed to load hubert_base: %s", e)
+            from transformers import HubertModel  # type: ignore
+            self.hubert = HubertModel.from_pretrained(
+                HUBERT_MODEL_ID, cache_dir=HF_CACHE,
+            ).to("cuda").half().eval()
+            log.info("Hubert loaded (transformers backend)")
+        except Exception as e:  # noqa: BLE001
+            log.exception("Failed to load Hubert: %s", e)
             self.hubert = None
-        
+
         try:
-            # RMVPE est utilisé pour la détection de pitch (F0)
-            from rvc.rmvpe import RMVPE  # depuis le package rvc-python
+            from rvc.rmvpe import RMVPE
             self.rmvpe = RMVPE(rmvpe_path, is_half=True, device="cuda")
             log.info("rmvpe loaded")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             log.warning("RMVPE not loaded (will use crepe/pm fallback): %s", e)
             self.rmvpe = None
     
@@ -226,7 +219,12 @@ class RVCModel:
         # 1. Extraction features via hubert
         with torch.no_grad():
             audio_tensor = torch.from_numpy(audio_16k).float().to("cuda").unsqueeze(0)
-            feats = self.hubert.extract_features(audio_tensor)[0]
+            outputs = self.hubert(
+                input_values=audio_tensor,
+                output_hidden_states=True,
+            )
+            layer_idx = HUBERT_OUTPUT_LAYER if self.version == "v2" else 9
+            feats = outputs.hidden_states[layer_idx]
         
         # 2. F0 estimation via rmvpe (ou alternative)
         if self.f0:
