@@ -23,8 +23,8 @@ faster-whisper>=1.0
 # Quantization
 bitsandbytes>=0.43
 
-# F5-TTS (récupéré depuis git, version épinglée)
-f5-tts @ git+https://github.com/SWivid/F5-TTS.git@v1.0.0
+# F5-TTS (PyPI — le tag v1.0.0 sur le repo git n'existe pas)
+f5-tts>=1.0.0
 
 # RVC dependencies
 fairseq>=0.12.2
