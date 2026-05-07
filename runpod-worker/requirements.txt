@@ -3,10 +3,10 @@
 # RunPod SDK
 runpod>=1.7
 
-# PyTorch + CUDA 12.1
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.4.0+cu121
-torchaudio==2.4.0+cu121
+# PyTorch + torchaudio CUDA 12.1 — installés en RUN dédié dans Dockerfile
+# (pip install ... --index-url https://download.pytorch.org/whl/cu121).
+# Pas de pin ici : le suffixe +cu121 n'est plus géré par pip moderne via
+# --extra-index-url (pip cherche sur PyPI et ne trouve pas la wheel CUDA).
 
 # Transformers ecosystem
 transformers>=4.46

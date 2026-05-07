@@ -35,7 +35,12 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
 # Pip up to date
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Installation des deps Python
+# PyTorch CUDA 12.1 en RUN dédié (suffixe +cu121 non géré par pip moderne)
+RUN pip install --no-cache-dir \
+      torch==2.4.0 torchaudio==2.4.0 \
+      --index-url https://download.pytorch.org/whl/cu121
+
+# Installation des autres deps Python (torch déjà en place)
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
