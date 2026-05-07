@@ -61,12 +61,15 @@ async def cloud_status() -> dict:
 
 
 class RunPodConfig(BaseModel):
-    api_key: str | None = Field(None, min_length=1, max_length=200)
+    # max_length généreux : les nouveaux formats de clés API (RunPod
+    # rpa_..., AWS-style S3 secrets, OpenAI sk-proj-/sk-svcacct-) peuvent
+    # dépasser 200 caractères selon les comptes / scopes.
+    api_key: str | None = Field(None, min_length=1, max_length=500)
     endpoint_id: str | None = Field(None, max_length=100)
     volume_id: str | None = Field(None, max_length=100)
     datacenter: str | None = Field(None, max_length=20)
-    s3_access_key: str | None = Field(None, max_length=200)
-    s3_secret_key: str | None = Field(None, max_length=200)
+    s3_access_key: str | None = Field(None, max_length=500)
+    s3_secret_key: str | None = Field(None, max_length=500)
 
 
 @router.post("/runpod/configure")
@@ -171,7 +174,9 @@ async def runpod_warmup(request: Request, payload: WarmupPayload) -> dict:
 
 
 class OpenAIConfig(BaseModel):
-    api_key: str = Field(..., min_length=10, max_length=200)
+    # Les clés modernes (sk-proj-..., sk-svcacct-...) peuvent dépasser 200
+    # chars. On laisse de la marge.
+    api_key: str = Field(..., min_length=10, max_length=500)
 
 
 @router.post("/openai/configure")
