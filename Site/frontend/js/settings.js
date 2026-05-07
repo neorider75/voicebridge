@@ -290,7 +290,8 @@
     });
   }
 
-  function saveRunpod() {
+  // Lit les champs RunPod, retourne {body, hasInput}
+  function _collectRunpodBody() {
     var body = {};
     var apiKey = $('rpApiKey').value.trim();
     var endpointId = $('rpEndpointId').value.trim();
@@ -304,52 +305,93 @@
     if (datacenter) body.datacenter = datacenter;
     if (s3a) body.s3_access_key = s3a;
     if (s3s) body.s3_secret_key = s3s;
+    return body;
+  }
+
+  function _clearRunpodSensitive() {
+    // Vide les champs password pour ne pas re-soumettre
+    $('rpApiKey').value = '';
+    $('rpS3Access').value = '';
+    $('rpS3Secret').value = '';
+  }
+
+  function saveRunpod() {
+    var body = _collectRunpodBody();
     if (Object.keys(body).length === 0) {
       VB.notify('warning', 'Aucun champ à enregistrer');
-      return;
+      return Promise.reject(new Error('empty'));
     }
-    VB.api.post('/api/cloud/runpod/configure', body).then(function () {
+    return VB.api.post('/api/cloud/runpod/configure', body).then(function () {
       VB.notify('success', 'Configuration RunPod enregistrée');
-      // Vide les champs password pour ne pas re-soumettre
-      $('rpApiKey').value = '';
-      $('rpS3Access').value = '';
-      $('rpS3Secret').value = '';
-      loadCloudPanel();
+      _clearRunpodSensitive();
+      return loadCloudPanel();
     }).catch(function (err) {
       VB.notify('error', err.message || 'Échec enregistrement');
+      throw err;
     });
   }
 
   function testRunpod() {
+    // UX : si l'utilisateur a saisi des valeurs sans cliquer Save, on save
+    // d'abord automatiquement avant de tester. Sinon on teste direct.
+    var body = _collectRunpodBody();
+    var saveFirst = (Object.keys(body).length > 0);
+    var step1 = saveFirst
+      ? VB.api.post('/api/cloud/runpod/configure', body).then(function () {
+          _clearRunpodSensitive();
+          return loadCloudPanel();
+        })
+      : Promise.resolve();
+
     setTestLoading('runpodTestStatus');
-    VB.api.post('/api/cloud/runpod/test', {}).then(function (r) {
-      setTestStatus('runpodTestStatus', true,
-        'OK · ' + (r.latency_ms || '?') + 'ms · ' + (r.datacenter || ''));
-    }).catch(function (err) {
-      setTestStatus('runpodTestStatus', false, err.message || 'Échec');
-    });
+    step1
+      .then(function () {
+        return VB.api.post('/api/cloud/runpod/test', {});
+      })
+      .then(function (r) {
+        setTestStatus('runpodTestStatus', true,
+          'OK · ' + (r.latency_ms || '?') + 'ms · ' + (r.datacenter || ''));
+      })
+      .catch(function (err) {
+        setTestStatus('runpodTestStatus', false, err.message || 'Échec');
+      });
   }
 
   function saveOpenai() {
     var k = $('oaiApiKey').value.trim();
-    if (!k) { VB.notify('warning', 'Saisis une clé OpenAI'); return; }
-    VB.api.post('/api/cloud/openai/configure', { api_key: k }).then(function () {
-      VB.notify('success', 'Clé OpenAI enregistrée');
-      $('oaiApiKey').value = '';
-      loadCloudPanel();
-    }).catch(function (err) {
-      VB.notify('error', err.message || 'Échec enregistrement');
-    });
+    if (!k) {
+      VB.notify('warning', 'Saisis une clé OpenAI');
+      return Promise.reject(new Error('empty'));
+    }
+    return VB.api.post('/api/cloud/openai/configure', { api_key: k })
+      .then(function () {
+        VB.notify('success', 'Clé OpenAI enregistrée');
+        $('oaiApiKey').value = '';
+        return loadCloudPanel();
+      }).catch(function (err) {
+        VB.notify('error', err.message || 'Échec enregistrement');
+        throw err;
+      });
   }
 
   function testOpenai() {
+    // Save automatique si une nouvelle clé est saisie dans le champ
+    var k = $('oaiApiKey').value.trim();
+    var step1 = k
+      ? VB.api.post('/api/cloud/openai/configure', { api_key: k })
+          .then(function () { $('oaiApiKey').value = ''; return loadCloudPanel(); })
+      : Promise.resolve();
+
     setTestLoading('openaiTestStatus');
-    VB.api.post('/api/cloud/openai/test', {}).then(function (r) {
-      setTestStatus('openaiTestStatus', true,
-        'OK · ' + (r.latency_ms || '?') + 'ms');
-    }).catch(function (err) {
-      setTestStatus('openaiTestStatus', false, err.message || 'Échec');
-    });
+    step1
+      .then(function () { return VB.api.post('/api/cloud/openai/test', {}); })
+      .then(function (r) {
+        setTestStatus('openaiTestStatus', true,
+          'OK · ' + (r.latency_ms || '?') + 'ms');
+      })
+      .catch(function (err) {
+        setTestStatus('openaiTestStatus', false, err.message || 'Échec');
+      });
   }
 
   // ── Traduction panel ──
