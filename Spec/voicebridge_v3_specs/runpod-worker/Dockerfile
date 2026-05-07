@@ -4,7 +4,7 @@
 # Build : docker build -t voicebridge-worker:v3.0.0 .
 # Push : docker push <username>/voicebridge-worker:v3.0.0
 
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM --platform=linux/amd64 nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
