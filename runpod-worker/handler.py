@@ -99,27 +99,38 @@ def get_rvc_router():
 def handler(job):
     """Entry point appelé par RunPod pour chaque job.
 
-    Pour les opérations en streaming (live_pipeline), le handler est un
-    generator qui yield des chunks au fur et à mesure.
-    Pour les opérations sync (translate, rvc_convert, warmup), retourne un dict.
+    Cette fonction est une fonction CLASSIQUE (pas un générateur).
+    Selon l'opération elle retourne :
+      - pour live_pipeline : un OBJET générateur (handle_live_pipeline appelé
+        sans itération) → RunPod détecte le générateur et stream les chunks
+      - pour les autres ops : un dict synchrone
+
+    /!\ Ne JAMAIS mélanger `yield` et `return X` dans cette fonction. Dès
+    qu'il y a un yield, Python transforme la fonction entière en générateur,
+    et tous les `return X` deviennent `raise StopIteration(X)` silencieux,
+    avec pour effet : le client RunPod voit `output: []` au lieu du dict.
     """
     inp = job.get("input", {})
     op = inp.get("operation", "live_pipeline")
 
     log.info("handler op=%s", op)
 
+    # Streaming : on retourne l'objet générateur (sans l'itérer).
+    # RunPod SDK détecte que c'est un générateur et stream les yields.
+    if op == "live_pipeline":
+        return handle_live_pipeline(inp)
+
+    # Opérations synchrones : try/except + return dict
     try:
         if op == "warmup":
             return handle_warmup(inp)
         elif op == "translate":
             return handle_translate(inp)
-        elif op == "live_pipeline":
-            yield from handle_live_pipeline(inp)
         elif op == "rvc_convert":
             return handle_rvc_convert(inp)
         else:
             return {"error": "unknown_operation", "received": op}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         log.exception("handler error op=%s", op)
         return {"error": "handler_failed", "message": str(e)}
 

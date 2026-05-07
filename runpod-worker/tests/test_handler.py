@@ -343,3 +343,29 @@ class TestHandler:
         result = handler({"input": {"operation": "warmup",
                                      "components": ["whisper"]}})
         assert result["ok"] is True
+
+    def test_handler_live_pipeline_returns_generator(self):
+        """Régression : handler() doit retourner un objet générateur pour
+        live_pipeline (et pas itérer dessus). Sans ça, les `return X` des
+        ops sync deviendraient des StopIteration silencieux dans le même
+        scope si on ajoutait yield à handler().
+        """
+        import inspect
+        from handler import handler
+        result = handler({"input": {"operation": "live_pipeline"}})
+        # live_pipeline DOIT retourner un objet générateur, jamais un dict
+        assert inspect.isgenerator(result), (
+            f"live_pipeline doit retourner un générateur, got {type(result)}"
+        )
+
+    def test_handler_sync_ops_return_dict_not_generator(self):
+        """Régression : warmup/translate/rvc_convert/unknown DOIVENT retourner
+        un dict, jamais un générateur (sinon RunPod renvoie output: [])."""
+        import inspect
+        from handler import handler
+        for op in ("unknown_op",):
+            result = handler({"input": {"operation": op}})
+            assert isinstance(result, dict), (
+                f"op={op} doit retourner dict, got {type(result)}"
+            )
+            assert not inspect.isgenerator(result)
