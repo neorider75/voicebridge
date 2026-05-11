@@ -16,10 +16,15 @@ import soundfile as sf
 log = logging.getLogger("voicebridge.whisper")
 
 # Repo officiel Systran : modèle pré-converti au format CTranslate2
-# (model.bin) qu'attend faster-whisper. L'ancien repo "distil-whisper/
-# distil-large-v3" est en safetensors PyTorch et déclenche
-# "Unable to open file 'model.bin'" au load.
-MODEL_ID = "Systran/faster-distil-whisper-large-v3"
+# (model.bin) qu'attend faster-whisper.
+#
+# ⚠️ Whisper large-v3 MULTILINGUE — PAS la version "distil".
+# Systran/faster-distil-whisper-large-v3 est ENGLISH-ONLY (c'est le
+# point clé de Distil-Whisper) : passer language="fr" produit du
+# pseudo-anglais phonétique ("in the time is, is we can't correctly").
+# Pour le live FR↔EN (et autres langues V3) il faut la version
+# multilingue complète. ~3 Go au lieu de ~1.5 Go.
+MODEL_ID = "Systran/faster-whisper-large-v3"
 HF_CACHE = os.environ.get("HF_HOME", "/runpod-volume/hf-cache")
 
 

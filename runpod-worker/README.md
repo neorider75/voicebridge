@@ -153,11 +153,14 @@ avec le Volume monté.
 
 export HF_HOME=/runpod-volume/hf-cache
 
-# ── STT — Whisper Distil-Large-V3 CTranslate2 (~750 Mo) ──────────
+# ── STT — Whisper Large-V3 CTranslate2 multilingue (~3 Go) ────────
 # /!\ utiliser le repo Systran pré-converti (model.bin), PAS le repo
-# distil-whisper qui est en safetensors PyTorch et incompatible avec
-# faster-whisper (CTranslate2). Cf. wrapper models/whisper.py.
-hf download Systran/faster-distil-whisper-large-v3
+# openai/whisper-large-v3 qui est en safetensors PyTorch et incompatible
+# avec faster-whisper (CTranslate2). Cf. wrapper models/whisper.py.
+# /!\ NE PAS utiliser "Systran/faster-distil-whisper-large-v3" — la
+# variante distil est ENGLISH-ONLY et produit du pseudo-anglais
+# phonétique sur de l'audio français.
+hf download Systran/faster-whisper-large-v3
 
 # ── Traduction — NLLB-200 distilled 1.3B (~5 Go safetensors only) ───
 hf download facebook/nllb-200-distilled-1.3B \

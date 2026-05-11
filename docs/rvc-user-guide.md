@@ -196,11 +196,13 @@ Le binaire moderne s'appelle simplement `hf`. La syntaxe est identique.
 export HF_HOME=/runpod-volume/hf-cache
 mkdir -p /runpod-volume/hf-cache /runpod-volume/rvc_assets
 
-# ── STT — Whisper Distil-Large-V3 CTranslate2 (~750 Mo) ──
+# ── STT — Whisper Large-V3 CTranslate2 multilingue (~3 Go) ──
 # /!\ utiliser le repo Systran (pré-converti CTranslate2 model.bin), PAS
-# distil-whisper/* qui est en safetensors PyTorch et fait planter
+# openai/whisper-large-v3 qui est en safetensors PyTorch et fait planter
 # faster-whisper avec "Unable to open file 'model.bin'".
-hf download Systran/faster-distil-whisper-large-v3
+# /!\ NE PAS prendre la version "distil" (faster-distil-whisper-large-v3) :
+# c'est un modèle English-only, il transcrit du français en pseudo-anglais.
+hf download Systran/faster-whisper-large-v3
 
 # ── Traduction — NLLB-200 distilled 1.3B (~5 Go) ──
 hf download facebook/nllb-200-distilled-1.3B \
