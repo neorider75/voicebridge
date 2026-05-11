@@ -565,11 +565,23 @@
 
   function ensurePlaybackCtx() {
     if (!playbackCtx) {
-      // Idem start() : pas de sampleRate forcé pour ne pas casser Safari.
-      // Resampling auto à la lecture (le buffer indique 24 kHz, le contexte
-      // tourne au rate device).
       var Ctx = window.AudioContext || window.webkitAudioContext;
-      playbackCtx = new Ctx({ latencyHint: 'interactive' });
+      // Safari : on force le sampleRate à 48000 (rate hardware standard
+      // macOS). Sans ça, Safari crée le ctx à 24 kHz (matchant le rate
+      // du premier buffer joué) et le bridge vers la sortie hardware
+      // ne se fait pas → silence total. Chrome/Edge : on laisse Safari…
+      // pardon, on laisse au navigateur le choix (resampling auto OK).
+      var opts = { latencyHint: 'interactive' };
+      if (IS_SAFARI) {
+        opts.sampleRate = 48000;
+      }
+      try {
+        playbackCtx = new Ctx(opts);
+      } catch (e) {
+        // Fallback : si le sampleRate forcé est rejeté, on essaie sans
+        console.warn('[live] AudioContext with sampleRate 48000 failed, retrying without', e);
+        playbackCtx = new Ctx({ latencyHint: 'interactive' });
+      }
       nextPlayAt = playbackCtx.currentTime;
       console.log('[live] AudioContext (lazy) — rate=' + playbackCtx.sampleRate
                 + ' state=' + playbackCtx.state + ' isSafari=' + IS_SAFARI);
