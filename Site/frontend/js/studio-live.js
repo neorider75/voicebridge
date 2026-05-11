@@ -917,27 +917,16 @@
     var canSink = browserSupportsSinkId();
     $$('.radio-group[data-name="live-output"]').forEach(function (group) {
       $$('.radio-option', group).forEach(function (opt) {
-        // Désactive l'option BlackHole sur les navigateurs sans setSinkId
-        if (opt.getAttribute('data-value') === 'blackhole' && !canSink) {
-          opt.classList.add('disabled');
-          opt.setAttribute('title',
-            'Non supporté par ce navigateur. Utilise Chrome ou Edge (≥110), '
-            + 'ou l\'app macOS pour router vers BlackHole.');
-          // Restaure visuel "non sélectionné"
-          opt.classList.remove('selected');
-          // Force le toggle sur "browser" si l'utilisateur avait BlackHole
-          // mémorisé d'une session précédente.
-          group.dataset.value = 'browser';
-          var browserOpt = group.querySelector('.radio-option[data-value="browser"]');
-          if (browserOpt) browserOpt.classList.add('selected');
-        }
         opt.addEventListener('click', function () {
-          if (opt.classList.contains('disabled')) {
-            if (opt.getAttribute('data-value') === 'blackhole' && !canSink) {
-              VB.notify('warning',
-                'Sortie BlackHole : navigateur incompatible. '
-                + 'Utilise Chrome ≥110 ou l\'app macOS.');
-            }
+          if (opt.classList.contains('disabled')) return;
+          // Cas spécial BlackHole sur Safari/Firefox : pas de setSinkId.
+          // On garde le bouton actif visuellement mais on affiche une
+          // alerte explicite + on annule la sélection (retour à Navigateur).
+          if (opt.getAttribute('data-value') === 'blackhole' && !canSink) {
+            VB.notify('warning',
+              'Sortie BlackHole non supportée par ton navigateur. '
+              + 'Utilise Chrome ou Edge (≥110), ou l\'app macOS '
+              + 'VoiceBridge pour Teams/Zoom.');
             return;
           }
           $$('.radio-option', group).forEach(function (o) { o.classList.remove('selected'); });
