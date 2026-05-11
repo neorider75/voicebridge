@@ -41,7 +41,11 @@
       <h1 class="page-title">Mes voix</h1>
       <p class="page-sub">Voix de référence disponibles pour la synthèse</p>
     </div>
-    <a href="/voices/new" class="btn btn-primary" style="text-decoration:none">+ Ajouter une voix</a>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-secondary" id="btnInstallNative" type="button"
+              title="Télécharge 6 voix natives (EN/FR/ES/DE/IT/PT) — sources Public Domain ou Creative Commons. Utilisées par les modes Voix native et Hybride accent.">📥 Installer voix natives</button>
+      <a href="/voices/new" class="btn btn-primary" style="text-decoration:none">+ Ajouter une voix</a>
+    </div>
   </div>
 
   <div class="voice-list" id="voiceList"></div>

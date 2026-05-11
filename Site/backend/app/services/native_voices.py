@@ -30,57 +30,71 @@ from . import voices_store
 
 log = logging.getLogger("voicebridge.native_voices")
 
-# Catalogue par défaut — 6 langues couvertes par OPUS-MT + multilingue
-# pour NLLB. Tous CC-BY-SA ou domaine public (licence Wikimedia
-# permissive — la voix de référence est juste une empreinte prosodique,
-# pas un contenu redistribué).
+# Catalogue par défaut — 6 langues couvertes.
+# URLs VÉRIFIÉES (HTTP 200, contenu audio/* présent au moins).
 #
-# Stable URLs Wikimedia (snapshot 2026) : Spoken Wikipedia volontaire
-# d'utilisateurs natifs. Si une URL devient morte, supprimer l'entrée
-# correspondante et l'utilisateur tombera sur "Aucune voix native"
-# (graceful degradation).
+# Sources :
+# - EN : whisper.cpp samples (Public Domain, US Government work) — clip
+#        JFK "We choose to go to the moon", court (~11 s) mais qualité
+#        studio, ne nécessite pas de User-Agent spécial.
+# - FR/ES/DE/IT/PT : Wikimedia Commons (Spoken Wikipedia, lecteurs
+#        volontaires natifs). Fichiers OGG de plusieurs minutes — on
+#        tronque les 20 premières secondes au download. Wikimedia
+#        EXIGE un User-Agent descriptif (sinon HTTP 429) — déjà géré
+#        par _download_url().
+#
+# Licences :
+# - PD (EN), CC0 (IT) : aucune attribution requise
+# - CC-BY-SA 3.0 (FR/ES/DE/PT) : attribution stockée dans le champ
+#   ``license`` de la voix → exposable via /api/voices.
 NATIVE_VOICE_CATALOG: dict[str, dict] = {
     "en": {
-        "name": "English Native (Wikipedia spoken)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/0/04/En-WikipediaTheFreeEncyclopedia.ogg",
+        "name": "English Native (JFK)",
+        "url": "https://github.com/ggml-org/whisper.cpp/raw/master/samples/jfk.wav",
         "language": "en",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 11,
+        "license": "Public Domain (US Government)",
+        "format": "wav",
     },
     "fr": {
-        "name": "Français Natif (Wikipédia parlé)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Fr-Wikip%C3%A9dia.ogg",
+        "name": "Français Natif (Wikipédia · Braille)",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/0/0e/Fr-braille.ogg",
         "language": "fr",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 20,
+        "license": "CC-BY-SA 3.0 (Wikipédia parlé · Braille)",
+        "format": "ogg",
     },
     "es": {
-        "name": "Español Nativo (Wikipedia hablada)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Es-Wikipedia.ogg",
+        "name": "Español Nativo (Wikipedia · Aaron Swartz)",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/3/31/Es-Aaron_Swartz-article.ogg",
         "language": "es",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 20,
+        "license": "CC-BY-SA 3.0 (Wikipedia hablada · Aaron Swartz)",
+        "format": "ogg",
     },
     "de": {
-        "name": "Deutsche Stimme (Wikipedia gesprochen)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/9/9d/De-Wikipedia.ogg",
+        "name": "Deutsche Stimme (Wikipedia · Albert Einstein)",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/4/44/De-Albert_Einstein.ogg",
         "language": "de",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 20,
+        "license": "CC-BY-SA 3.0 (Gesprochene Wikipedia · Albert Einstein)",
+        "format": "ogg",
     },
     "it": {
-        "name": "Voce Italiana (Wikipedia parlata)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/c/c2/It-Wikipedia.ogg",
+        "name": "Voce Italiana (Wikipedia · Argentina)",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/2/2f/It-argentina-article.ogg",
         "language": "it",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 20,
+        "license": "CC0 (Wikipedia parlata · Argentina)",
+        "format": "ogg",
     },
     "pt": {
-        "name": "Voz Portuguesa (Wikipédia falada)",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/9/91/Pt-Wikipedia.ogg",
+        "name": "Voz Portuguesa (Wikipédia · Andrelândia)",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/f/ff/Andrel%C3%A2ndia_intro.ogg",
         "language": "pt",
-        "duration_target_s": 15,
-        "license": "CC-BY-SA 3.0",
+        "duration_target_s": 20,
+        "license": "CC-BY-SA 3.0 (Wikipédia falada · Andrelândia)",
+        "format": "ogg",
     },
 }
 
@@ -164,15 +178,15 @@ def import_wav_bytes(*, lang: str, name: str, wav_bytes: bytes,
     }
 
 
-def _ogg_to_wav_24k(ogg_bytes: bytes, max_duration_s: float = 15.0) -> tuple[bytes, float]:
-    """Convertit un OGG Vorbis en WAV PCM 16-bit mono 24 kHz.
+def _audio_to_wav_24k(audio_bytes: bytes, max_duration_s: float = 20.0) -> tuple[bytes, float]:
+    """Convertit un audio (OGG/WAV/MP3/FLAC) en WAV PCM 16-bit mono 24 kHz.
 
     Tronque à ``max_duration_s`` secondes pour ne garder que le début
     propre du sample (évite les artefacts de fin et limite l'empreinte).
     """
-    # soundfile lit ogg si libsndfile compilé avec Vorbis (cas par défaut
-    # sur Debian/Ubuntu via apt).
-    audio, sr = sf.read(io.BytesIO(ogg_bytes))
+    # soundfile lit ogg/wav/flac via libsndfile (compilé avec Vorbis sur
+    # Debian/Ubuntu par défaut). Pour MP3, libsndfile >=1.1 supporte aussi.
+    audio, sr = sf.read(io.BytesIO(audio_bytes))
     # Mono
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
@@ -223,7 +237,7 @@ def install_all(force: bool = False) -> dict:
             try:
                 log.info("Installing native voice %s (%s)…", lang, spec["url"])
                 ogg = _download_url(spec["url"])
-                wav_bytes, duration = _ogg_to_wav_24k(
+                wav_bytes, duration = _audio_to_wav_24k(
                     ogg, max_duration_s=spec.get("duration_target_s", 15))
                 wav_path = _native_dir() / f"{voice_id}.wav"
                 wav_path.write_bytes(wav_bytes)
@@ -270,7 +284,7 @@ def install_one(lang: str, force: bool = False) -> dict:
                 "error": "already_installed"}
     try:
         ogg = _download_url(spec["url"])
-        wav_bytes, duration = _ogg_to_wav_24k(
+        wav_bytes, duration = _audio_to_wav_24k(
             ogg, max_duration_s=spec.get("duration_target_s", 15))
         _native_dir().mkdir(parents=True, exist_ok=True)
         wav_path = _native_dir() / f"{voice_id}.wav"
