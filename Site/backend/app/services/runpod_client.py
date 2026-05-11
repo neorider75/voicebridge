@@ -131,6 +131,38 @@ def _auth_headers() -> dict:
     }
 
 
+def _poll_status(job_id: str, timeout: float,
+                 poll_interval: float = 2.0) -> dict:
+    """Poll ``/status/{endpoint_id}/{job_id}`` jusqu'à un état terminal.
+
+    Utilisé en fallback quand ``/runsync`` retourne ``IN_QUEUE`` (worker en
+    cold-start, file d'attente). Retourne le dernier payload JSON RunPod
+    (contenant ``status``, ``output``, etc.).
+    """
+    import time
+
+    url = f"{RUNPOD_API_BASE}/{get_endpoint_id()}/status/{job_id}"
+    deadline = time.time() + timeout
+
+    with _httpx_client(timeout=15.0) as client:
+        while True:
+            if time.time() > deadline:
+                raise RunPodError(
+                    f"status poll timeout après {timeout}s (job_id={job_id})")
+            try:
+                r = client.get(url, headers=_auth_headers())
+            except Exception as exc:  # noqa: BLE001
+                raise RunPodError(f"status poll failed: {exc}") from exc
+            if r.status_code != 200:
+                raise RunPodError(
+                    f"status HTTP {r.status_code}: {r.text[:200]}")
+            data = r.json()
+            st = data.get("status")
+            if st in ("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"):
+                return data
+            time.sleep(poll_interval)
+
+
 def runsync(payload: dict, timeout: float = DEFAULT_TIMEOUT_SYNC) -> dict:
     """Appel synchrone ``/runsync/{endpoint_id}``.
 
@@ -162,7 +194,19 @@ def runsync(payload: dict, timeout: float = DEFAULT_TIMEOUT_SYNC) -> dict:
 
     data = r.json()
     status = data.get("status")
-    if status not in ("COMPLETED", "IN_PROGRESS"):
+
+    # Si RunPod n'a pas encore de worker prêt, /runsync peut retourner
+    # immédiatement IN_QUEUE avec un job_id. Dans ce cas on poll /status
+    # jusqu'à COMPLETED/FAILED (avec un budget de temps lié au timeout).
+    if status in ("IN_QUEUE", "IN_PROGRESS"):
+        job_id = data.get("id")
+        if not job_id:
+            raise RunPodError(
+                f"runsync status={status} sans job id: {json.dumps(data)[:300]}")
+        data = _poll_status(job_id, timeout=timeout)
+        status = data.get("status")
+
+    if status != "COMPLETED":
         raise RunPodError(f"runsync status={status}: {json.dumps(data)[:300]}")
 
     out = data.get("output")

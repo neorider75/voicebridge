@@ -157,7 +157,9 @@ async def runpod_warmup(request: Request, payload: WarmupPayload) -> dict:
     try:
         result = runpod_client.runsync(
             {"operation": "warmup", "components": payload.components},
-            timeout=120.0,  # cold start GPU peut être long
+            # Cold start = pull image + chargement Whisper + F5-TTS + NLLB
+            # depuis le Volume (peut dépasser 2 min la 1re fois).
+            timeout=300.0,
         )
         return {"ok": True, "loaded": result.get("loaded", []),
                 "components_requested": payload.components}
