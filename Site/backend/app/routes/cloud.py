@@ -118,7 +118,8 @@ async def runpod_test(request: Request) -> dict:
             "message": "Saisir d'abord les clés RunPod via /api/cloud/runpod/configure",
         })
     try:
-        result = runpod_client.ping()
+        import asyncio
+        result = await asyncio.to_thread(runpod_client.ping)
         return {"ok": True, **result}
     except runpod_client.RunPodError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
@@ -155,11 +156,17 @@ async def runpod_warmup(request: Request, payload: WarmupPayload) -> dict:
             "message": "RunPod non configuré",
         })
     try:
-        result = runpod_client.runsync(
+        # to_thread : runpod_client.runsync est synchrone (httpx sync) et
+        # peut bloquer jusqu'à 5 min. Sans wrap, l'event loop FastAPI est
+        # gelé pendant tout ce temps → WebSocket /ws/stream et toutes
+        # les autres requêtes HTTP timeout.
+        import asyncio
+        result = await asyncio.to_thread(
+            runpod_client.runsync,
             {"operation": "warmup", "components": payload.components},
             # Cold start = pull image + chargement Whisper + F5-TTS + NLLB
             # depuis le Volume (peut dépasser 2 min la 1re fois).
-            timeout=300.0,
+            300.0,
         )
         return {"ok": True, "loaded": result.get("loaded", []),
                 "components_requested": payload.components}
