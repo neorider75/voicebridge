@@ -9,11 +9,14 @@ runpod>=1.7
 # --extra-index-url (pip cherche sur PyPI et ne trouve pas la wheel CUDA).
 
 # Transformers ecosystem
-# /!\ Le Dockerfile désinstalle fbgemm_gpu + torchao après ce pip install
-# (transitive deps de transformers/accelerate qui exigent torch 2.5+, on est
-# sur 2.4). Symptôme sans le uninstall : "infer_schema unsupported type
-# torch.Tensor" au load NLLB. Sans elles, transformers utilise ses fallbacks.
-transformers>=4.46
+# /!\ Pin strict transformers==4.46.3 : à partir de 4.50, transformers a
+# introduit integrations/moe.py qui appelle torch.library.custom_op avec
+# une signature exigeant torch 2.5+. Avec torch 2.4 (pinné pour CUDA 12.1),
+# crash "infer_schema(func): unsupported type torch.Tensor" à l'import du
+# module M2M100 (architecture de NLLB).
+# Refs : HF transformers issues #37238 et #38263.
+# 4.46.3 = dernière 4.46 stable connue compatible torch 2.4.
+transformers==4.46.3
 accelerate>=0.30
 huggingface-hub>=0.26
 sentencepiece>=0.2     # tokenizers NLLB

@@ -8,9 +8,9 @@ runpod>=1.7
 # (pip install ... --index-url https://download.pytorch.org/whl/cu121).
 
 # Transformers ecosystem
-# Note : Dockerfile désinstalle fbgemm_gpu + torchao après ce pip install
-# (transitive deps incompat torch 2.4)
-transformers>=4.46
+# Pin strict 4.46.3 : 4.50+ requiert torch 2.5+ (moe.py custom_op).
+# On est sur torch 2.4 pour CUDA 12.1. Refs : HF issues #37238, #38263.
+transformers==4.46.3
 accelerate>=0.30
 huggingface-hub>=0.26
 sentencepiece>=0.2     # tokenizers NLLB
