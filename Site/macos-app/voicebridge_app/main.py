@@ -97,6 +97,16 @@ TARGET_LANGS = {
     "pt": "🇵🇹 Portugais",
 }
 
+# Providers de traduction (aligné avec le frontend web — cf. translation_router)
+PROVIDER_LABELS = {
+    "auto":         "🤖 Auto (selon mode)",
+    "opus-mt-cpu":  "💻 OPUS-MT CPU local — gratuit · 6 paires FR↔EN/DE/ES/IT/PT",
+    "opus-mt-gpu":  "🟣 OPUS-MT GPU RunPod — 50 ms · 6 paires",
+    "nllb":         "🟢 NLLB-200 GPU RunPod — 150 ms · 200+ langues",
+    "gpt-4o-mini":  "🧠 GPT-4o mini — mémoire conv. · clé OpenAI",
+    "gpt-4o":       "🧠 GPT-4o — qualité max · clé OpenAI",
+}
+
 
 class VoiceBridgeApp(rumps.App):
     def __init__(self) -> None:
@@ -129,9 +139,14 @@ class VoiceBridgeApp(rumps.App):
         self.target_lang_choice = last_target if last_target in TARGET_LANGS else "off"
         self.target_lang = (self.language if self.target_lang_choice == "off"
                             else self.target_lang_choice)
-        # Provider auto : opus-mt-cpu pour mode CPU, nllb pour modes GPU.
-        # (cohérent avec le frontend web ; pas exposé en menu pour rester simple)
-        self.translation_provider = self._auto_provider(self.mode)
+        # Choix utilisateur du provider de traduction. "auto" = auto-pick
+        # selon mode (CPU/GPU). Sinon valeur explicite mémorisée.
+        last_provider = cfg.kr_get("translation_provider") or "auto"
+        if last_provider not in PROVIDER_LABELS:
+            last_provider = "auto"
+        self.provider_choice = last_provider
+        # Provider effectif envoyé au serveur (résolu maintenant)
+        self.translation_provider = self._effective_provider()
         self.rvc_model_id: str | None = cfg.kr_get("default_rvc_model_id") or None
 
         # ── État coût session (alimenté par cost_update WS) ─────────────
@@ -170,6 +185,9 @@ class VoiceBridgeApp(rumps.App):
         # V3 — sous-menu Traduction (parent submenu)
         self.translate_item = rumps.MenuItem(
             f"Traduction : {TARGET_LANGS.get(self.target_lang_choice, 'off')}")
+        # V3 — sous-menu Provider de traduction
+        self.provider_item = rumps.MenuItem(
+            f"Provider : {self._provider_short_label()}")
         # V3 — sous-menu Modèle RVC (visible si mode=gpu-hybrid)
         self.rvc_item = rumps.MenuItem("Modèle RVC : (aucun)")
         # V3 — bouton préchauffe GPU
@@ -187,6 +205,7 @@ class VoiceBridgeApp(rumps.App):
             self.mode_item,
             self.voice_item,
             self.translate_item,
+            self.provider_item,
             self.rvc_item,
             self.warmup_item,
             None,
@@ -212,6 +231,7 @@ class VoiceBridgeApp(rumps.App):
             # 3. Construit les sous-menus + lance pipeline
             self._refresh_mode_submenu()
             self._refresh_translate_submenu()
+            self._refresh_provider_submenu()
             self._refresh_rvc_submenu()
             self._update_v3_menu_visibility()
             self._start_pipeline()
@@ -259,6 +279,7 @@ class VoiceBridgeApp(rumps.App):
             self._refresh_cloud_status()
             self._validate_mode_against_cloud()
             self._refresh_mode_submenu()
+            self._refresh_provider_submenu()
             self._refresh_rvc_submenu()
             self._update_v3_menu_visibility()
             self._start_pipeline()
@@ -440,9 +461,10 @@ class VoiceBridgeApp(rumps.App):
                 return
             self.mode = mode_id
             cfg.kr_set("last_live_mode", mode_id)
-            # Provider de traduction auto selon mode (CPU=opus-mt-cpu, GPU=nllb)
-            self.translation_provider = self._auto_provider(mode_id)
+            # Provider effectif recalculé (en "auto" il dépend du mode).
+            self.translation_provider = self._effective_provider()
             self._refresh_mode_submenu()
+            self._refresh_provider_submenu()  # update title si "auto"
             self._update_v3_menu_visibility()
             if self.ws:
                 self.ws.set_mode(self.mode,
@@ -458,15 +480,70 @@ class VoiceBridgeApp(rumps.App):
 
     # ── V3 : Sous-menu Traduction ──────────────────────────────────
 
-    @staticmethod
-    def _auto_provider(mode: str) -> str:
-        """Provider de traduction approprié au mode courant.
+    def _auto_provider(self, mode: str) -> str:
+        """Provider de traduction approprié au mode courant en mode 'auto'.
 
         CPU : OPUS-MT local (rapide, gratuit, FR↔EN seulement).
         GPU : NLLB sur le worker RunPod (200+ langues, qualité supérieure).
-        Cohérent avec frontend web. Pas exposé en menu — choix implicite.
         """
         return "nllb" if mode != MODE_CPU_V1 else "opus-mt-cpu"
+
+    def _effective_provider(self) -> str:
+        """Provider réellement envoyé au serveur, en résolvant 'auto'."""
+        if self.provider_choice == "auto":
+            return self._auto_provider(self.mode)
+        return self.provider_choice
+
+    def _provider_short_label(self) -> str:
+        """Label compact pour le titre du menu item (sans la description)."""
+        labels_short = {
+            "auto":         "Auto",
+            "opus-mt-cpu":  "OPUS-MT CPU",
+            "opus-mt-gpu":  "OPUS-MT GPU",
+            "nllb":         "NLLB-200",
+            "gpt-4o-mini":  "GPT-4o mini",
+            "gpt-4o":       "GPT-4o",
+        }
+        return labels_short.get(self.provider_choice, self.provider_choice)
+
+    def _refresh_provider_submenu(self, _sender=None) -> None:
+        for k in list(self.provider_item.keys()):
+            del self.provider_item[k]
+        # Construit la liste des providers disponibles selon contexte
+        for prov_id, label in PROVIDER_LABELS.items():
+            # Filtre selon dispo cloud :
+            #   - opus-mt-gpu / nllb : nécessitent RunPod configuré
+            #   - gpt-4o-mini / gpt-4o : nécessitent clé OpenAI
+            disabled = False
+            if prov_id in ("opus-mt-gpu", "nllb") and not self.runpod_configured:
+                disabled = True
+            if prov_id in ("gpt-4o-mini", "gpt-4o") and not self.openai_configured:
+                disabled = True
+            mark = "✓ " if prov_id == self.provider_choice else "    "
+            display = mark + label + (" — non configuré" if disabled else "")
+            cb = None if disabled else self._make_provider_select_cb(prov_id)
+            self.provider_item[prov_id] = rumps.MenuItem(display, callback=cb)
+        self.provider_item.title = f"Provider : {self._provider_short_label()}"
+
+    def _make_provider_select_cb(self, provider_id: str):
+        def _cb(_sender):
+            self.provider_choice = provider_id
+            cfg.kr_set("translation_provider", provider_id)
+            self.translation_provider = self._effective_provider()
+            self._refresh_provider_submenu()
+            if self.ws:
+                self.ws.set_mode(self.mode,
+                                  translation_provider=self.translation_provider,
+                                  target_lang=self.target_lang,
+                                  rvc_model_id=self.rvc_model_id)
+            log.info("translation provider → %s (effective: %s)",
+                     provider_id, self.translation_provider)
+            try:
+                rumps.notification("VoiceBridge", "Provider de traduction",
+                                   PROVIDER_LABELS.get(provider_id, provider_id))
+            except Exception:  # noqa: BLE001
+                pass
+        return _cb
 
     def _refresh_translate_submenu(self, _sender=None) -> None:
         for k in list(self.translate_item.keys()):
