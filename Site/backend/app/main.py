@@ -35,6 +35,7 @@ from .routes import progress as r_progress
 from .routes import recording_session as r_recording_session
 from .routes import recordings as r_recordings
 from .routes import rvc as r_rvc
+from .routes import sessions as r_sessions
 from .routes import settings as r_settings
 from .routes import stt as r_stt
 from .routes import system as r_system
@@ -215,6 +216,7 @@ app.include_router(r_rvc.router)
 app.include_router(r_recording_session.router)
 app.include_router(r_progress.router)
 app.include_router(r_live.router)
+app.include_router(r_sessions.router)
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +277,7 @@ _HTML_PAGES = {
     "/rvc-import": "rvc-import.html",
     "/recording-session": "recording-session.html",
     "/briefings": "briefings.html",
+    "/sessions": "sessions.html",
 }
 
 for _path, _file in _HTML_PAGES.items():

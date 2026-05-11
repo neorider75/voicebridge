@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceBridge — Historique des sessions</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <a href="/" class="logo"><span class="logo-icon">🎤</span><span>VoiceBridge</span></a>
+    <div class="header-actions">
+      <button class="status-badge" id="statusBadge"><span class="status-dot"></span><span class="status-label">…</span></button>
+      <button class="theme-toggle" data-theme-toggle>🌙</button>
+      <button class="btn-header" id="logoutBtn">Déconnexion</button>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <a href="/studio"     class="nav-item" data-nav="/studio">Studio</a>
+    <a href="/voices"     class="nav-item" data-nav="/voices">Mes voix</a>
+    <a href="/rvc"        class="nav-item" data-nav="/rvc">Modèles RVC</a>
+    <a href="/briefings"  class="nav-item" data-nav="/briefings">Briefings</a>
+    <a href="/recordings" class="nav-item" data-nav="/recordings">Enregistrements</a>
+    <a href="/sessions"   class="nav-item" data-nav="/sessions">Sessions</a>
+    <a href="/detection"  class="nav-item" data-nav="/detection">Détection</a>
+    <a href="/settings"   class="nav-item" data-nav="/settings">Réglages</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Historique des sessions</h1>
+  <p class="page-sub">Sessions Live passées · durée · coût GPU/OpenAI · mode utilisé</p>
+
+  <!-- Récap 30 jours -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="card-title">Récap 30 jours</div>
+    <div id="sessionsSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem">
+      <div class="stat-block">
+        <div class="stat-label">Sessions</div>
+        <div class="stat-value" id="sumNSessions">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Durée totale</div>
+        <div class="stat-value" id="sumDuration">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Coût total</div>
+        <div class="stat-value" id="sumCost">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Coût RunPod</div>
+        <div class="stat-value" id="sumCostRunpod">—</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Coût OpenAI</div>
+        <div class="stat-value" id="sumCostOpenai">—</div>
+      </div>
+    </div>
+    <div id="sumByMode" class="hint" style="margin-top:0.8rem"></div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
+    <div id="sessionsCount" style="color:var(--text3);font-size:0.82rem"></div>
+    <button class="btn btn-danger-ghost" id="btnPurgeAll" type="button" style="display:none">🗑 Vider l'historique</button>
+  </div>
+
+  <!-- Tableau des sessions -->
+  <div id="sessionsList"></div>
+
+  <!-- Pagination -->
+  <div id="sessionsPagination" style="display:flex;justify-content:center;gap:0.5rem;margin-top:1rem"></div>
+</main>
+
+<style>
+  .stat-block {
+    background:var(--surface3); padding:0.8rem 1rem; border-radius:8px;
+  }
+  .stat-label {
+    color:var(--text3); font-size:0.72rem;
+    text-transform:uppercase; letter-spacing:0.05em;
+    font-family:'DM Mono',monospace;
+  }
+  .stat-value {
+    color:var(--text); font-size:1.3rem; font-weight:600;
+    margin-top:0.2rem;
+  }
+  .session-row {
+    display:grid;
+    grid-template-columns: 1.2fr 1fr 1.4fr 0.7fr 0.7fr 0.9fr 0.6fr;
+    gap:0.75rem; padding:0.75rem 1rem;
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:8px; margin-bottom:0.5rem;
+    align-items:center; font-size:0.85rem;
+  }
+  .session-row.head {
+    background:transparent; border:none; padding-bottom:0.25rem;
+    color:var(--text3); font-size:0.72rem; text-transform:uppercase;
+    letter-spacing:0.05em; font-family:'DM Mono',monospace;
+  }
+  .session-mode-badge {
+    display:inline-block; padding:0.15rem 0.5rem; border-radius:4px;
+    font-size:0.72rem; font-family:'DM Mono',monospace;
+    background:var(--surface3); color:var(--text2);
+  }
+  .session-cost {
+    font-family:'DM Mono',monospace; color:var(--accent);
+    font-weight:500;
+  }
+  .session-empty {
+    text-align:center; padding:2rem; color:var(--text3);
+  }
+  .btn-danger-ghost {
+    background:transparent; border:1px solid var(--border);
+    color:var(--text3); padding:0.4rem 0.8rem; border-radius:6px;
+    font-size:0.78rem; cursor:pointer;
+  }
+  .btn-danger-ghost:hover {
+    border-color:#e74c3c; color:#e74c3c;
+  }
+</style>
+
+<script src="/js/api.js"></script>
+<script src="/js/header.js"></script>
+<script src="/js/sessions.js"></script>
+</body>
+</html>

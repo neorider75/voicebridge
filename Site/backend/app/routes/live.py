@@ -208,12 +208,17 @@ async def stream(ws: WebSocket):
     session_start_ts: float = 0.0
     session_cost_eur: float = 0.0      # cumul des phrases GPT (RunPod géré séparément)
     last_cost_emit_ts: float = 0.0
+    # Compteur pour l'historique des sessions : nombre d'utterances (flush
+    # déclenchés par la VAD) sur la durée de vie de la WS.
+    n_utterances: int = 0
+    voice_name: str = ""  # mémorisé au configure pour l'historique
 
     async def configure(payload: dict) -> bool:
         nonlocal voice_id, language, ref_codes, ref_text, vad_iter
         nonlocal translate, translate_to
         nonlocal mode, translation_provider, rvc_model_id, voice_ref_b64
         nonlocal briefing, gpt_session, session_start_ts, last_cost_emit_ts
+        nonlocal voice_name
 
         # ── 1. Mode (V1 par défaut, rétrocompat totale) ──────────────
         mode = str(payload.get("mode", MODE_CPU_V1))
@@ -233,6 +238,7 @@ async def stream(ws: WebSocket):
         if not voice:
             await _send_json(ws, {"type": "error", "message": "voix introuvable"})
             return False
+        voice_name = voice.get("name", voice_id) or voice_id
 
         # ── 3. Langue source (micro + STT) ───────────────────────────
         language = payload.get("language", "fr")
@@ -423,7 +429,7 @@ async def stream(ws: WebSocket):
 
     async def flush_speech() -> None:
         """Concat le buffer parlé puis route vers V1 (CPU) ou V3 (GPU)."""
-        nonlocal speech_buf, speech_count, silence_count, in_speech
+        nonlocal speech_buf, speech_count, silence_count, in_speech, n_utterances
         if not speech_buf:
             return
         audio = np.concatenate(list(speech_buf), axis=0)
@@ -431,6 +437,7 @@ async def stream(ws: WebSocket):
         speech_count = 0
         silence_count = 0
         in_speech = False
+        n_utterances += 1
 
         duration_s = len(audio) / VAD_SAMPLE_RATE
         log.info("live: flush_speech %.2fs mode=%s", duration_s, mode)
@@ -704,6 +711,36 @@ async def stream(ws: WebSocket):
         log.exception("WebSocket /ws/stream a planté")
         await _send_json(ws, {"type": "error", "message": str(exc)})
     finally:
+        # ── Enregistrement dans l'historique des sessions ──
+        # Best-effort : on n'empêche pas la fermeture WS si ça plante.
+        try:
+            if voice_id and session_start_ts > 0:
+                import time as _t
+                from ..services import sessions_store
+                ended_ts = _t.time()
+                elapsed = ended_ts - session_start_ts
+                runpod_eur = (elapsed * RUNPOD_RTX4090_EUR_PER_SEC
+                               if mode != MODE_CPU_V1 else 0.0)
+                gpt_eur = (gpt_session.total_cost_eur
+                            if gpt_session is not None else 0.0)
+                sessions_store.record(
+                    mode=mode,
+                    voice_id=voice_id,
+                    voice_name=voice_name or voice_id,
+                    started_at_ts=session_start_ts,
+                    ended_at_ts=ended_ts,
+                    translate=translate,
+                    source_lang=language,
+                    target_lang=translate_to if translate else language,
+                    translation_provider=translation_provider,
+                    rvc_model_id=rvc_model_id,
+                    cost_total_eur=runpod_eur + gpt_eur,
+                    cost_runpod_eur=runpod_eur,
+                    cost_openai_eur=gpt_eur,
+                    n_utterances=n_utterances,
+                )
+        except Exception:  # noqa: BLE001
+            log.exception("session_store.record failed (non-fatal)")
         try:
             await ws.close()
         except Exception:  # noqa: BLE001
