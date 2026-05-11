@@ -72,13 +72,15 @@
   // localStorage.vbWaitFull = "1"
   var WAIT_FULL_PHRASE = (localStorage.getItem('vbWaitFull') === '1');
 
-  // Fade in/out aux frontières de chunks (ms) pour masquer les clicks
-  // de jonction si le buffer n'est pas exactement aligné en sample.
-  // Default 0 = désactivé (les clicks 24 kHz speech sont peu audibles
-  // et le fade introduit un risque de coupure sur les chunks courts).
-  // Activable via localStorage.vbChunkFadeMs = "3".
+  // Fade in/out aux frontières de chunks (ms) pour ramener le signal à
+  // zéro proprement à la fin de chaque chunk. CRUCIAL sur Safari :
+  // sans fade-out, le dernier sample du BufferSource peut "rester"
+  // sur la sortie audio (DC offset persistant) et produire un bruit
+  // continu désagréable entre les phrases.
+  // 2 ms = 48 samples @ 24 kHz, inaudible mais suffisant pour ramener
+  // le signal à 0. Override via localStorage.vbChunkFadeMs (entier en ms).
   var CHUNK_FADE_MS = parseInt(
-    localStorage.getItem('vbChunkFadeMs') || '0', 10);
+    localStorage.getItem('vbChunkFadeMs') || '2', 10);
 
   var warmupPending = false;     // true pendant le chargement du modèle de traduction
   var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
@@ -791,6 +793,27 @@
     hasStartedUtterance = true;
   }
 
+  // Schedule un buffer de silence à la fin d'une phrase pour FORCER la
+  // sortie audio à descendre à 0 et y rester. Sans ça, Safari (et parfois
+  // Chrome sous certaines conditions) peut maintenir le dernier sample
+  // sur la sortie après que le BufferSource a fini, créant un bruit
+  // continu jusqu'au prochain audio.
+  function scheduleTerminalSilence(ctx, durationMs) {
+    var sr = 24000;
+    var samples = Math.floor(durationMs * sr / 1000);
+    var buf = ctx.createBuffer(1, samples, sr);
+    // Channel data is already 0 by default — pas besoin de fill
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(playbackDestination(ctx));
+    var now = ctx.currentTime;
+    var startAt = (nextPlayAt <= now + 0.001) ? (now + 0.001) : nextPlayAt;
+    try {
+      src.start(startAt);
+      nextPlayAt = startAt + buf.duration;
+    } catch (e) { /* ignore */ }
+  }
+
   function onAudioEnd() {
     // Le serveur signale la fin de la phrase.
     // - Mode normal : si on a accumulé des chunks sans atteindre
@@ -803,6 +826,11 @@
                 + ' chunks (' + pendingDurationMs.toFixed(0) + 'ms)'
                 + (WAIT_FULL_PHRASE ? ' [wait_full mode]' : ''));
       flushPending(playbackCtx);
+    }
+    // Ajoute 100 ms de silence en fin pour drainer proprement le pipeline
+    // audio Safari (évite le DC offset / bruit persistant entre phrases).
+    if (playbackCtx) {
+      scheduleTerminalSilence(playbackCtx, 100);
     }
     // Reset pour la prochaine phrase : on ré-accumulera JITTER_BUFFER_MS.
     setTimeout(function () {
