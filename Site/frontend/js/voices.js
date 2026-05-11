@@ -200,9 +200,79 @@
       });
   }
 
+  // ── Upload manuel voix native ──
+
+  function openNativeUploadModal() {
+    var m = document.getElementById('nativeUploadModal');
+    if (m) m.style.display = 'flex';
+  }
+
+  function closeNativeUploadModal() {
+    var m = document.getElementById('nativeUploadModal');
+    if (m) m.style.display = 'none';
+    // Reset champs
+    var file = document.getElementById('nativeUploadFile');
+    if (file) file.value = '';
+    var nameInput = document.getElementById('nativeUploadName');
+    if (nameInput) nameInput.value = '';
+  }
+
+  function submitNativeUpload() {
+    var lang = document.getElementById('nativeUploadLang').value;
+    var name = (document.getElementById('nativeUploadName').value || '').trim();
+    var fileInput = document.getElementById('nativeUploadFile');
+    var file = fileInput && fileInput.files && fileInput.files[0];
+
+    if (!name) { VB.notify('warning', 'Donne un nom à la voix'); return; }
+    if (!file) { VB.notify('warning', 'Choisis un fichier audio'); return; }
+
+    var fd = new FormData();
+    fd.append('lang', lang);
+    fd.append('name', name);
+    fd.append('audio', file);
+
+    var btn = document.getElementById('btnNativeUploadSubmit');
+    var orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Upload…'; }
+
+    fetch('/api/voices/native/upload', {
+      method: 'POST', body: fd, credentials: 'same-origin',
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+    }).then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      if (!res.ok) {
+        var msg = (res.body && res.body.detail && res.body.detail.message)
+                || (res.body && res.body.detail)
+                || 'Upload échoué';
+        VB.notify('error', String(msg));
+        return;
+      }
+      VB.notify('success',
+        '✅ Voix native importée (' + res.body.duration + 's, '
+        + Math.round(res.body.size_bytes / 1024) + ' Ko)');
+      closeNativeUploadModal();
+      refresh();
+    }).catch(function (e) {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+      VB.notify('error', 'Upload échoué : ' + (e.message || e));
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     refresh();
     var btn = document.getElementById('btnInstallNative');
     if (btn) btn.addEventListener('click', installNativeVoices);
+    var btnUp = document.getElementById('btnUploadNative');
+    if (btnUp) btnUp.addEventListener('click', openNativeUploadModal);
+    var btnCancel = document.getElementById('btnNativeUploadCancel');
+    if (btnCancel) btnCancel.addEventListener('click', closeNativeUploadModal);
+    var btnSub = document.getElementById('btnNativeUploadSubmit');
+    if (btnSub) btnSub.addEventListener('click', submitNativeUpload);
+    // Clic en dehors du modal → ferme
+    var modal = document.getElementById('nativeUploadModal');
+    if (modal) modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeNativeUploadModal();
+    });
   });
 })();

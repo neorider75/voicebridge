@@ -42,9 +42,46 @@
       <p class="page-sub">Voix de référence disponibles pour la synthèse</p>
     </div>
     <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-secondary" id="btnUploadNative" type="button"
+              title="Upload manuel d'un sample audio (WAV/MP3/OGG) pour une langue native">📁 Upload voix native</button>
       <button class="btn btn-secondary" id="btnInstallNative" type="button"
-              title="Télécharge un set de 6 voix natives (FR, EN, ES, DE, IT, PT) depuis Wikimedia Commons. Utilisé par les modes 'Voix native' et 'Hybride'.">📥 Installer voix natives</button>
+              title="Télécharge un set de voix natives depuis Wikimedia (peut échouer selon les URLs disponibles)">📥 Auto-install (Wikimedia)</button>
       <a href="/voices/new" class="btn btn-primary" style="text-decoration:none">+ Ajouter une voix</a>
+    </div>
+  </div>
+
+  <!-- Modale upload voix native (cachée par défaut) -->
+  <div id="nativeUploadModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:var(--surface1);padding:1.5rem;border-radius:12px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <h2 style="margin:0 0 1rem;font-size:1.1rem">📁 Upload voix native</h2>
+      <p class="hint" style="margin-bottom:1rem">Un sample audio de 10-30 s d'un locuteur natif dans la langue cible.
+      Format : WAV, MP3 ou OGG. Sera converti en 24 kHz mono PCM 16-bit.</p>
+      <div class="field" style="margin-bottom:0.75rem">
+        <label for="nativeUploadLang">Langue</label>
+        <select id="nativeUploadLang" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
+          <option value="en">🇬🇧 Anglais</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="es">🇪🇸 Espagnol</option>
+          <option value="de">🇩🇪 Allemand</option>
+          <option value="it">🇮🇹 Italien</option>
+          <option value="pt">🇵🇹 Portugais</option>
+          <option value="nl">🇳🇱 Néerlandais</option>
+          <option value="ja">🇯🇵 Japonais</option>
+          <option value="zh">🇨🇳 Chinois</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0.75rem">
+        <label for="nativeUploadName">Nom affiché</label>
+        <input type="text" id="nativeUploadName" maxlength="80" placeholder="ex : English Native (BBC)" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
+      </div>
+      <div class="field" style="margin-bottom:1rem">
+        <label for="nativeUploadFile">Fichier audio</label>
+        <input type="file" id="nativeUploadFile" accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,.wav,.mp3,.ogg" style="width:100%">
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn btn-secondary" id="btnNativeUploadCancel" type="button">Annuler</button>
+        <button class="btn btn-primary" id="btnNativeUploadSubmit" type="button">Upload</button>
+      </div>
     </div>
   </div>
 

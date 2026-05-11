@@ -149,6 +149,49 @@ async def native_install_one(request: Request, lang: str, force: bool = False) -
     return {"ok": True, **result}
 
 
+@router.post("/native/upload")
+@limiter.limit("20/minute")
+async def native_upload(
+    request: Request,
+    lang: str = Form(...),
+    name: str = Form(...),
+    audio: UploadFile = File(...),
+) -> dict:
+    """Upload manuel d'une voix native depuis un fichier audio fourni
+    par l'utilisateur (WAV, MP3, OGG — libsndfile gère).
+
+    Plus fiable que l'auto-install depuis URL externe : pas de dépendance
+    réseau, l'utilisateur fournit lui-même le sample (enregistrement perso,
+    voix télé/podcast libre de droit, sample TTS commercial, etc.).
+    """
+    raw = await audio.read()
+    if not raw or len(raw) < 1024:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+            "error": "empty_audio",
+            "message": "Le fichier audio est vide ou trop court",
+        })
+    if len(raw) > 50 * 1024 * 1024:  # 50 Mo max
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail={
+            "error": "too_large",
+            "message": "Fichier > 50 Mo — un sample de 15-30 s suffit",
+        })
+    try:
+        result = native_voices.import_wav_bytes(
+            lang=lang, name=name, wav_bytes=raw,
+            license_str="User-provided",
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+            "error": "invalid_input", "message": str(exc),
+        })
+    except Exception as exc:  # noqa: BLE001
+        log.exception("native upload failed")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={
+            "error": "import_failed", "message": str(exc),
+        })
+    return {"ok": True, **result}
+
+
 # ---------------------------------------------------------------------------
 # GET audio (référence)
 # ---------------------------------------------------------------------------

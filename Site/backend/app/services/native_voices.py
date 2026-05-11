@@ -104,6 +104,66 @@ def _download_url(url: str, timeout: float = 60.0) -> bytes:
         return r.read()
 
 
+def import_wav_bytes(*, lang: str, name: str, wav_bytes: bytes,
+                     license_str: str = "User-provided") -> dict:
+    """Import direct depuis un WAV en bytes (cas upload manuel UI).
+
+    Convertit en 24 kHz mono PCM 16-bit si nécessaire, tronque à 30 s
+    max (largement assez pour une ref prosodique). Enregistre dans
+    voices_store avec kind="native" et protected=True.
+    """
+    if lang not in {"fr", "en", "es", "de", "it", "pt", "nl", "ja", "zh"}:
+        raise ValueError(f"langue {lang!r} non supportée (fr/en/es/de/it/pt/nl/ja/zh)")
+    if not name or not name.strip():
+        raise ValueError("name requis")
+    name = name.strip()[:80]
+
+    # Lecture audio
+    audio, sr = sf.read(io.BytesIO(wav_bytes))
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    # Tronque à 30 s max
+    max_samples = int(30.0 * sr)
+    if len(audio) > max_samples:
+        audio = audio[:max_samples]
+    # Resample → 24 kHz
+    target_sr = 24000
+    if sr != target_sr:
+        ratio = target_sr / sr
+        new_len = int(len(audio) * ratio)
+        x_old = np.linspace(0, 1, len(audio), endpoint=False)
+        x_new = np.linspace(0, 1, new_len, endpoint=False)
+        audio = np.interp(x_new, x_old, audio)
+    audio_int16 = np.clip(audio * 32767.0, -32768, 32767).astype(np.int16)
+    duration = len(audio_int16) / target_sr
+
+    # Sauvegarde WAV
+    voice_id = _voice_id_for(lang)
+    _native_dir().mkdir(parents=True, exist_ok=True)
+    wav_path = _native_dir() / f"{voice_id}.wav"
+    buf = io.BytesIO()
+    sf.write(buf, audio_int16, target_sr, format="WAV", subtype="PCM_16")
+    wav_path.write_bytes(buf.getvalue())
+
+    # Registre dans voices_store
+    voices_store.upsert({
+        "id": voice_id,
+        "name": name,
+        "language": lang,
+        "duration_seconds": round(duration, 2),
+        "kind": "native",
+        "license": license_str,
+        "wav_path": str(wav_path),
+        "status": "ready",
+        "protected": True,
+    })
+    return {
+        "voice_id": voice_id,
+        "duration": round(duration, 2),
+        "size_bytes": wav_path.stat().st_size,
+    }
+
+
 def _ogg_to_wav_24k(ogg_bytes: bytes, max_duration_s: float = 15.0) -> tuple[bytes, float]:
     """Convertit un OGG Vorbis en WAV PCM 16-bit mono 24 kHz.
 
