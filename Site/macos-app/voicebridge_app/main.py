@@ -57,6 +57,7 @@ log = logging.getLogger("voicebridge.app")
 ICON_CONNECTED = "🟢"
 ICON_PAUSED = "🟡"
 ICON_DISCONNECTED = "🔴"
+ICON_SPEAKING = "🎤"   # bascule depuis 🟢 quand le micro détecte de la voix
 
 # Modes Live V3 (cf. doc 00-decisions-v3.md)
 MODE_CPU_V1 = "cpu-fr-en"
@@ -119,7 +120,14 @@ class VoiceBridgeApp(rumps.App):
         self.session_cost_eur = 0.0
         self.session_duration_s = 0
 
-        self.audio = audio_mod.AudioPipeline(on_chunk_captured=self._on_capture)
+        self.audio = audio_mod.AudioPipeline(
+            on_chunk_captured=self._on_capture,
+            on_level=self._on_audio_level,
+        )
+        # État courant du retour visuel : True quand le micro capte de la
+        # voix. Stocké pour pouvoir restaurer 🟢 quand on repasse "connected"
+        # depuis "disconnected" sans avoir à attendre un nouveau silence.
+        self._is_speaking = False
         self.ws: WSClient | None = None
 
         # ── Menu items ──
@@ -697,6 +705,28 @@ class VoiceBridgeApp(rumps.App):
     def _on_capture(self, raw_bytes: bytes) -> None:
         if self.ws:
             self.ws.push_audio(raw_bytes)
+
+    def _on_audio_level(self, speaking: bool) -> None:
+        """Callback AudioPipeline : transition parole/silence du micro.
+
+        Appelé depuis le callback sounddevice (thread audio) → marshalle
+        vers le main thread Cocoa avant de toucher le titre menu bar.
+        """
+        _call_after_main(self._apply_speaking_state, speaking)
+
+    def _apply_speaking_state(self, speaking: bool) -> None:
+        self._is_speaking = speaking
+        # Met à jour l'icône seulement si on est dans un état "actif"
+        # (connecté/parlant, non en pause). Dans les autres états (🔴/🟡)
+        # on garde l'icône d'état primaire — pas envie qu'un bruit micro
+        # bascule 🔴→🎤 alors que la WS est down.
+        if self.ws is None or self.audio.is_paused():
+            return
+        is_active_state = (self.title.startswith(ICON_CONNECTED)
+                            or self.title.startswith(ICON_SPEAKING))
+        if not is_active_state:
+            return
+        self._set_status(ICON_SPEAKING if speaking else ICON_CONNECTED)
 
     def _on_ws_state(self, state: str, *args) -> None:
         # Callback appelé depuis le thread asyncio de WSClient. On marshalle

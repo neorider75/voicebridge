@@ -70,8 +70,12 @@ class AudioPipeline:
     directement, sans aller-retour serveur).
     """
 
-    def __init__(self, on_chunk_captured) -> None:
+    def __init__(self, on_chunk_captured, on_level=None) -> None:
+        """``on_level(speaking: bool)`` — appelé quand l'état parole/silence
+        change (transitions seulement, pas à chaque chunk). Permet à l'UI
+        de basculer l'icône en menu bar entre 🟢 (idle) et 🎤 (en parole)."""
         self.on_chunk_captured = on_chunk_captured
+        self.on_level = on_level or (lambda speaking: None)
         self._in_stream = None
         self._out_stream = None
         self._stop = threading.Event()
@@ -80,6 +84,11 @@ class AudioPipeline:
         self._writer_thread: threading.Thread | None = None
         self.input_device = None
         self.output_device = None
+        # ── Détection parole/silence locale (pour le retour visuel) ──
+        # Seuils RMS (0..1) avec hystérésis pour éviter le flicker.
+        self._speaking = False
+        self._speech_counter = 0   # ticks consécutifs au-dessus du seuil
+        self._silence_counter = 0  # ticks consécutifs en-dessous
 
     # ── Public ───────────────────────────────────────────────────────
 
@@ -104,6 +113,17 @@ class AudioPipeline:
         def _in_callback(indata, frames, time_info, status):  # noqa: ARG001
             # ``indata`` est un cffi buffer (CData) en mode raw → bytes()
             data_bytes = bytes(indata)
+
+            # ── Détection parole/silence locale (icône menu bar) ──
+            # RMS sur les int16 → normalisé en 0..1. Hystérésis : il faut
+            # 2 ticks consécutifs au-dessus du seuil pour passer "speaking",
+            # 8 ticks consécutifs en-dessous pour repasser "silent" (pas de
+            # flicker entre 2 mots).
+            try:
+                self._update_speaking_state(data_bytes)
+            except Exception:  # noqa: BLE001
+                pass
+
             if self._paused.is_set():
                 # Bypass : envoie le micro réel direct dans BlackHole.
                 # Resample 16k → 24k brutalement (zero-stuff x1.5) — peu propre
@@ -160,6 +180,39 @@ class AudioPipeline:
                 self._out_stream.write(chunk)
             except Exception:  # noqa: BLE001
                 log.exception("output write failed")
+
+    def _update_speaking_state(self, pcm_int16_bytes: bytes) -> None:
+        """Détecte parole/silence sur le chunk capturé via RMS + hystérésis.
+
+        Appelle ``self.on_level(speaking)`` UNIQUEMENT lors des transitions
+        silence→parole et parole→silence (pas à chaque chunk, pour ne pas
+        spammer le main thread Cocoa).
+
+        Seuils calibrés pour un micro Mac intégré "normal" :
+        - RMS > 0.012 : probable parole (~ -38 dBFS)
+        - RMS < 0.006 : silence net (~ -44 dBFS)
+        Hystérésis 2 / 8 ticks (~64 ms / 256 ms à 16 kHz / 512 samples).
+        """
+        if np is None:
+            return
+        x = np.frombuffer(pcm_int16_bytes, dtype=np.int16)
+        if x.size == 0:
+            return
+        # RMS normalisé en 0..1 (int16 max = 32768)
+        rms = float(np.sqrt(np.mean(x.astype(np.float32) ** 2))) / 32768.0
+
+        if rms > 0.012:
+            self._speech_counter += 1
+            self._silence_counter = 0
+            if not self._speaking and self._speech_counter >= 2:
+                self._speaking = True
+                self.on_level(True)
+        elif rms < 0.006:
+            self._silence_counter += 1
+            self._speech_counter = 0
+            if self._speaking and self._silence_counter >= 8:
+                self._speaking = False
+                self.on_level(False)
 
     @staticmethod
     def _upsample_16k_to_24k(pcm_int16_bytes: bytes) -> bytes:
