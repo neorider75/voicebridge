@@ -56,6 +56,17 @@ MODES_LABELS = {
     MODE_GPU_HYBRID: "⭐ Hybride accent natif",
 }
 
+# Langues cibles pour la traduction (label affiché dans le sous-menu)
+TARGET_LANGS = {
+    "off": "🚫 Désactivée (parle comme à la source)",
+    "fr": "🇫🇷 Français",
+    "en": "🇬🇧 Anglais",
+    "es": "🇪🇸 Espagnol",
+    "de": "🇩🇪 Allemand",
+    "it": "🇮🇹 Italien",
+    "pt": "🇵🇹 Portugais",
+}
+
 
 class VoiceBridgeApp(rumps.App):
     def __init__(self) -> None:
@@ -78,9 +89,21 @@ class VoiceBridgeApp(rumps.App):
         # 3) validation : si mode gpu-* mais runpod absent → fallback cpu-fr-en
         last_mode = cfg.kr_get("last_live_mode") or MODE_CPU_V1
         self.mode = last_mode if last_mode in MODES_LABELS else MODE_CPU_V1
-        self.translation_provider = "opus-mt-cpu"
-        self.target_lang = self.language
+
+        # Traduction Live : "off" = pas de traduction, sinon code ISO langue cible
+        # (mémorisé entre sessions). Par défaut désactivée.
+        last_target = cfg.kr_get("last_target_lang") or "off"
+        self.target_lang_choice = last_target if last_target in TARGET_LANGS else "off"
+        self.target_lang = (self.language if self.target_lang_choice == "off"
+                            else self.target_lang_choice)
+        # Provider auto : opus-mt-cpu pour mode CPU, nllb pour modes GPU.
+        # (cohérent avec le frontend web ; pas exposé en menu pour rester simple)
+        self.translation_provider = self._auto_provider(self.mode)
         self.rvc_model_id: str | None = cfg.kr_get("default_rvc_model_id") or None
+
+        # ── État coût session (alimenté par cost_update WS) ─────────────
+        self.session_cost_eur = 0.0
+        self.session_duration_s = 0
 
         self.audio = audio_mod.AudioPipeline(on_chunk_captured=self._on_capture)
         self.ws: WSClient | None = None
@@ -91,10 +114,15 @@ class VoiceBridgeApp(rumps.App):
         self.voice_item = rumps.MenuItem(f"Voix : {self.voice_id}")
         # V3 — sous-menu Mode (4 modes, parent submenu)
         self.mode_item = rumps.MenuItem(f"Mode : {MODES_LABELS.get(self.mode, self.mode)}")
+        # V3 — sous-menu Traduction (parent submenu)
+        self.translate_item = rumps.MenuItem(
+            f"Traduction : {TARGET_LANGS.get(self.target_lang_choice, 'off')}")
         # V3 — sous-menu Modèle RVC (visible si mode=gpu-hybrid)
         self.rvc_item = rumps.MenuItem("Modèle RVC : (aucun)")
         # V3 — bouton préchauffe GPU
         self.warmup_item = rumps.MenuItem("🔥 Préchauffer GPU", callback=self._on_warmup_gpu)
+        # V3 — affichage coût session (read-only)
+        self.cost_item = rumps.MenuItem("💰 Coût session : 0.0000€ · 0s")
         self.pause_item = rumps.MenuItem("⏸ Mettre en pause", callback=self._toggle_pause)
         self.preferences_item = rumps.MenuItem("Préférences…", callback=self._open_preferences)
         self.quit_item = rumps.MenuItem("⏹ Quitter", callback=self._on_quit)
@@ -102,8 +130,11 @@ class VoiceBridgeApp(rumps.App):
         self.menu = [
             self.mode_item,
             self.voice_item,
+            self.translate_item,
             self.rvc_item,
             self.warmup_item,
+            None,
+            self.cost_item,
             None,
             self.pause_item,
             None,
@@ -123,6 +154,7 @@ class VoiceBridgeApp(rumps.App):
             self._validate_mode_against_cloud()
             # 3. Construit les sous-menus + lance pipeline
             self._refresh_mode_submenu()
+            self._refresh_translate_submenu()
             self._refresh_rvc_submenu()
             self._update_v3_menu_visibility()
             self._start_pipeline()
@@ -232,8 +264,17 @@ class VoiceBridgeApp(rumps.App):
             self.language = language
             cfg.kr_set("default_voice", voice_id)
             self.voice_item.title = f"Voix : {name}"
+            # Si traduction = "off", target_lang doit suivre la nouvelle langue
+            # source pour ne pas déclencher une traduction parasite.
+            if self.target_lang_choice == "off":
+                self.target_lang = language
             if self.ws:
                 self.ws.set_voice(voice_id, language)
+                # Re-push target_lang au cas où il a bougé
+                self.ws.set_mode(self.mode,
+                                  translation_provider=self.translation_provider,
+                                  target_lang=self.target_lang,
+                                  rvc_model_id=self.rvc_model_id)
             log.info("voice changed to id=%s lang=%s", voice_id, language)
             # Reconstruit pour rafraîchir la coche ✓
             self._refresh_voice_submenu()
@@ -297,6 +338,8 @@ class VoiceBridgeApp(rumps.App):
                 return
             self.mode = mode_id
             cfg.kr_set("last_live_mode", mode_id)
+            # Provider de traduction auto selon mode (CPU=opus-mt-cpu, GPU=nllb)
+            self.translation_provider = self._auto_provider(mode_id)
             self._refresh_mode_submenu()
             self._update_v3_menu_visibility()
             if self.ws:
@@ -304,9 +347,56 @@ class VoiceBridgeApp(rumps.App):
                                   translation_provider=self.translation_provider,
                                   target_lang=self.target_lang,
                                   rvc_model_id=self.rvc_model_id)
-            log.info("mode → %s", mode_id)
+            log.info("mode → %s (provider=%s)", mode_id, self.translation_provider)
             try:
                 rumps.notification("VoiceBridge", "Mode actif", MODES_LABELS.get(mode_id, mode_id))
+            except Exception:  # noqa: BLE001
+                pass
+        return _cb
+
+    # ── V3 : Sous-menu Traduction ──────────────────────────────────
+
+    @staticmethod
+    def _auto_provider(mode: str) -> str:
+        """Provider de traduction approprié au mode courant.
+
+        CPU : OPUS-MT local (rapide, gratuit, FR↔EN seulement).
+        GPU : NLLB sur le worker RunPod (200+ langues, qualité supérieure).
+        Cohérent avec frontend web. Pas exposé en menu — choix implicite.
+        """
+        return "nllb" if mode != MODE_CPU_V1 else "opus-mt-cpu"
+
+    def _refresh_translate_submenu(self, _sender=None) -> None:
+        for k in list(self.translate_item.keys()):
+            del self.translate_item[k]
+        for lang_code, label in TARGET_LANGS.items():
+            # Filtre : en CPU mode, seules FR/EN/off sont supportées par OPUS-MT
+            if self.mode == MODE_CPU_V1 and lang_code not in ("off", "fr", "en"):
+                continue
+            mark = "✓ " if lang_code == self.target_lang_choice else "    "
+            display = mark + label
+            self.translate_item[lang_code] = rumps.MenuItem(
+                display, callback=self._make_target_lang_cb(lang_code))
+        self.translate_item.title = (
+            f"Traduction : {TARGET_LANGS.get(self.target_lang_choice, 'off')}")
+
+    def _make_target_lang_cb(self, lang_code: str):
+        def _cb(_sender):
+            self.target_lang_choice = lang_code
+            cfg.kr_set("last_target_lang", lang_code)
+            # target_lang réel envoyé au serveur : "off" → langue source (=
+            # pas de traduction côté backend grâce au check src==tgt)
+            self.target_lang = (self.language if lang_code == "off" else lang_code)
+            self._refresh_translate_submenu()
+            if self.ws:
+                self.ws.set_mode(self.mode,
+                                  translation_provider=self.translation_provider,
+                                  target_lang=self.target_lang,
+                                  rvc_model_id=self.rvc_model_id)
+            log.info("target_lang → %s (envoyé : %s)", lang_code, self.target_lang)
+            try:
+                rumps.notification("VoiceBridge", "Traduction",
+                                   TARGET_LANGS.get(lang_code, lang_code))
             except Exception:  # noqa: BLE001
                 pass
         return _cb
@@ -417,6 +507,19 @@ class VoiceBridgeApp(rumps.App):
         else:
             # Reconstruit le titre à partir de la sélection courante
             self._refresh_rvc_submenu()
+        # Coût : visible uniquement en mode GPU (CPU = gratuit)
+        if not is_gpu:
+            self.cost_item.title = "💰 Coût session : 0.0000€ (mode CPU gratuit)"
+        # Reconstruit le sous-menu traduction (les langues dispo dépendent du mode)
+        self._refresh_translate_submenu()
+
+    def _on_cost_update(self, cost_eur: float, duration_s: int) -> None:
+        """Callback alimenté par WSClient quand un cost_update arrive."""
+        self.session_cost_eur = cost_eur
+        self.session_duration_s = duration_s
+        if self.mode != MODE_CPU_V1:
+            self.cost_item.title = (
+                f"💰 Coût session : {cost_eur:.4f}€ · {duration_s}s")
 
     def _test_connection(self) -> bool:
         try:
@@ -459,6 +562,7 @@ class VoiceBridgeApp(rumps.App):
             target_lang=self.target_lang,
             rvc_model_id=self.rvc_model_id,
             on_state_change=self._on_ws_state,
+            on_cost_update=self._on_cost_update,
         )
         self.ws.start()
 

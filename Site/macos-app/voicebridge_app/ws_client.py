@@ -31,7 +31,8 @@ class WSClient:
                  translation_provider: str = "opus-mt-cpu",
                  target_lang: str | None = None,
                  rvc_model_id: str | None = None,
-                 on_state_change=None) -> None:
+                 on_state_change=None,
+                 on_cost_update=None) -> None:
         self.server_url = server_url
         self.api_token = api_token
         self.audio = audio_pipeline
@@ -43,6 +44,7 @@ class WSClient:
         self.target_lang = target_lang or language
         self.rvc_model_id = rvc_model_id
         self.on_state_change = on_state_change or (lambda *a, **kw: None)
+        self.on_cost_update = on_cost_update or (lambda *a, **kw: None)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -96,11 +98,19 @@ class WSClient:
         self._send_reconfigure()
 
     def _build_configure(self) -> dict:
+        # `translate` est dérivé de la divergence target_lang / language :
+        # le backend traite translate=False quand target == language de toute
+        # façon, mais on l'envoie explicitement pour aligner sur le frontend
+        # web (parser strict côté backend).
+        translate = bool(self.target_lang and self.target_lang != self.language)
         return {
             "type": "configure",
             "voice_id": self.voice_id,
             "language": self.language,
             "output": "blackhole",
+            # V1 rétrocompat
+            "translate": translate,
+            "translate_to": self.target_lang,
             # V3
             "mode": self.mode,
             "translation_provider": self.translation_provider,
@@ -211,13 +221,18 @@ class WSClient:
             # V3 : phrase traduite côté serveur — log only.
             pass
         elif ptype == "cost_update":
-            # V3 : coût session en mode GPU. Affichable dans la barre menu
-            # via on_state_change. Pour V3.0 on log juste.
+            # V3 : coût session en mode GPU — remonté à l'app pour affichage
+            # dans le menu bar.
+            cost_eur = float(payload.get("session_cost_eur", 0) or 0)
+            duration_s = int(payload.get("duration_seconds", 0) or 0)
             log.info("cost: %.4f€ (durée %ds, GPU=%s, GPT=%s)",
-                     payload.get("session_cost_eur", 0),
-                     payload.get("duration_seconds", 0),
+                     cost_eur, duration_s,
                      payload.get("provider_breakdown", {}).get("runpod_gpu", 0),
                      payload.get("provider_breakdown", {}).get("openai", 0))
+            try:
+                self.on_cost_update(cost_eur, duration_s)
+            except Exception:  # noqa: BLE001
+                pass
         elif ptype == "ready":
             self.on_state_change("ready")
         elif ptype == "error":
