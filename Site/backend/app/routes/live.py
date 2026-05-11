@@ -84,7 +84,11 @@ SILENCE_FLUSH_TICKS_GPU = 16    # ~500 ms (V3 — initialement 8 (250 ms) pour g
                                 # des phrases sur les pauses inter-mots normales
                                 # (200-300 ms typiques en français). Aligné sur
                                 # CPU + marge pour fiabilité.
-SPEECH_FLUSH_TICKS = 125        # ~4 s de parole continue → flush forcé
+SPEECH_FLUSH_TICKS = 250        # ~8 s de parole continue → flush forcé
+                                # (initialement 125 ~4 s, coupait les phrases
+                                # longues naturelles : "Donc en fait l'idée
+                                # serait de pouvoir présenter le projet aux
+                                # équipes lundi prochain" fait ~6 s).
 VAD_CHUNK_SAMPLES = 512         # taille de bloc attendue par Silero VAD
 
 # Modes Live V3 (cf. doc 00-decisions-v3.md)

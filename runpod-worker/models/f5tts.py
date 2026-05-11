@@ -15,6 +15,7 @@ F5-TTS prévu pour V3.1.
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
 import os
@@ -30,6 +31,10 @@ TTS_SAMPLE_RATE = 24000
 
 # Streaming chunk size en ms (balance latence / stabilité réseau)
 STREAM_CHUNK_MS = 200
+
+# Cache mondial : hash WAV ref → texte transcrit. Évite de retranscrire
+# la même voix de référence à chaque phrase synthétisée.
+_REF_TEXT_CACHE: dict[str, str] = {}
 
 
 class F5TTS:
@@ -64,6 +69,61 @@ class F5TTS:
 
     # ─── Synthèse complète (sans streaming) — utilisée pour cascade RVC ───
 
+    def _get_ref_text(self, voice_ref_b64: str, ref_path: str,
+                      language: str) -> str:
+        """Transcrit la voix de référence avec Whisper (multilingue, langue
+        forcée) et cache le résultat par hash WAV.
+
+        Sans cette étape, F5-TTS auto-transcrit en interne via son propre
+        Whisper sans hint de langue → détecte EN par défaut → la prosodie
+        générée a un accent anglais même en mode FR→FR.
+        """
+        key = hashlib.sha1(voice_ref_b64.encode("ascii")).hexdigest()[:16]
+        cached = _REF_TEXT_CACHE.get(key)
+        if cached is not None:
+            log.debug("F5-TTS ref_text cache hit key=%s lang=%s", key, language)
+            return cached
+
+        try:
+            # On utilise notre Whisper (déjà chargé pour le STT) qui supporte
+            # plus de langues et qu'on peut forcer sur la bonne langue.
+            from .whisper import WhisperSTT  # noqa: PLC0415
+            # Lazy : si Whisper pas encore chargé, F5-TTS auto-fallback
+            # (le shared singleton est géré par handler.py)
+            from faster_whisper import WhisperModel  # type: ignore
+            # On lit le WAV qu'on vient d'écrire et on le passe en numpy
+            audio_array, sr = sf.read(ref_path)
+            if audio_array.ndim > 1:
+                audio_array = audio_array.mean(axis=1)
+            if sr != 16000:
+                ratio = 16000 / sr
+                new_len = int(len(audio_array) * ratio)
+                x_old = np.linspace(0, 1, len(audio_array), endpoint=False)
+                x_new = np.linspace(0, 1, new_len, endpoint=False)
+                audio_array = np.interp(x_new, x_old, audio_array)
+            audio_array = audio_array.astype(np.float32)
+            # On accède au singleton Whisper via le getter du handler
+            import handler  # type: ignore
+            whisper = handler.get_whisper()
+            segments, _ = whisper.model.transcribe(
+                audio_array,
+                language=language,
+                beam_size=1,
+                vad_filter=False,
+                condition_on_previous_text=False,
+                without_timestamps=True,
+            )
+            ref_text = " ".join(s.text.strip() for s in segments).strip()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("F5-TTS ref transcription failed (%s) — fallback empty",
+                        exc)
+            ref_text = ""
+
+        _REF_TEXT_CACHE[key] = ref_text
+        log.info("F5-TTS ref_text computed key=%s lang=%s text=%r",
+                 key, language, ref_text[:80])
+        return ref_text
+
     def synthesize(self, text: str, voice_ref_b64: str,
                    language: str = "fr") -> tuple[np.ndarray, int]:
         """Synthétise un audio complet avec une voix de référence donnée.
@@ -88,14 +148,23 @@ class F5TTS:
                  format="WAV", subtype="PCM_16")
 
         try:
-            log.debug("F5-TTS.infer text_len=%d lang=%s", len(text), language)
+            # Pré-transcription de la ref avec NOTRE Whisper (langue forcée)
+            # → évite l'auto-detect EN-biased de F5-TTS qui dégrade la prosodie
+            # et tronque les phrases longues sur du non-anglais.
+            ref_text = self._get_ref_text(voice_ref_b64, ref_path, language)
+
+            log.debug("F5-TTS.infer text_len=%d lang=%s ref_text_len=%d",
+                      len(text), language, len(ref_text))
             # Nouvelle API : signature (ref_file, ref_text, gen_text, ...)
             # Retourne typiquement (wav, sample_rate, spectrogram) en v1.0+
             result = self.engine.infer(
                 ref_file=ref_path,
-                ref_text="",         # auto-détect par F5-TTS
+                ref_text=ref_text,   # NON vide : prosodie correcte + génération complète
                 gen_text=text,
                 remove_silence=False,
+                # cross_fade_duration : F5-TTS split auto les longs gen_text
+                # par phrases. Ce paramètre adoucit les jonctions inter-chunks.
+                cross_fade_duration=0.15,
             )
         finally:
             os.unlink(ref_path)
