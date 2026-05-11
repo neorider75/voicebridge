@@ -111,19 +111,25 @@ class AudioPipeline:
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
         self._writer_thread.start()
 
+        self._callback_count = 0
+
         def _in_callback(indata, frames, time_info, status):  # noqa: ARG001
             # ``indata`` est un cffi buffer (CData) en mode raw → bytes()
             data_bytes = bytes(indata)
 
+            # Log 1-shot pour confirmer que le callback s'exécute bien
+            self._callback_count += 1
+            if self._callback_count == 1:
+                log.info("AudioPipeline _in_callback FIRST tick: "
+                         "%d bytes, status=%s", len(data_bytes), status)
+            elif self._callback_count == 50:
+                log.info("AudioPipeline _in_callback: 50 ticks OK (~5s)")
+
             # ── Détection parole/silence locale (icône menu bar) ──
-            # RMS sur les int16 → normalisé en 0..1. Hystérésis : il faut
-            # 2 ticks consécutifs au-dessus du seuil pour passer "speaking",
-            # 8 ticks consécutifs en-dessous pour repasser "silent" (pas de
-            # flicker entre 2 mots).
             try:
                 self._update_speaking_state(data_bytes)
             except Exception:  # noqa: BLE001
-                pass
+                log.exception("_update_speaking_state failed")
 
             if self._paused.is_set():
                 # Bypass : envoie le micro réel direct dans BlackHole.
@@ -136,11 +142,22 @@ class AudioPipeline:
                 except Exception:  # noqa: BLE001
                     log.exception("on_chunk_captured failed")
 
-        self._in_stream = sd.RawInputStream(
-            samplerate=CAPTURE_RATE, channels=CAPTURE_CHANNELS, dtype=CAPTURE_DTYPE,
-            device=input_idx, blocksize=CAPTURE_BLOCKSIZE, callback=_in_callback,
-        )
-        self._in_stream.start()
+        log.info("AudioPipeline opening input stream: device=%s rate=%d "
+                 "channels=%d dtype=%s blocksize=%d",
+                 input_idx, CAPTURE_RATE, CAPTURE_CHANNELS,
+                 CAPTURE_DTYPE, CAPTURE_BLOCKSIZE)
+        try:
+            self._in_stream = sd.RawInputStream(
+                samplerate=CAPTURE_RATE, channels=CAPTURE_CHANNELS,
+                dtype=CAPTURE_DTYPE, device=input_idx,
+                blocksize=CAPTURE_BLOCKSIZE, callback=_in_callback,
+            )
+            self._in_stream.start()
+            log.info("AudioPipeline input stream STARTED (active=%s)",
+                     self._in_stream.active)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("AudioPipeline input stream FAILED to open: %s", exc)
+            raise
 
     def play_response(self, audio_bytes: bytes) -> None:
         """Le ws_client appelle ça quand un audio_chunk arrive du serveur."""
