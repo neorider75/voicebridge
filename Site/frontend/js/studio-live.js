@@ -72,15 +72,12 @@
   // localStorage.vbWaitFull = "1"
   var WAIT_FULL_PHRASE = (localStorage.getItem('vbWaitFull') === '1');
 
-  // Fade in/out aux frontières de chunks (ms) pour ramener le signal à
-  // zéro proprement à la fin de chaque chunk. CRUCIAL sur Safari :
-  // sans fade-out, le dernier sample du BufferSource peut "rester"
-  // sur la sortie audio (DC offset persistant) et produire un bruit
-  // continu désagréable entre les phrases.
-  // 2 ms = 48 samples @ 24 kHz, inaudible mais suffisant pour ramener
-  // le signal à 0. Override via localStorage.vbChunkFadeMs (entier en ms).
+  // Fade in/out aux frontières de chunks (ms). Default 0 = désactivé
+  // (réactivation testée précédemment cause une perte de son globale
+  // par mécanisme encore inexpliqué). Activable via localStorage si on
+  // veut tester.
   var CHUNK_FADE_MS = parseInt(
-    localStorage.getItem('vbChunkFadeMs') || '2', 10);
+    localStorage.getItem('vbChunkFadeMs') || '0', 10);
 
   var warmupPending = false;     // true pendant le chargement du modèle de traduction
   var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
@@ -827,9 +824,11 @@
                 + (WAIT_FULL_PHRASE ? ' [wait_full mode]' : ''));
       flushPending(playbackCtx);
     }
-    // Ajoute 100 ms de silence en fin pour drainer proprement le pipeline
-    // audio Safari (évite le DC offset / bruit persistant entre phrases).
-    if (playbackCtx) {
+    // Terminal silence : activable via localStorage.vbTerminalSilence='1'
+    // pour kill le DC offset Safari. Désactivé par défaut tant que les
+    // effets de bord ne sont pas compris.
+    if (playbackCtx
+        && localStorage.getItem('vbTerminalSilence') === '1') {
       scheduleTerminalSilence(playbackCtx, 100);
     }
     // Reset pour la prochaine phrase : on ré-accumulera JITTER_BUFFER_MS.
