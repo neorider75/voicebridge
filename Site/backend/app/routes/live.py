@@ -567,6 +567,8 @@ async def stream(ws: WebSocket):
 
         seq = 0
         sent_audio_end = False
+        types_received: dict[str, int] = {}
+        first_chunk_bytes = 0
         while True:
             item = await queue.get()
             if item is None:
@@ -577,8 +579,11 @@ async def stream(ws: WebSocket):
                 return
 
             if not isinstance(item, dict):
+                log.warning("live.gpu stream: non-dict item type=%s value=%r",
+                            type(item).__name__, str(item)[:120])
                 continue
             t = item.get("type")
+            types_received[t or "unknown"] = types_received.get(t or "unknown", 0) + 1
             if t == "transcript":
                 # Si on a pré-traduit en local, on a déjà émis le transcript.
                 if "pre_translated" not in payload:
@@ -588,8 +593,14 @@ async def stream(ws: WebSocket):
                     await _send_json(ws, item)
             elif t == "audio_pcm":
                 # Forward tel quel (data b64 + sample_rate déjà inclus)
+                data = item.get("data", "")
+                if seq == 0:
+                    first_chunk_bytes = len(data)
+                    log.info("live.gpu forwarding 1st audio_pcm chunk: "
+                             "b64_len=%d sr=%s", first_chunk_bytes,
+                             item.get("sample_rate"))
                 pkt = {"type": "audio_pcm",
-                       "data": item.get("data", ""),
+                       "data": data,
                        "sample_rate": item.get("sample_rate", TTS_SAMPLE_RATE),
                        "seq": seq}
                 await _send_json(ws, pkt)
@@ -601,6 +612,12 @@ async def stream(ws: WebSocket):
                 await _send_json(ws, {"type": "error",
                                       "message": item.get("message", "worker error")})
                 return
+
+        log.info("live.gpu stream summary: types=%s total_audio_chunks=%d",
+                 types_received, seq)
+        if seq == 0:
+            log.warning("live.gpu: NO audio_pcm chunks forwarded — "
+                        "worker yielded %s", types_received)
 
         if not sent_audio_end:
             await _send_json(ws, {"type": "audio_end", "seq": seq})

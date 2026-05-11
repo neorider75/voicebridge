@@ -291,6 +291,8 @@ def stream(job_id: str, poll_interval: float = 0.05,
 
     url = f"{RUNPOD_API_BASE}/{get_endpoint_id()}/stream/{job_id}"
     deadline = time.time() + timeout
+    n_yielded = 0
+    n_polls = 0
 
     with _httpx_client(timeout=15.0) as client:
         while True:
@@ -306,13 +308,23 @@ def stream(job_id: str, poll_interval: float = 0.05,
                 raise RunPodError(f"stream HTTP {r.status_code}: {r.text[:200]}")
 
             data = r.json()
+            n_polls += 1
             status = data.get("status", "")
-            for item in data.get("stream", []):
+            stream = data.get("stream", [])
+            if stream and n_yielded == 0:
+                # 1er batch reçu — on log la structure brute pour diagnostic
+                log.info("runpod.stream job=%s 1st batch: n_items=%d sample=%r",
+                         job_id[-8:], len(stream),
+                         str(stream[0])[:200] if stream else None)
+            for item in stream:
                 payload = item.get("output")
                 if payload is not None:
+                    n_yielded += 1
                     yield payload
 
             if status in ("COMPLETED", "FAILED", "CANCELLED"):
+                log.info("runpod.stream job=%s done status=%s n_yielded=%d "
+                         "n_polls=%d", job_id[-8:], status, n_yielded, n_polls)
                 if status != "COMPLETED":
                     raise RunPodError(f"stream ended status={status}")
                 return
