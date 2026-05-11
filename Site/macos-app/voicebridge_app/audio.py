@@ -231,10 +231,24 @@ class AudioPipeline:
     # ── Internal ────────────────────────────────────────────────────
 
     def _writer_loop(self) -> None:
+        # Frame de silence (20 ms à 24 kHz mono int16 = OUTPUT_BLOCKSIZE * 2 bytes)
+        # injecté quand la queue est vide. Sans ça, BlackHole/macOS CoreAudio
+        # suspend le pipeline en idle et le chunk suivant reste bloqué jusqu'à
+        # ce qu'un événement (parole, autre audio) le "réveille" — d'où le
+        # symptôme "le son de la phrase précédente sort quand j'entame la
+        # suivante". Le silence garde le device actif en permanence.
+        silence_frame = b"\x00" * (OUTPUT_BLOCKSIZE * 2)
+        # Timeout court (10 ms) pour que le silence s'injecte rapidement
+        # quand il n'y a pas de chunk en attente, sans CPU spinning.
         while not self._stop.is_set():
             try:
-                chunk = self._out_queue.get(timeout=0.2)
+                chunk = self._out_queue.get(timeout=0.01)
             except Empty:
+                if self._out_stream is not None:
+                    try:
+                        self._out_stream.write(silence_frame)
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
             if self._out_stream is None:
                 continue
