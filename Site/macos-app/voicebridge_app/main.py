@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import rumps  # type: ignore
@@ -526,23 +528,70 @@ class VoiceBridgeApp(rumps.App):
         components = ["whisper", "f5tts", "nllb"]
         if self.mode == MODE_GPU_HYBRID:
             components.append("rvc")
+
+        # Run en thread : un cold-start RunPod peut prendre 2-5 min
+        # (pull image + load modèles depuis le Volume). Sur main thread
+        # ça freezerait toute la menu bar.
+        self.warmup_item.title = "⏳ Préchauffage GPU en cours…"
+        try:
+            rumps.notification("VoiceBridge", "Préchauffage lancé",
+                               "Chargement des modèles GPU — peut prendre 1-3 min.")
+        except Exception:  # noqa: BLE001
+            pass
+
+        threading.Thread(
+            target=self._warmup_thread,
+            args=(components,),
+            daemon=True,
+        ).start()
+
+    def _warmup_thread(self, components: list[str]) -> None:
+        """Appel HTTP bloquant /api/cloud/runpod/warmup en thread.
+
+        Timeout client : 320 s (le backend route bloque jusqu'à 300 s sur
+        /runsync + polling /status, on garde 20 s de marge réseau).
+        """
+        result: dict = {}
+        error_msg: str | None = None
         try:
             url = self.server_url.rstrip("/") + "/api/cloud/runpod/warmup"
             body = json.dumps({"components": components}).encode("utf-8")
             req = Request(url, data=body, method="POST",
                            headers={"Authorization": f"Bearer {self.api_token}",
                                     "Content-Type": "application/json"})
-            with urlopen(req, timeout=120) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            loaded = ", ".join(data.get("loaded", []))
+            with urlopen(req, timeout=320) as r:
+                result = json.loads(r.read().decode("utf-8"))
+        except HTTPError as exc:
+            # Le backend renvoie 503 avec detail={error, message} en cas d'échec
             try:
-                rumps.notification("VoiceBridge", "GPU prêt",
-                                   "Modèles chargés : " + loaded)
+                detail = json.loads(exc.read().decode("utf-8"))
+                error_msg = (detail.get("detail", {}).get("message")
+                             if isinstance(detail.get("detail"), dict)
+                             else str(detail)[:200])
             except Exception:  # noqa: BLE001
-                pass
+                error_msg = f"HTTP {exc.code} : {exc.reason}"
+        except URLError as exc:
+            error_msg = f"Erreur réseau : {exc.reason}"
         except Exception as exc:  # noqa: BLE001
-            log.warning("warmup failed: %s", exc)
-            rumps.alert("Préchauffe échouée", str(exc))
+            error_msg = str(exc)
+
+        # Retour UI sur main thread
+        _call_after_main(self._apply_warmup_result, result, error_msg)
+
+    def _apply_warmup_result(self, result: dict, error_msg: str | None) -> None:
+        is_gpu = self.mode != MODE_CPU_V1
+        self.warmup_item.title = ("🔥 Préchauffer GPU" if is_gpu
+                                   else "🔥 Préchauffer GPU (mode CPU — inutile)")
+        if error_msg:
+            log.warning("warmup failed: %s", error_msg)
+            rumps.alert("Préchauffe échouée", error_msg)
+            return
+        loaded = ", ".join(result.get("loaded", []))
+        try:
+            rumps.notification("VoiceBridge", "✅ GPU prêt",
+                               "Modèles chargés : " + (loaded or "(aucun)"))
+        except Exception:  # noqa: BLE001
+            pass
 
     # ── V3 : Visibilité conditionnelle des items menu ──────────────
 
