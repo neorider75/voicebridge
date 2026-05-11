@@ -14,14 +14,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
+from ..auth import require_auth
+from ..limiter import limiter
 from ..services import sessions_store
-from ..utils.auth import require_auth
 
 log = logging.getLogger("voicebridge.sessions_route")
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"],
                     dependencies=[Depends(require_auth)])
