@@ -38,15 +38,29 @@ class F5TTS:
     def __init__(self):
         try:
             from f5_tts.api import F5TTS as F5TTSEngine
-            self.engine = F5TTSEngine(
-                model_type="F5-TTS",
-                ckpt_file=None,   # télécharge depuis HF si absent (premier appel)
-                vocab_file=None,
-            )
-            log.info("F5-TTS loaded")
         except ImportError as e:
             log.error("F5-TTS import failed: %s", e)
             raise
+
+        # L'API F5-TTS a évolué : v1.0+ utilise `model="F5TTS_v1_Base"`
+        # (et plus `model_type="F5-TTS"`). On tente la nouvelle signature
+        # puis fallback ancienne pour résilience entre versions PyPI.
+        try:
+            self.engine = F5TTSEngine(
+                model="F5TTS_v1_Base",   # nouvelle API (v1.0+)
+                ckpt_file="",
+                vocab_file="",
+            )
+            log.info("F5-TTS loaded (model='F5TTS_v1_Base')")
+        except TypeError:
+            # Fallback ancienne API (versions <1.0 si jamais)
+            log.warning("F5-TTS: nouvelle API échouée, tentative ancienne signature")
+            self.engine = F5TTSEngine(
+                model_type="F5-TTS",
+                ckpt_file=None,
+                vocab_file=None,
+            )
+            log.info("F5-TTS loaded (legacy model_type='F5-TTS')")
 
     # ─── Synthèse complète (sans streaming) — utilisée pour cascade RVC ───
 
@@ -55,20 +69,42 @@ class F5TTS:
         """Synthétise un audio complet avec une voix de référence donnée.
 
         Args:
-            text: phrase à synthétiser (langue ``language``)
+            text: phrase à synthétiser (langue détectée automatiquement par F5-TTS
+                  depuis le contenu du texte — F5-TTS V1 est multilingue natif).
             voice_ref_b64: WAV base64 de la voix de référence (clone OU native)
-            language: code ISO de la langue cible
+            language: code ISO de la langue cible (informatif — F5-TTS ne le prend
+                      pas en param mais on log pour debug)
 
         Returns:
             np.ndarray float32 mono 24kHz
         """
+        import tempfile
+        # F5-TTS API v1.0+ : infer attend un PATH de fichier WAV pour la ref,
+        # pas un np.ndarray. On écrit la ref en tmp et on passe le chemin.
         ref_audio = self._decode_voice_ref(voice_ref_b64)
-        audio = self.engine.infer(
-            ref_audio=ref_audio,
-            ref_text="",          # F5-TTS auto-détecte
-            gen_text=text,
-            target_lang=language,
-        )
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            ref_path = f.name
+        sf.write(ref_path, ref_audio, TTS_SAMPLE_RATE,
+                 format="WAV", subtype="PCM_16")
+
+        try:
+            log.debug("F5-TTS.infer text_len=%d lang=%s", len(text), language)
+            # Nouvelle API : signature (ref_file, ref_text, gen_text, ...)
+            # Retourne typiquement (wav, sample_rate, spectrogram) en v1.0+
+            result = self.engine.infer(
+                ref_file=ref_path,
+                ref_text="",         # auto-détect par F5-TTS
+                gen_text=text,
+                remove_silence=False,
+            )
+        finally:
+            os.unlink(ref_path)
+
+        # result peut être : np.ndarray (ancien) OU tuple (wav, sr, spect) (v1+)
+        if isinstance(result, tuple):
+            audio = result[0]
+        else:
+            audio = result
         return audio
 
     # ─── Synthèse streaming (chunk par chunk) ───

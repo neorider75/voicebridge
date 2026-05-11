@@ -49,11 +49,13 @@ class F5TTS:
         # Import paresseux (lib lourde)
         try:
             from f5_tts.api import F5TTS as F5TTSEngine
-            self.engine = F5TTSEngine(
-                model_type="F5-TTS",
-                ckpt_file=None,  # télécharge depuis HF si absent
-                vocab_file=None,
-            )
+            # API v1.0+ : model="F5TTS_v1_Base" (avant : model_type="F5-TTS")
+            try:
+                self.engine = F5TTSEngine(model="F5TTS_v1_Base",
+                                          ckpt_file="", vocab_file="")
+            except TypeError:
+                self.engine = F5TTSEngine(model_type="F5-TTS",
+                                          ckpt_file=None, vocab_file=None)
             log.info("F5-TTS loaded")
         except ImportError as e:
             log.error("F5-TTS import failed: %s", e)
