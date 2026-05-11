@@ -280,17 +280,50 @@
   // Donne un retour visuel actif "ça travaille" plutôt qu'un état figé.
   var WARMUP_FRAMES = ['🔥', '💨', '🔥', '✨'];
   var warmupAnimTimer = null;
+  var warmupHealthTimer = null;   // poll /api/cloud/runpod/health pendant warmup
   var warmupFrameIdx = 0;
+  var warmupCurrentPhase = '';    // dernière phase connue (pour le label)
+
+  // Labels lisibles pour les états du pool RunPod
+  var WARMUP_PHASE_LABELS = {
+    'image_pull':  '📦 RunPod télécharge l\'image (1-3 min)…',
+    'worker_init': '⚙️ Worker en cours d\'initialisation…',
+    'ready_idle':  '🟢 Worker prêt, finalisation…',
+    'ready_busy':  '⏳ Worker actif, chargement des modèles GPU…',
+    'throttled':   '⚠️ Worker throttled — attente de slot GPU…',
+    'no_worker':   '⏳ Demande envoyée à RunPod…',
+  };
 
   function startWarmupAnimation(btn, status) {
     warmupFrameIdx = 0;
+    warmupCurrentPhase = '';
     if (warmupAnimTimer) clearInterval(warmupAnimTimer);
     warmupAnimTimer = setInterval(function () {
       var frame = WARMUP_FRAMES[warmupFrameIdx % WARMUP_FRAMES.length];
       warmupFrameIdx += 1;
       if (btn) btn.textContent = frame + ' Préchauffage GPU…';
-      if (status) status.textContent = frame + ' Chargement Whisper + F5-TTS + NLLB sur RunPod…';
+      // Le statut sous le bouton montre la phase RunPod si on l'a, sinon
+      // le fallback générique.
+      var phaseLabel = WARMUP_PHASE_LABELS[warmupCurrentPhase]
+                        || 'Chargement Whisper + F5-TTS + NLLB sur RunPod…';
+      if (status) status.textContent = frame + ' ' + phaseLabel;
     }, 500);
+    // Poll de l'état RunPod toutes les 2 s
+    if (warmupHealthTimer) clearInterval(warmupHealthTimer);
+    warmupHealthTimer = setInterval(pollWarmupHealth, 2000);
+    // Poll immédiat (sans attendre 2 s) pour avoir un retour rapide
+    pollWarmupHealth();
+  }
+
+  function pollWarmupHealth() {
+    VB.api.get('/api/cloud/runpod/health')
+      .then(function (d) {
+        warmupCurrentPhase = d.summary || '';
+      })
+      .catch(function (err) {
+        // Pas grave, on continue à animer en mode générique
+        console.debug('[live] warmup health poll failed', err && err.message);
+      });
   }
 
   function stopWarmupAnimation() {
@@ -298,6 +331,11 @@
       clearInterval(warmupAnimTimer);
       warmupAnimTimer = null;
     }
+    if (warmupHealthTimer) {
+      clearInterval(warmupHealthTimer);
+      warmupHealthTimer = null;
+    }
+    warmupCurrentPhase = '';
   }
 
   // Traduit les erreurs RunPod brutes en messages exploitables.

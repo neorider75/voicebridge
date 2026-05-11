@@ -64,6 +64,16 @@ ICON_SPEAKING = "🎤"   # bascule depuis 🟢 quand le micro détecte de la voi
 # Donne un retour visuel actif "ça travaille" plutôt qu'un état figé.
 WARMUP_FRAMES = ["🔥", "💨", "🔥", "✨"]
 
+# Labels par phase RunPod (alimenté par /api/cloud/runpod/health)
+WARMUP_PHASE_LABELS = {
+    "image_pull":  "📦 Pull image (1-3 min)…",
+    "worker_init": "⚙️ Worker init…",
+    "ready_idle":  "🟢 Worker prêt, finalisation…",
+    "ready_busy":  "⏳ Modèles en chargement…",
+    "throttled":   "⚠️ Worker throttled…",
+    "no_worker":   "⏳ Demande RunPod…",
+}
+
 # Modes Live V3 (cf. doc 00-decisions-v3.md)
 MODE_CPU_V1 = "cpu-fr-en"
 MODE_GPU_CLONE = "gpu-clone"
@@ -136,7 +146,9 @@ class VoiceBridgeApp(rumps.App):
         # RunPod en queue en cliquant frénétiquement.
         self._warmup_in_progress = False
         self._warmup_timer: rumps.Timer | None = None
+        self._warmup_health_timer: rumps.Timer | None = None
         self._warmup_frame_idx = 0
+        self._warmup_current_phase = ""  # alimenté par poll /runpod/health
         self._title_before_warmup: str = self.title  # restauré après warmup
 
         self.audio = audio_mod.AudioPipeline(
@@ -595,22 +607,63 @@ class VoiceBridgeApp(rumps.App):
     def _start_warmup_animation(self) -> None:
         """rumps.Timer : tick toutes les 500 ms sur le main thread Cocoa.
 
-        Roule l'icône WARMUP_FRAMES pour montrer que ça travaille.
+        Roule l'icône WARMUP_FRAMES pour montrer que ça travaille, ET
+        poll /api/cloud/runpod/health toutes les 2 s pour récupérer la
+        phase courante (image_pull, worker_init, ready_busy, etc.).
         """
         self._warmup_frame_idx = 0
+        self._warmup_current_phase = ""
         # Arrête un timer résiduel éventuel
         if self._warmup_timer is not None:
             try:
                 self._warmup_timer.stop()
             except Exception:  # noqa: BLE001
                 pass
+        if self._warmup_health_timer is not None:
+            try:
+                self._warmup_health_timer.stop()
+            except Exception:  # noqa: BLE001
+                pass
         self._warmup_timer = rumps.Timer(self._warmup_tick, 0.5)
         self._warmup_timer.start()
+        # Poll health depuis un thread dédié (HTTP bloquant — pas safe
+        # sur le main loop). On le wrap dans un rumps.Timer 2s qui lance
+        # à chaque tick un thread one-shot.
+        self._warmup_health_timer = rumps.Timer(self._warmup_health_tick, 2.0)
+        self._warmup_health_timer.start()
+        # Premier poll immédiat
+        threading.Thread(target=self._warmup_health_fetch, daemon=True).start()
 
     def _warmup_tick(self, _timer) -> None:
         frame = WARMUP_FRAMES[self._warmup_frame_idx % len(WARMUP_FRAMES)]
         self._warmup_frame_idx += 1
-        self.title = f"{frame} Préchauffage…"
+        # Titre menu bar : icône animée seule (compacte)
+        self.title = frame
+        # Sous-titre dans l'item menu : phase détaillée si dispo
+        phase = WARMUP_PHASE_LABELS.get(
+            self._warmup_current_phase, "Préchauffage GPU en cours…")
+        self.warmup_item.title = f"{frame} {phase}"
+
+    def _warmup_health_tick(self, _timer) -> None:
+        # rumps callback (main thread) → on délègue la requête HTTP à
+        # un thread pour ne pas bloquer Cocoa.
+        threading.Thread(target=self._warmup_health_fetch, daemon=True).start()
+
+    def _warmup_health_fetch(self) -> None:
+        try:
+            url = self.server_url.rstrip("/") + "/api/cloud/runpod/health"
+            req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
+            with urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            summary = data.get("summary", "")
+            # Update lu par _warmup_tick au prochain frame
+            _call_after_main(self._apply_warmup_phase, summary)
+        except Exception:  # noqa: BLE001
+            # Pas grave : on garde la phase précédente
+            pass
+
+    def _apply_warmup_phase(self, phase: str) -> None:
+        self._warmup_current_phase = phase
 
     def _stop_warmup_animation(self) -> None:
         if self._warmup_timer is not None:
@@ -619,6 +672,13 @@ class VoiceBridgeApp(rumps.App):
             except Exception:  # noqa: BLE001
                 pass
             self._warmup_timer = None
+        if self._warmup_health_timer is not None:
+            try:
+                self._warmup_health_timer.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._warmup_health_timer = None
+        self._warmup_current_phase = ""
         # Restaure le titre d'avant le warmup (sera réécrit par
         # _apply_speaking_state au prochain tick audio de toute façon).
         self.title = self._title_before_warmup

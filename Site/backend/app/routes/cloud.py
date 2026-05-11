@@ -129,6 +129,69 @@ async def runpod_test(request: Request) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════
+# GET /runpod/health — état du pool serverless (polling pendant warmup)
+# ════════════════════════════════════════════════════════════════════
+
+
+@router.get("/runpod/health")
+@limiter.limit("120/minute")
+async def runpod_health(request: Request) -> dict:
+    """État temps réel du pool de workers RunPod.
+
+    Polling appelé toutes les 2 s par le frontend pendant un warmup pour
+    afficher la progression (image pull → worker init → modèles loading).
+
+    Retourne :
+    {
+      "workers": {
+        "idle": 0, "initializing": 1, "ready": 0,
+        "running": 0, "throttled": 0, "unhealthy": 0
+      },
+      "jobs": {
+        "inQueue": 4, "inProgress": 0,
+        "completed": 12, "failed": 0, "retried": 1
+      },
+      "summary": "image_pull" | "worker_init" | "ready_idle"
+                 | "ready_busy" | "throttled" | "no_worker"
+    }
+    """
+    if not runpod_client.is_configured():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+            "error": "not_configured",
+            "message": "RunPod non configuré",
+        })
+    try:
+        import asyncio
+        data = await asyncio.to_thread(runpod_client.get_endpoint_health)
+    except runpod_client.RunPodError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "runpod_unreachable",
+            "message": str(exc),
+        })
+
+    workers = data.get("workers", {}) or {}
+    jobs = data.get("jobs", {}) or {}
+
+    # Synthèse haut-niveau pour l'affichage côté client
+    if workers.get("running", 0) > 0:
+        summary = "ready_busy"
+    elif workers.get("ready", 0) > 0 or workers.get("idle", 0) > 0:
+        summary = "ready_idle"
+    elif workers.get("initializing", 0) > 0:
+        summary = "worker_init"
+    elif workers.get("throttled", 0) > 0:
+        summary = "throttled"
+    elif jobs.get("inQueue", 0) > 0 or jobs.get("inProgress", 0) > 0:
+        # Un job est en queue mais 0 workers visibles → cold-start
+        # (image pull en cours).
+        summary = "image_pull"
+    else:
+        summary = "no_worker"
+
+    return {"workers": workers, "jobs": jobs, "summary": summary}
+
+
+# ════════════════════════════════════════════════════════════════════
 # POST /runpod/warmup
 # ════════════════════════════════════════════════════════════════════
 

@@ -337,6 +337,27 @@ def stream(job_id: str, poll_interval: float = 0.05,
 # ────────────────────────────────────────────────────────────────────
 
 
+def get_endpoint_health() -> dict:
+    """GET /v2/{endpoint_id}/health — état temps réel du pool serverless.
+
+    Retourne ``{"workers": {...}, "jobs": {...}}`` avec des compteurs :
+    - workers.idle / initializing / ready / running / throttled / unhealthy
+    - jobs.inQueue / inProgress / completed / failed / retried
+
+    Utilisé pendant le warmup pour montrer à l'utilisateur où en est
+    le cold-start (image pull, worker init, modèles en chargement…).
+    """
+    url = f"{RUNPOD_API_BASE}/{get_endpoint_id()}/health"
+    with _httpx_client(timeout=10.0) as client:
+        try:
+            r = client.get(url, headers=_auth_headers())
+        except Exception as exc:  # noqa: BLE001
+            raise RunPodError(f"health HTTP failed: {exc}") from exc
+    if r.status_code != 200:
+        raise RunPodError(f"health HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
 def ping() -> dict:
     """Vérifie que l'endpoint répond. Retourne ``{ok, latency_ms, ...}``.
 
