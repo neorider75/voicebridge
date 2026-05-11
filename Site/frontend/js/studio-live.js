@@ -596,15 +596,26 @@
     return playbackCtx;
   }
 
+  // Détection Safari (pas Chrome/Edge même s'ils sont WebKit-based sur iOS).
+  // Safari produit un bruit résiduel "DC offset" entre les BufferSources
+  // quand l'audio passe par MediaStreamDestination → <audio> element.
+  // Comme Safari ne supporte pas setSinkId de toute façon (le routing
+  // BlackHole web ne marche que sur Chrome/Edge ≥110), on bypass
+  // entièrement le pipeline MSD sur Safari et on revient à un
+  // ctx.destination direct (qui fonctionnait parfaitement avant qu'on
+  // ajoute le routing BlackHole pour Chrome).
+  var IS_SAFARI = (function () {
+    var ua = navigator.userAgent;
+    return /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
+  })();
+
   // Destination finale de chaque BufferSource — soit le node-stream-routé
   // (si dispo, supporte setSinkId), soit ctx.destination direct (fallback).
   //
-  // Override via localStorage.vbDirectDestination='1' pour bypasser le
-  // routage MediaStreamDestination → <audio>. Utile si tu n'as pas
-  // besoin de setSinkId (sortie BlackHole) et que tu veux éviter le hum
-  // résiduel que ce routing peut introduire entre les phrases.
+  // Override via localStorage.vbDirectDestination='1' pour forcer le
+  // mode direct sur tous les navigateurs (debug).
   function playbackDestination(ctx) {
-    if (localStorage.getItem('vbDirectDestination') === '1') {
+    if (IS_SAFARI || localStorage.getItem('vbDirectDestination') === '1') {
       return ctx.destination;
     }
     return playbackDestNode || ctx.destination;
