@@ -580,16 +580,27 @@ class VoiceBridgeApp(rumps.App):
 
     def _apply_warmup_result(self, result: dict, error_msg: str | None) -> None:
         is_gpu = self.mode != MODE_CPU_V1
-        self.warmup_item.title = ("🔥 Préchauffer GPU" if is_gpu
-                                   else "🔥 Préchauffer GPU (mode CPU — inutile)")
         if error_msg:
             log.warning("warmup failed: %s", error_msg)
+            # Affiche l'erreur en titre menu pour ne pas dépendre des
+            # notifications macOS (peu fiables en mode dev non signé).
+            self.warmup_item.title = "❌ Préchauffage échoué — réessayer"
             rumps.alert("Préchauffe échouée", error_msg)
             return
-        loaded = ", ".join(result.get("loaded", []))
+        loaded = result.get("loaded", []) or []
+        # Titre persistant qui indique que les modèles sont prêts. Reste
+        # affiché jusqu'au prochain re-clic. C'est le signal principal pour
+        # l'utilisateur que c'est OK de parler.
+        loaded_str = " · ".join(loaded) if loaded else "(aucun)"
+        if is_gpu:
+            self.warmup_item.title = f"✅ GPU prêt ({loaded_str}) — re-préchauffer"
+        else:
+            self.warmup_item.title = "🔥 Préchauffer GPU (mode CPU — inutile)"
+        log.info("warmup OK: %s", loaded_str)
+        # Notification best-effort (fallback silencieux)
         try:
             rumps.notification("VoiceBridge", "✅ GPU prêt",
-                               "Modèles chargés : " + (loaded or "(aucun)"))
+                               "Modèles chargés : " + loaded_str)
         except Exception:  # noqa: BLE001
             pass
 
