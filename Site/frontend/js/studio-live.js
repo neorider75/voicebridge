@@ -94,24 +94,69 @@
   var levelAnalyser = null;
   var levelRaf = null;
 
+  // Cache toutes les voix retournées par /api/voices pour pouvoir
+  // re-filtrer le dropdown à chaque changement de mode sans refetch.
+  var _allVoices = [];
+
   function loadVoices() {
-    VB.api.get('/api/voices').then(function (d) {
-      var sel = $('liveVoiceSelect');
-      sel.innerHTML = '';
-      (d.voices || []).forEach(function (v) {
-        var opt = document.createElement('option');
-        opt.value = v.id;
-        var flag = v.language === 'fr' ? '🇫🇷' : '🇬🇧';
-        opt.textContent = flag + ' ' + v.name;
-        sel.appendChild(opt);
+    return VB.api.get('/api/voices').then(function (d) {
+      _allVoices = (d.voices || []).filter(function (v) {
+        return v.status !== 'failed';
       });
-      if (!sel.options.length) {
-        var opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Aucune voix disponible';
-        sel.appendChild(opt);
-      }
+      refreshVoiceDropdown();
     });
+  }
+
+  // Mappe le mode courant vers le kind de voix attendu :
+  // - cpu-fr-en / gpu-clone : voix "clone" (timbre utilisateur)
+  // - gpu-native / gpu-hybrid : voix "native" (timbre générique anonyme,
+  //   sert de référence prosodique au F5-TTS, RVC s'occupe du timbre cible)
+  function expectedVoiceKindFor(mode) {
+    if (mode === 'gpu-native' || mode === 'gpu-hybrid') return 'native';
+    return 'clone';
+  }
+
+  function refreshVoiceDropdown() {
+    var sel = $('liveVoiceSelect');
+    if (!sel) return;
+    var expectedKind = expectedVoiceKindFor(currentMode);
+    // Conserve la sélection si elle reste valide après filtre
+    var prevSelected = sel.value;
+
+    var filtered = _allVoices.filter(function (v) {
+      // Rétrocompat : voix sans champ kind = "clone"
+      var k = v.kind || 'clone';
+      return k === expectedKind;
+    });
+
+    sel.innerHTML = '';
+    filtered.forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v.id;
+      var flag = v.language === 'fr' ? '🇫🇷'
+                : v.language === 'en' ? '🇬🇧'
+                : v.language === 'es' ? '🇪🇸'
+                : v.language === 'de' ? '🇩🇪'
+                : v.language === 'it' ? '🇮🇹'
+                : v.language === 'pt' ? '🇵🇹'
+                : '🌐';
+      opt.textContent = flag + ' ' + v.name;
+      sel.appendChild(opt);
+    });
+
+    if (!sel.options.length) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      if (expectedKind === 'native') {
+        opt.textContent = '⚠ Aucune voix native disponible — importe-en une sur /voices';
+      } else {
+        opt.textContent = 'Aucune voix disponible';
+      }
+      sel.appendChild(opt);
+    } else if (prevSelected
+                && filtered.some(function (v) { return v.id === prevSelected; })) {
+      sel.value = prevSelected;
+    }
   }
 
   function setStatus(text) { $('liveStatus').textContent = text; }
@@ -209,6 +254,11 @@
     });
     var isGpu = mode !== 'cpu-fr-en';
     var isHybrid = mode === 'gpu-hybrid';
+
+    // Re-filtre le dropdown voix selon le kind attendu par le mode :
+    // - clone / cpu-fr-en : voix utilisateur (kind="clone")
+    // - gpu-native / gpu-hybrid : voix natives (kind="native")
+    refreshVoiceDropdown();
 
     // RVC selector visible only in hybrid
     if ($('liveRvcField')) $('liveRvcField').style.display = isHybrid ? '' : 'none';

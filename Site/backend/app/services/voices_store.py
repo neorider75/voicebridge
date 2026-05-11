@@ -52,8 +52,15 @@ def _save(meta: dict[str, Any]) -> None:
 
 
 def list_voices() -> list[dict[str, Any]]:
+    """Liste toutes les voix.
+
+    Backfill : les voix sans champ ``kind`` sont marquées "clone" (rétrocompat).
+    """
     with _lock:
-        return list(_load().get("voices", []))
+        voices = list(_load().get("voices", []))
+    for v in voices:
+        v.setdefault("kind", "clone")
+    return voices
 
 
 def get(voice_id: str) -> dict[str, Any] | None:
@@ -72,6 +79,11 @@ def upsert(voice: dict[str, Any]) -> dict[str, Any]:
     # quand utilisable, "failed" si l'encodage a échoué.
     # Rétrocompat : les voix créées avant le statut sont considérées "ready".
     voice.setdefault("status", "ready")
+    # kind : "clone" (voix clonée à partir d'un sample utilisateur) ou
+    # "native" (voix générique dans une langue cible, utilisée comme
+    # référence prosodique pour les modes gpu-native / gpu-hybrid).
+    # Rétrocompat : les voix créées avant ce champ sont "clone".
+    voice.setdefault("kind", "clone")
     with _lock:
         meta = _load()
         voices = meta.setdefault("voices", [])
