@@ -90,6 +90,11 @@ class AudioPipeline:
         self._speaking = False
         self._speech_counter = 0   # ticks consécutifs au-dessus du seuil
         self._silence_counter = 0  # ticks consécutifs en-dessous
+        # ── Noise gate : ring buffer pre-roll de 3 chunks (~300 ms) ──
+        # Quand on transite silence→parole, on flushe ces N chunks en plus
+        # du chunk courant pour ne pas couper le début du mot.
+        self._preroll_buffer: list[bytes] = []
+        self._preroll_max = 3
 
     # ── Public ───────────────────────────────────────────────────────
 
@@ -137,6 +142,32 @@ class AudioPipeline:
                 # mais latence minimale (à raffiner en V1.1).
                 self._out_queue.put(self._upsample_16k_to_24k(data_bytes))
             else:
+                # ── Noise gate : on n'envoie au serveur QUE quand la voix
+                # est détectée (évite que le VAD Silero serveur déclenche
+                # sur les bruits ambiants / voix en arrière-plan).
+                # Désactivable via VB_NOISE_GATE=0 pour debug.
+                gate_enabled = os.environ.get("VB_NOISE_GATE", "1") == "1"
+                if gate_enabled and not self._speaking:
+                    # En silence : on alimente quand même le ring buffer
+                    # pour pouvoir flusher les ~300 ms qui précèdent la
+                    # prochaine détection de parole (sinon début de mot
+                    # coupé).
+                    self._preroll_buffer.append(data_bytes)
+                    if len(self._preroll_buffer) > self._preroll_max:
+                        self._preroll_buffer.pop(0)
+                    return  # ← drop : on n'envoie rien au serveur
+
+                # Flush du pre-roll au moment précis du passage en speaking
+                # (cf. _update_speaking_state qui a flippé _speaking=True
+                # juste avant ce return-early manqué).
+                if self._preroll_buffer:
+                    for chunk in self._preroll_buffer:
+                        try:
+                            self.on_chunk_captured(chunk)
+                        except Exception:  # noqa: BLE001
+                            log.exception("on_chunk_captured (preroll) failed")
+                    self._preroll_buffer.clear()
+
                 try:
                     self.on_chunk_captured(data_bytes)
                 except Exception:  # noqa: BLE001
