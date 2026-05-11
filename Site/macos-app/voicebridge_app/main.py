@@ -89,7 +89,10 @@ TARGET_LANGS = {
 
 class VoiceBridgeApp(rumps.App):
     def __init__(self) -> None:
-        super().__init__("VoiceBridge", title="🔴 VoiceBridge", quit_button=None)
+        # title = icône seule (compact menu bar — cf. _set_status pour
+        # le rationale). "VoiceBridge" reste le name interne (utilisé
+        # pour les notifications macOS).
+        super().__init__("VoiceBridge", title="🔴", quit_button=None)
         self.bundle_cfg = cfg.load_bundle_config()
         self.server_url = cfg.kr_get("server_url") or self.bundle_cfg.get("server_url", "")
         self.api_token = cfg.kr_get("api_token") or ""
@@ -818,10 +821,10 @@ class VoiceBridgeApp(rumps.App):
         if self._warmup_in_progress and state != "voice_changed":
             if state in ("connected", "ready"):
                 self._title_before_warmup = (
-                    f"{ICON_PAUSED} VoiceBridge" if self.audio.is_paused()
-                    else f"{ICON_CONNECTED} VoiceBridge")
+                    ICON_PAUSED if self.audio.is_paused()
+                    else ICON_CONNECTED)
             elif state in ("disconnected", "error", "connecting"):
-                self._title_before_warmup = f"{ICON_DISCONNECTED} VoiceBridge"
+                self._title_before_warmup = ICON_DISCONNECTED
             return  # ne pas écraser le titre animé
         if state in ("connected", "ready"):
             self._set_status(ICON_PAUSED if self.audio.is_paused() else ICON_CONNECTED)
@@ -832,7 +835,12 @@ class VoiceBridgeApp(rumps.App):
             self.voice_item.title = f"Voix : {self.voice_id}"
 
     def _set_status(self, icon: str) -> None:
-        self.title = f"{icon} VoiceBridge"
+        # Affichage compact : icône seule pour économiser la place dans
+        # la menu bar (sinon l'app disparaît derrière l'encoche du MacBook
+        # quand il y a beaucoup d'autres icônes). Le menu reste accessible
+        # au clic. Les états "actifs" (warmup, erreur) gardent du texte
+        # explicite via self.title direct depuis leurs callbacks dédiés.
+        self.title = icon
 
 
 def main() -> None:
