@@ -26,6 +26,40 @@ import soundfile as sf
 
 log = logging.getLogger("voicebridge.f5tts")
 
+
+def _trim_trailing(audio: np.ndarray, sample_rate: int,
+                   peak: float) -> np.ndarray:
+    """Tronque le bruit/silence en fin d'un signal float32 mono.
+
+    Algorithme : windowing 40 ms en arrière, on coupe à la dernière window
+    dont le RMS dépasse 1.5 % du peak. Garde 80 ms de marge pour ne pas
+    couper la fin du dernier mot.
+
+    Effet : enlève typiquement 0.5-1.5 s d'artefact F5-TTS en fin de phrase.
+    """
+    window_size = max(1, int(sample_rate * 0.04))   # 40 ms
+    margin = max(1, int(sample_rate * 0.08))        # 80 ms
+    threshold = peak * 0.015
+
+    # Itère de la fin vers le début en sautant par windows
+    last_active = len(audio)
+    for end in range(len(audio), window_size, -window_size):
+        start = max(0, end - window_size)
+        window = audio[start:end]
+        if window.size == 0:
+            continue
+        rms = float(np.sqrt(np.mean(window.astype(np.float32) ** 2)))
+        if rms > threshold:
+            last_active = end
+            break
+
+    cut_at = min(len(audio), last_active + margin)
+    if cut_at < len(audio):
+        log.info("F5-TTS trim trailing: %d → %d samples (-%d / -%.2fs)",
+                 len(audio), cut_at, len(audio) - cut_at,
+                 (len(audio) - cut_at) / sample_rate)
+    return audio[:cut_at]
+
 HF_CACHE = os.environ.get("HF_HOME", "/runpod-volume/hf-cache")
 TTS_SAMPLE_RATE = 24000
 
@@ -161,7 +195,11 @@ class F5TTS:
                 ref_file=ref_path,
                 ref_text=ref_text,   # NON vide : prosodie correcte + génération complète
                 gen_text=text,
-                remove_silence=False,
+                # remove_silence=True : F5-TTS retire les blancs internes
+                # ET tronque les silences finals. Sans ça, F5-TTS génère
+                # un "trail" de 0.5-1.5 s de bruit en fin de phrase qui
+                # boucle dans la queue audio jusqu'au chunk suivant.
+                remove_silence=True,
                 # cross_fade_duration : F5-TTS split auto les longs gen_text
                 # par phrases. Ce paramètre adoucit les jonctions inter-chunks.
                 cross_fade_duration=0.15,
@@ -201,6 +239,17 @@ class F5TTS:
             log.error("F5-TTS produced empty audio for text=%r", text[:80])
         elif peak < 1e-4:
             log.warning("F5-TTS produced near-silent audio (peak=%.5f)", peak)
+
+        # ── Trim trailing artifact ────────────────────────────────────
+        # F5-TTS produit parfois un "tail" de bruit basse amplitude (0.5-
+        # 1.5 s) après la fin du speech utile. remove_silence=True dans
+        # infer() retire les SILENCES mais pas le bruit (RMS > son seuil).
+        # On fait ici un trim RMS-based plus agressif :
+        # - Window de 40 ms glissante en arrière depuis la fin
+        # - On coupe à la dernière window dont le RMS > 1.5 % du peak
+        # - + 80 ms de marge pour ne pas couper la fin du mot
+        if audio.size > 0 and peak > 1e-3:
+            audio = _trim_trailing(audio, sr_out, peak)
 
         return audio, sr_out
 
