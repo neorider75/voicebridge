@@ -116,15 +116,60 @@
     return 'clone';
   }
 
+  // En mode hybride, la voix native sert juste à fournir l'accent dans la
+  // langue cible — l'utilisateur ne choisit pas, on auto-pick celle qui
+  // correspond à target_lang. La VRAIE voix entendue est celle du modèle
+  // RVC (timbre utilisateur).
+  function autoPickNativeVoiceFor(targetLang) {
+    var native = _allVoices.filter(function (v) {
+      return (v.kind || 'clone') === 'native'
+          && v.language === targetLang
+          && v.status !== 'failed';
+    });
+    return native[0] || null;
+  }
+
   function refreshVoiceDropdown() {
     var sel = $('liveVoiceSelect');
     if (!sel) return;
+    var field = $('liveVoiceField');
+
+    // En mode HYBRIDE : la voix native est auto-pickée selon la langue
+    // cible. On masque le sélecteur sauf si aucune voix native n'est
+    // disponible pour la langue cible — auquel cas on affiche un message
+    // explicite (sinon l'user ne comprendrait pas pourquoi la session
+    // refuse de démarrer).
+    if (currentMode === 'gpu-hybrid') {
+      var translateOn = $('liveTranslateToggle')
+                         && $('liveTranslateToggle').checked;
+      var srcLang = ($('liveLang') && $('liveLang').value) || 'fr';
+      var tgtLang = ($('liveTranslateTo') && $('liveTranslateTo').value) || 'en';
+      var effLang = translateOn ? tgtLang : srcLang;
+      var auto = autoPickNativeVoiceFor(effLang);
+      sel.innerHTML = '';
+      var opt = document.createElement('option');
+      if (auto) {
+        if (field) field.style.display = 'none';
+        opt.value = auto.id;
+        opt.textContent = auto.name + ' (auto)';
+      } else {
+        // Pas de voix native pour la langue cible → on REND visible le
+        // champ avec un message pour que l'user puisse débloquer.
+        if (field) field.style.display = '';
+        opt.value = '';
+        opt.textContent = '⚠ Pas de voix native pour ' + effLang.toUpperCase()
+                        + ' — installe-les sur /voices';
+      }
+      sel.appendChild(opt);
+      return;
+    }
+
+    // Autres modes : sélecteur visible, filtré par kind
+    if (field) field.style.display = '';
     var expectedKind = expectedVoiceKindFor(currentMode);
-    // Conserve la sélection si elle reste valide après filtre
     var prevSelected = sel.value;
 
     var filtered = _allVoices.filter(function (v) {
-      // Rétrocompat : voix sans champ kind = "clone"
       var k = v.kind || 'clone';
       return k === expectedKind;
     });
@@ -1104,6 +1149,9 @@
     if (translateTo) {
       translateTo.addEventListener('change', function () {
         if (toggle.checked) doWarmup();
+        // En mode hybride, re-auto-pick la voix native selon la nouvelle
+        // langue cible (le sélecteur est masqué mais sa valeur va au WS).
+        if (currentMode === 'gpu-hybrid') refreshVoiceDropdown();
       });
     }
   }
