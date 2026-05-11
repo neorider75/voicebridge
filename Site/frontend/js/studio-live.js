@@ -66,7 +66,9 @@
 
   // Fade in/out aux frontières de chunks (ms) pour masquer les clicks
   // de jonction si le buffer n'est pas exactement aligné en sample.
-  var CHUNK_FADE_MS = 3;
+  // 0 = désactivé (override via localStorage.vbChunkFadeMs).
+  var CHUNK_FADE_MS = parseInt(
+    localStorage.getItem('vbChunkFadeMs') || '3', 10);
 
   var warmupPending = false;     // true pendant le chargement du modèle de traduction
   var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
@@ -383,8 +385,29 @@
       src.connect(ctx.destination);
     }
 
-    src.start(startAt);
+    try {
+      src.start(startAt);
+    } catch (e) {
+      console.warn('[live] src.start failed', e, 'startAt=', startAt,
+                   'now=', now, 'dur=', dur);
+      return;
+    }
     nextPlayAt = startAt + dur;
+
+    // Diagnostic verbeux du tout 1er chunk de la session (debug silence
+    // F5-TTS). Activable via localStorage.vbDebugPlayback.
+    if (window.__vbDbgFirstSchedule !== true
+        || localStorage.getItem('vbDebugPlayback') === '1') {
+      console.log('[live] scheduleBuffer: startAt=' + startAt.toFixed(3)
+                + ' now=' + now.toFixed(3)
+                + ' dur=' + (dur * 1000).toFixed(0) + 'ms'
+                + ' ctxState=' + ctx.state
+                + ' ctxRate=' + ctx.sampleRate
+                + ' bufRate=' + audioBuffer.sampleRate
+                + ' bufLen=' + audioBuffer.length
+                + ' fadeOn=' + (CHUNK_FADE_MS > 0 && dur > 2 * fade));
+      window.__vbDbgFirstSchedule = true;
+    }
 
     // Détection underrun : si on a dû reset à `now + safety`, c'est qu'on
     // a perdu le slot précédent → log pour diagnostic.
