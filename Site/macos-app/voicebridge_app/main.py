@@ -614,7 +614,12 @@ class VoiceBridgeApp(rumps.App):
             # Reconstruit le titre à partir de la sélection courante
             self._refresh_rvc_submenu()
         # Coût : visible uniquement en mode GPU (CPU = gratuit)
-        if not is_gpu:
+        if is_gpu:
+            # Restaure le coût courant (ou 0.0000€ si pas encore d'update WS)
+            self.cost_item.title = (
+                f"💰 Coût session : {self.session_cost_eur:.4f}€"
+                f" · {self.session_duration_s}s")
+        else:
             self.cost_item.title = "💰 Coût session : 0.0000€ (mode CPU gratuit)"
         # Reconstruit le sous-menu traduction (les langues dispo dépendent du mode)
         self._refresh_translate_submenu()
