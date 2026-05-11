@@ -716,6 +716,9 @@ class VoiceBridgeApp(rumps.App):
 
     def _apply_speaking_state(self, speaking: bool) -> None:
         self._is_speaking = speaking
+        log.info("_apply_speaking_state speaking=%s ws=%s paused=%s title=%r",
+                 speaking, self.ws is not None, self.audio.is_paused(),
+                 self.title)
         # Met à jour l'icône seulement si on est dans un état "actif"
         # (connecté/parlant, non en pause). Dans les autres états (🔴/🟡)
         # on garde l'icône d'état primaire — pas envie qu'un bruit micro
@@ -725,6 +728,7 @@ class VoiceBridgeApp(rumps.App):
         is_active_state = (self.title.startswith(ICON_CONNECTED)
                             or self.title.startswith(ICON_SPEAKING))
         if not is_active_state:
+            log.info("speaking state ignored (title not active): %r", self.title)
             return
         self._set_status(ICON_SPEAKING if speaking else ICON_CONNECTED)
 

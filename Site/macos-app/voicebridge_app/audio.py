@@ -11,6 +11,7 @@ puis injecté dans BlackHole.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from queue import Empty, Queue
 
@@ -188,10 +189,16 @@ class AudioPipeline:
         silence→parole et parole→silence (pas à chaque chunk, pour ne pas
         spammer le main thread Cocoa).
 
-        Seuils calibrés pour un micro Mac intégré "normal" :
-        - RMS > 0.012 : probable parole (~ -38 dBFS)
-        - RMS < 0.006 : silence net (~ -44 dBFS)
-        Hystérésis 2 / 8 ticks (~64 ms / 256 ms à 16 kHz / 512 samples).
+        Seuils permissifs (volontairement bas) — un micro Mac intégré
+        en open-space capte facilement du bruit ambiant à RMS ~0.003-0.005,
+        et la voix parlée monte à 0.01-0.05 selon la distance.
+        - RMS > 0.008 : probable parole
+        - RMS < 0.003 : silence
+        Hystérésis 1 / 6 ticks (~32 ms / 192 ms à 16 kHz / 512 samples).
+
+        Overridable via env var VB_RMS_SPEAK_THRESHOLD (override seuil parole)
+        et VB_RMS_SILENCE_THRESHOLD (override seuil silence) pour debug.
+        Log toutes les 50 chunks (~1.6 s) le RMS courant si VB_DEBUG_RMS=1.
         """
         if np is None:
             return
@@ -201,17 +208,28 @@ class AudioPipeline:
         # RMS normalisé en 0..1 (int16 max = 32768)
         rms = float(np.sqrt(np.mean(x.astype(np.float32) ** 2))) / 32768.0
 
-        if rms > 0.012:
+        speak_th = float(os.environ.get("VB_RMS_SPEAK_THRESHOLD", "0.008"))
+        silence_th = float(os.environ.get("VB_RMS_SILENCE_THRESHOLD", "0.003"))
+
+        if os.environ.get("VB_DEBUG_RMS") == "1":
+            self._rms_log_counter = getattr(self, "_rms_log_counter", 0) + 1
+            if self._rms_log_counter % 50 == 0:
+                log.info("mic RMS=%.5f speaking=%s (thresholds: %.4f / %.4f)",
+                         rms, self._speaking, speak_th, silence_th)
+
+        if rms > speak_th:
             self._speech_counter += 1
             self._silence_counter = 0
-            if not self._speaking and self._speech_counter >= 2:
+            if not self._speaking and self._speech_counter >= 1:
                 self._speaking = True
+                log.info("mic → SPEAKING (rms=%.5f > %.4f)", rms, speak_th)
                 self.on_level(True)
-        elif rms < 0.006:
+        elif rms < silence_th:
             self._silence_counter += 1
             self._speech_counter = 0
-            if self._speaking and self._silence_counter >= 8:
+            if self._speaking and self._silence_counter >= 6:
                 self._speaking = False
+                log.info("mic → SILENCE (rms=%.5f < %.4f)", rms, silence_th)
                 self.on_level(False)
 
     @staticmethod
