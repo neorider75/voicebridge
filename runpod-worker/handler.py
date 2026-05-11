@@ -99,40 +99,42 @@ def get_rvc_router():
 def handler(job):
     """Entry point appelé par RunPod pour chaque job.
 
-    Cette fonction est une fonction CLASSIQUE (pas un générateur).
-    Selon l'opération elle retourne :
-      - pour live_pipeline : un OBJET générateur (handle_live_pipeline appelé
-        sans itération) → RunPod détecte le générateur et stream les chunks
-      - pour les autres ops : un dict synchrone
+    Cette fonction est **toujours un générateur** (contient yield from /
+    yield). C'est nécessaire pour que RunPod SDK la traite comme handler
+    streaming via inspect.isgeneratorfunction() au moment de l'enregistrement
+    runpod.serverless.start().
 
-    /!\ Ne JAMAIS mélanger `yield` et `return X` dans cette fonction. Dès
-    qu'il y a un yield, Python transforme la fonction entière en générateur,
-    et tous les `return X` deviennent `raise StopIteration(X)` silencieux,
-    avec pour effet : le client RunPod voit `output: []` au lieu du dict.
+    Comportement :
+      - live_pipeline : yield les chunks au fur et à mesure (vrai streaming)
+      - autres ops    : yield UN seul dict (RunPod l'agrège en array de 1
+        item, le client Hostinger déballe via runpod_client.runsync)
+
+    Config associée à start() : return_aggregate_stream=True → /runsync
+    matérialise les yields en array dans la réponse.
     """
     inp = job.get("input", {})
     op = inp.get("operation", "live_pipeline")
 
     log.info("handler op=%s", op)
 
-    # Streaming : on retourne l'objet générateur (sans l'itérer).
-    # RunPod SDK détecte que c'est un générateur et stream les yields.
+    # Streaming : yield from le générateur de live_pipeline
     if op == "live_pipeline":
-        return handle_live_pipeline(inp)
+        yield from handle_live_pipeline(inp)
+        return
 
-    # Opérations synchrones : try/except + return dict
+    # Opérations synchrones : yield le résultat une seule fois
     try:
         if op == "warmup":
-            return handle_warmup(inp)
+            yield handle_warmup(inp)
         elif op == "translate":
-            return handle_translate(inp)
+            yield handle_translate(inp)
         elif op == "rvc_convert":
-            return handle_rvc_convert(inp)
+            yield handle_rvc_convert(inp)
         else:
-            return {"error": "unknown_operation", "received": op}
+            yield {"error": "unknown_operation", "received": op}
     except Exception as e:  # noqa: BLE001
         log.exception("handler error op=%s", op)
-        return {"error": "handler_failed", "message": str(e)}
+        yield {"error": "handler_failed", "message": str(e)}
 
 
 # ============================================================================

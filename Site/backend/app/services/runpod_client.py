@@ -166,6 +166,25 @@ def runsync(payload: dict, timeout: float = DEFAULT_TIMEOUT_SYNC) -> dict:
         raise RunPodError(f"runsync status={status}: {json.dumps(data)[:300]}")
 
     out = data.get("output")
+
+    # Le worker enregistre handler() comme générateur avec
+    # return_aggregate_stream=True. Pour les ops sync (warmup, translate,
+    # rvc_convert) qui yield UN seul dict, RunPod retourne un array
+    # [{...}]. On déballe pour exposer un dict simple aux appelants.
+    if isinstance(out, list):
+        if len(out) == 1:
+            out = out[0]
+        elif len(out) == 0:
+            raise RunPodError("worker returned empty output (no yield)")
+        else:
+            # Plusieurs items yieldés sur /runsync — cas anormal pour les ops
+            # sync. On joint les dicts d'erreur ou retourne le dernier.
+            errors = [it for it in out if isinstance(it, dict) and "error" in it]
+            if errors:
+                raise RunPodError(
+                    f"worker error: {errors[0].get('message') or errors[0]['error']}")
+            out = out[-1]  # fallback : dernier yield
+
     if isinstance(out, dict) and "error" in out:
         raise RunPodError(f"worker error: {out.get('message') or out['error']}")
     return out if isinstance(out, dict) else {"output": out}

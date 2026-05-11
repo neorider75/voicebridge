@@ -90,30 +90,30 @@ def get_rvc_router():
 # ============================================================================
 
 def handler(job):
-    """Entry point. Fonction classique (PAS un générateur) :
-    - live_pipeline → retourne l'objet générateur de handle_live_pipeline
-    - autres ops    → retourne un dict synchrone
-    Ne JAMAIS mettre yield ici (sinon les return deviennent StopIteration).
+    """Entry point. TOUJOURS un générateur (yield from / yield) pour que
+    RunPod SDK l'enregistre comme streaming via inspect.isgeneratorfunction().
+    Avec return_aggregate_stream=True, /runsync agrège les yields en array.
     """
     inp = job.get("input", {})
     op = inp.get("operation", "live_pipeline")
     log.info("handler op=%s", op)
 
     if op == "live_pipeline":
-        return handle_live_pipeline(inp)
+        yield from handle_live_pipeline(inp)
+        return
 
     try:
         if op == "warmup":
-            return handle_warmup(inp)
+            yield handle_warmup(inp)
         elif op == "translate":
-            return handle_translate(inp)
+            yield handle_translate(inp)
         elif op == "rvc_convert":
-            return handle_rvc_convert(inp)
+            yield handle_rvc_convert(inp)
         else:
-            return {"error": "unknown_operation", "received": op}
+            yield {"error": "unknown_operation", "received": op}
     except Exception as e:  # noqa: BLE001
         log.exception("handler error op=%s", op)
-        return {"error": "handler_failed", "message": str(e)}
+        yield {"error": "handler_failed", "message": str(e)}
 
 
 # ============================================================================

@@ -328,44 +328,51 @@ class TestRvcConvert:
 # ============================================================================
 
 class TestHandler:
+    def test_handler_is_generator_function(self):
+        """Régression critique : handler DOIT être détecté comme générateur
+        par inspect.isgeneratorfunction() pour que RunPod SDK l'enregistre
+        en mode streaming. Sans ça, /run plante avec
+        "Object of type generator is not JSON serializable".
+        """
+        import inspect
+        from handler import handler
+        assert inspect.isgeneratorfunction(handler), (
+            "handler() doit avoir au moins un yield pour être enregistré "
+            "comme générateur par RunPod SDK"
+        )
+
     def test_unknown_operation(self):
         from handler import handler
-        # handler est un generator OU un dict selon l'op ; pour unknown_op
-        # c'est un dict (non-streaming).
-        result = handler({"input": {"operation": "do_unknown_thing"}})
-        # handler retourne un dict pour les ops non-streaming
+        # handler est toujours un générateur, donc on consomme le premier yield
+        gen = handler({"input": {"operation": "do_unknown_thing"}})
+        result = next(gen)
         assert "error" in result
         assert result["error"] == "unknown_operation"
 
     @patch("handler.get_whisper")
     def test_handler_warmup_routing(self, mock_whisper):
         from handler import handler
-        result = handler({"input": {"operation": "warmup",
-                                     "components": ["whisper"]}})
+        gen = handler({"input": {"operation": "warmup",
+                                  "components": ["whisper"]}})
+        result = next(gen)
         assert result["ok"] is True
+        # Plus de yield après le résultat warmup
+        assert list(gen) == []
 
-    def test_handler_live_pipeline_returns_generator(self):
-        """Régression : handler() doit retourner un objet générateur pour
-        live_pipeline (et pas itérer dessus). Sans ça, les `return X` des
-        ops sync deviendraient des StopIteration silencieux dans le même
-        scope si on ajoutait yield à handler().
-        """
-        import inspect
+    @patch("handler.get_whisper")
+    def test_handler_translate_yields_single_dict(self, mock_whisper):
+        """Les ops sync (warmup, translate, rvc_convert) doivent yield
+        UN seul dict — RunPod l'agrège en array de 1 item via
+        return_aggregate_stream=True."""
         from handler import handler
-        result = handler({"input": {"operation": "live_pipeline"}})
-        # live_pipeline DOIT retourner un objet générateur, jamais un dict
-        assert inspect.isgenerator(result), (
-            f"live_pipeline doit retourner un générateur, got {type(result)}"
-        )
-
-    def test_handler_sync_ops_return_dict_not_generator(self):
-        """Régression : warmup/translate/rvc_convert/unknown DOIVENT retourner
-        un dict, jamais un générateur (sinon RunPod renvoie output: [])."""
-        import inspect
-        from handler import handler
-        for op in ("unknown_op",):
-            result = handler({"input": {"operation": op}})
-            assert isinstance(result, dict), (
-                f"op={op} doit retourner dict, got {type(result)}"
-            )
-            assert not inspect.isgenerator(result)
+        # Mock NLLB pour éviter le chargement réel
+        with patch("handler.get_nllb") as mock_n:
+            mock_inst = MagicMock()
+            mock_inst.translate.return_value = "Hello"
+            mock_n.return_value = mock_inst
+            gen = handler({"input": {"operation": "translate",
+                                      "provider": "nllb", "text": "Bonjour",
+                                      "src_lang": "fr", "tgt_lang": "en"}})
+            yields = list(gen)
+            assert len(yields) == 1
+            assert yields[0]["translated"] == "Hello"
