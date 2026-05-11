@@ -104,6 +104,11 @@ def handler(job):
     streaming via inspect.isgeneratorfunction() au moment de l'enregistrement
     runpod.serverless.start().
 
+    Tout est wrappé dans un try/except qui yield la traceback complète
+    dans le payload retourné — comme ça les erreurs côté worker sont
+    visibles immédiatement dans la réponse client sans avoir à fouiller
+    les logs RunPod.
+
     Comportement :
       - live_pipeline : yield les chunks au fur et à mesure (vrai streaming)
       - autres ops    : yield UN seul dict (RunPod l'agrège en array de 1
@@ -112,29 +117,64 @@ def handler(job):
     Config associée à start() : return_aggregate_stream=True → /runsync
     matérialise les yields en array dans la réponse.
     """
-    inp = job.get("input", {})
-    op = inp.get("operation", "live_pipeline")
+    import traceback
+    import sys
+
+    try:
+        inp = job.get("input", {})
+        op = inp.get("operation", "live_pipeline")
+    except Exception as e:  # noqa: BLE001
+        # Très improbable — mais on garantit que toute exception sort en yield
+        tb = traceback.format_exc()
+        sys.stderr.write(f"[handler] job parse failed: {tb}\n")
+        sys.stderr.flush()
+        yield {"error": "handler_failed",
+               "message": f"job parse failed: {e}",
+               "traceback": tb}
+        return
 
     log.info("handler op=%s", op)
+    sys.stderr.write(f"[handler] start op={op}\n")
+    sys.stderr.flush()
 
     # Streaming : yield from le générateur de live_pipeline
     if op == "live_pipeline":
-        yield from handle_live_pipeline(inp)
+        try:
+            yield from handle_live_pipeline(inp)
+        except Exception as e:  # noqa: BLE001
+            tb = traceback.format_exc()
+            log.exception("live_pipeline crashed")
+            sys.stderr.write(f"[handler] live_pipeline crashed:\n{tb}\n")
+            sys.stderr.flush()
+            yield {"type": "error",
+                   "message": f"live_pipeline crashed: {e}",
+                   "traceback": tb}
         return
 
     # Opérations synchrones : yield le résultat une seule fois
     try:
         if op == "warmup":
-            yield handle_warmup(inp)
+            result = handle_warmup(inp)
         elif op == "translate":
-            yield handle_translate(inp)
+            result = handle_translate(inp)
         elif op == "rvc_convert":
-            yield handle_rvc_convert(inp)
+            result = handle_rvc_convert(inp)
         else:
             yield {"error": "unknown_operation", "received": op}
-    except Exception as e:  # noqa: BLE001
+            return
+        sys.stderr.write(f"[handler] op={op} OK\n")
+        sys.stderr.flush()
+        yield result
+    except BaseException as e:  # noqa: BLE001 — on attrape même SystemExit/KeyboardInterrupt
+        tb = traceback.format_exc()
         log.exception("handler error op=%s", op)
-        yield {"error": "handler_failed", "message": str(e)}
+        sys.stderr.write(f"[handler] op={op} FAILED:\n{tb}\n")
+        sys.stderr.flush()
+        yield {"error": "handler_failed",
+               "op": op,
+               "message": str(e) or e.__class__.__name__,
+               "exc_type": e.__class__.__name__,
+               "traceback": tb}
 
 
 # ============================================================================

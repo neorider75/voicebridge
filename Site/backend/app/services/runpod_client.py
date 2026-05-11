@@ -230,7 +230,20 @@ def runsync(payload: dict, timeout: float = DEFAULT_TIMEOUT_SYNC) -> dict:
             out = out[-1]  # fallback : dernier yield
 
     if isinstance(out, dict) and "error" in out:
-        raise RunPodError(f"worker error: {out.get('message') or out['error']}")
+        # On inclut un extrait de traceback dans l'erreur quand le worker
+        # en fournit une (cf. handler.py qui yield "traceback") — utile pour
+        # diagnostiquer sans avoir à fouiller les logs RunPod.
+        msg = out.get("message") or out["error"]
+        tb = out.get("traceback")
+        exc_type = out.get("exc_type")
+        full = f"worker error: {msg}"
+        if exc_type and exc_type not in msg:
+            full = f"worker error ({exc_type}): {msg}"
+        if tb:
+            # Garder les 3 dernières lignes utiles de la traceback
+            tail = "\n".join(tb.strip().splitlines()[-4:])
+            full += f"\n— last frames —\n{tail}"
+        raise RunPodError(full)
     return out if isinstance(out, dict) else {"output": out}
 
 
