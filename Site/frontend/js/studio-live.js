@@ -394,6 +394,20 @@
     var now = ctx.currentTime;
     var startAt = (nextPlayAt <= now + safety) ? (now + safety) : nextPlayAt;
 
+    // 1-shot log pour vérifier que scheduleBuffer s'exécute bien
+    if (!window.__vbScheduleLogged) {
+      window.__vbScheduleLogged = true;
+      console.log('[live] FIRST scheduleBuffer call:'
+                + ' startAt=' + startAt.toFixed(3)
+                + ' now=' + now.toFixed(3)
+                + ' dur=' + (dur * 1000).toFixed(0) + 'ms'
+                + ' ctxState=' + ctx.state
+                + ' ctxRate=' + ctx.sampleRate
+                + ' bufRate=' + audioBuffer.sampleRate
+                + ' bufLen=' + audioBuffer.length
+                + ' destination=' + (ctx.destination ? 'OK' : 'MISSING'));
+    }
+
     try {
       src.start(startAt);
     } catch (e) {
