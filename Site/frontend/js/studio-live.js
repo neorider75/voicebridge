@@ -66,9 +66,11 @@
 
   // Fade in/out aux frontières de chunks (ms) pour masquer les clicks
   // de jonction si le buffer n'est pas exactement aligné en sample.
-  // 0 = désactivé (override via localStorage.vbChunkFadeMs).
+  // Default 0 = désactivé (les clicks 24 kHz speech sont peu audibles
+  // et le fade introduit un risque de coupure sur les chunks courts).
+  // Activable via localStorage.vbChunkFadeMs = "3".
   var CHUNK_FADE_MS = parseInt(
-    localStorage.getItem('vbChunkFadeMs') || '3', 10);
+    localStorage.getItem('vbChunkFadeMs') || '0', 10);
 
   var warmupPending = false;     // true pendant le chargement du modèle de traduction
   var gpuWarmupPending = false;  // true pendant /api/cloud/runpod/warmup
