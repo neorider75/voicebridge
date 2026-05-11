@@ -599,7 +599,15 @@
 
   // Destination finale de chaque BufferSource — soit le node-stream-routé
   // (si dispo, supporte setSinkId), soit ctx.destination direct (fallback).
+  //
+  // Override via localStorage.vbDirectDestination='1' pour bypasser le
+  // routage MediaStreamDestination → <audio>. Utile si tu n'as pas
+  // besoin de setSinkId (sortie BlackHole) et que tu veux éviter le hum
+  // résiduel que ce routing peut introduire entre les phrases.
   function playbackDestination(ctx) {
+    if (localStorage.getItem('vbDirectDestination') === '1') {
+      return ctx.destination;
+    }
     return playbackDestNode || ctx.destination;
   }
 
