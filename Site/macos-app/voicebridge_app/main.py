@@ -240,7 +240,13 @@ class VoiceBridgeApp(rumps.App):
             return []
 
     def _refresh_voice_submenu(self, _sender=None) -> None:
-        """Reconstruit le sous-menu Voix avec la liste fraîche du serveur."""
+        """Reconstruit le sous-menu Voix avec la liste fraîche du serveur.
+
+        Auto-fallback : si self.voice_id mémorisé n'existe plus côté
+        serveur (voix supprimée, install fraîche, etc.), on bascule sur la
+        première voix "ready" disponible — sinon push_audio resterait
+        bloqué (configure rejetté avec "voix introuvable").
+        """
         # Vide le submenu existant
         for k in list(self.voice_item.keys()):
             del self.voice_item[k]
@@ -253,6 +259,24 @@ class VoiceBridgeApp(rumps.App):
         if not voices:
             self.voice_item["__none"] = rumps.MenuItem("(aucune voix disponible)")
             return
+
+        # Détection : la voix mémorisée existe-t-elle ?
+        ready_voices = [v for v in voices if v.get("status", "ready") == "ready"]
+        current_exists = any(v.get("id") == self.voice_id for v in ready_voices)
+        if not current_exists and ready_voices:
+            fallback = ready_voices[0]
+            log.info("voice_id '%s' introuvable → fallback '%s'",
+                     self.voice_id, fallback.get("id"))
+            self.voice_id = fallback["id"]
+            self.language = fallback.get("language", "fr")
+            if self.target_lang_choice == "off":
+                self.target_lang = self.language
+            cfg.kr_set("default_voice", self.voice_id)
+            self.voice_item.title = f"Voix : {fallback.get('name', self.voice_id)}"
+            # Re-pousse le configure au serveur avec la voix corrigée
+            if self.ws:
+                self.ws.set_voice(self.voice_id, self.language)
+
         for v in voices:
             # Skip les voix non prêtes (encoding en cours, ou failed)
             status = v.get("status", "ready")

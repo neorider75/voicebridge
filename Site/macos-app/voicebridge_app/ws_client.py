@@ -49,6 +49,10 @@ class WSClient:
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ws = None  # référence courante pour broadcast send
+        # Flag levé sur réception "ready" du serveur (configure accepté).
+        # Tant qu'il est False, push_audio() drop les frames pour ne pas
+        # spammer le serveur de chunks rejetés "envoyez d'abord un configure".
+        self._ready = False
 
     # ── Public ───────────────────────────────────────────────────────
 
@@ -68,10 +72,16 @@ class WSClient:
             self._thread.join(timeout=3)
 
     def push_audio(self, raw_bytes: bytes) -> None:
-        """Appelé par AudioPipeline (callback). Envoie le chunk en binary frame."""
+        """Appelé par AudioPipeline (callback). Envoie le chunk en binary frame.
+
+        Drop silencieusement si la WS n'est pas connectée OU si le serveur
+        n'a pas encore acquitté le configure (state "ready"). Évite la
+        boucle de spam "envoyez d'abord un message configure" quand le
+        voice_id mémorisé n'existe pas côté serveur.
+        """
         ws = self._ws
         loop = self._loop
-        if not ws or not loop:
+        if not ws or not loop or not self._ready:
             return
         try:
             asyncio.run_coroutine_threadsafe(ws.send(raw_bytes), loop)
@@ -122,6 +132,9 @@ class WSClient:
         ws = self._ws
         loop = self._loop
         if ws and loop:
+            # Bloque les push audio jusqu'à reception d'un nouveau "ready"
+            # (le serveur revalide tout le payload sur chaque configure).
+            self._ready = False
             try:
                 asyncio.run_coroutine_threadsafe(
                     ws.send(json.dumps(self._build_configure())), loop)
@@ -153,6 +166,7 @@ class WSClient:
                     ping_timeout=15,
                 ) as ws:
                     self._ws = ws
+                    self._ready = False  # ré-armé à chaque (re)connexion
                     attempt = 0
                     self.on_state_change("connected")
                     # Configure (payload complet V3 : mode + provider + RVC)
@@ -163,6 +177,7 @@ class WSClient:
                 log.warning("WS connect/loop error: %s", exc)
                 self.on_state_change("disconnected")
                 self._ws = None
+                self._ready = False
                 if self._stop.is_set():
                     break
                 d = delays[min(attempt, len(delays) - 1)]
@@ -234,8 +249,13 @@ class WSClient:
             except Exception:  # noqa: BLE001
                 pass
         elif ptype == "ready":
+            self._ready = True
             self.on_state_change("ready")
         elif ptype == "error":
+            # En cas d'erreur côté serveur, on bloque les push audio tant
+            # qu'on n'a pas reçu un nouveau "ready". L'app pourra réémettre
+            # un configure avec une voix valide.
+            self._ready = False
             log.warning("server error: %s", payload.get("message"))
             self.on_state_change("error", payload.get("message"))
         elif ptype == "state_update":
