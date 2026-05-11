@@ -23,6 +23,14 @@
   // Lecture streaming : on schedule chaque chunk PCM 24 kHz directement sur
   // l'AudioContext (au lieu de file d'attente Blob WAV qui ajoute du delay).
   var playbackCtx = null;
+  // ── Routing audio (Navigateur / BlackHole) ──
+  // On route TOUJOURS la sortie de l'AudioContext via un <audio>
+  // alimenté par un MediaStreamDestination. Ça permet d'appeler
+  // setSinkId() pour basculer vers BlackHole sans devoir recréer le ctx.
+  var playbackDestNode = null;     // MediaStreamAudioDestinationNode
+  var playbackAudioEl = null;       // <audio> caché, "haut-parleur virtuel"
+  var blackholeDeviceId = null;     // mémorisé après selectAudioOutput()
+  var currentOutputMode = 'browser'; // "browser" ou "blackhole"
   var nextPlayAt = 0;
   var TTS_RATE = 24000;
 
@@ -401,11 +409,94 @@
       nextPlayAt = playbackCtx.currentTime;
       console.log('[live] AudioContext (lazy) — rate=' + playbackCtx.sampleRate
                 + ' state=' + playbackCtx.state);
+      // Crée le pipeline de routing : ctx → MediaStreamDestination →
+      // <audio>.srcObject. L'élément <audio> peut alors voir son output
+      // device changé via setSinkId() (Chrome 110+, Edge).
+      try {
+        playbackDestNode = playbackCtx.createMediaStreamDestination();
+        playbackAudioEl = document.createElement('audio');
+        playbackAudioEl.style.display = 'none';
+        playbackAudioEl.autoplay = true;
+        playbackAudioEl.srcObject = playbackDestNode.stream;
+        document.body.appendChild(playbackAudioEl);
+        // setSinkId initial : système par défaut (haut-parleurs)
+        // → mis à jour quand l'user choisit "BlackHole" via applyOutputMode().
+      } catch (e) {
+        console.warn('[live] MediaStreamDest unavailable, fallback ctx.destination', e);
+        playbackDestNode = null;
+      }
     }
     if (playbackCtx.state === 'suspended') {
       playbackCtx.resume().catch(function () {});
     }
     return playbackCtx;
+  }
+
+  // Destination finale de chaque BufferSource — soit le node-stream-routé
+  // (si dispo, supporte setSinkId), soit ctx.destination direct (fallback).
+  function playbackDestination(ctx) {
+    return playbackDestNode || ctx.destination;
+  }
+
+  // ── Choix sortie audio (Navigateur / BlackHole) ──
+
+  function applyOutputMode(mode) {
+    currentOutputMode = mode;
+    if (!playbackAudioEl) return;  // ctx pas encore créé
+    if (mode === 'blackhole') {
+      pickBlackholeDevice().then(function (deviceId) {
+        if (!deviceId) return;
+        if (typeof playbackAudioEl.setSinkId === 'function') {
+          playbackAudioEl.setSinkId(deviceId).then(function () {
+            console.log('[live] output routed to BlackHole (deviceId=', deviceId + ')');
+            VB.notify('success', 'Sortie audio → BlackHole 2ch');
+          }).catch(function (err) {
+            console.warn('[live] setSinkId failed', err);
+            VB.notify('error', 'Routage BlackHole impossible : ' + err.message);
+          });
+        } else {
+          VB.notify('warning', 'Ton navigateur ne supporte pas setSinkId (essaie Chrome ≥110)');
+        }
+      });
+    } else {
+      // "browser" : retour à la sortie système par défaut
+      if (typeof playbackAudioEl.setSinkId === 'function') {
+        playbackAudioEl.setSinkId('').catch(function () {});
+      }
+    }
+  }
+
+  function pickBlackholeDevice() {
+    // 1) Si on a déjà l'id en cache (sélectionné via selectAudioOutput
+    //    ou trouvé par enumerateDevices), on le retourne directement.
+    if (blackholeDeviceId) return Promise.resolve(blackholeDeviceId);
+
+    // 2) Tentative enumerateDevices — marche sans permission spécifique
+    //    mais les labels ne sont pas exposés sans permission micro.
+    //    On essaie quand même.
+    return navigator.mediaDevices.enumerateDevices().then(function (devices) {
+      var bh = devices.find(function (d) {
+        return d.kind === 'audiooutput'
+            && /blackhole/i.test(d.label || '');
+      });
+      if (bh && bh.deviceId) {
+        blackholeDeviceId = bh.deviceId;
+        return bh.deviceId;
+      }
+      // 3) Fallback : prompt explicite si l'API existe
+      if (navigator.mediaDevices.selectAudioOutput) {
+        return navigator.mediaDevices.selectAudioOutput().then(function (dev) {
+          blackholeDeviceId = dev.deviceId;
+          return dev.deviceId;
+        }).catch(function (err) {
+          VB.notify('warning', 'Sélection BlackHole annulée');
+          throw err;
+        });
+      }
+      VB.notify('warning', 'BlackHole introuvable. Vérifie qu\'il est installé '
+                         + 'et donne au site la permission "Périphériques audio".');
+      return null;
+    });
   }
 
   function decodePcmChunk(b64, ctx, sampleRate) {
@@ -446,7 +537,7 @@
     // ni de ramp scheduling.
     var src = ctx.createBufferSource();
     src.buffer = audioBuffer;
-    src.connect(ctx.destination);
+    src.connect(playbackDestination(ctx));
 
     var safety = SCHEDULE_SAFETY_MS / 1000;
     var dur = audioBuffer.duration;
@@ -569,24 +660,19 @@
     // le contexte tourner au rate device (44.1 ou 48 kHz typiquement) et on
     // signale juste à chaque AudioBuffer qu'il est en 24 kHz — le navigateur
     // resamplera pour la sortie hardware.
-    if (!playbackCtx) {
-      try {
-        var Ctx = window.AudioContext || window.webkitAudioContext;
-        playbackCtx = new Ctx({ latencyHint: 'interactive' });
-        console.log('[live] AudioContext created — rate=' + playbackCtx.sampleRate
-                  + ' state=' + playbackCtx.state);
-      } catch (e) {
-        console.warn('[live] AudioContext creation failed', e);
-      }
-    }
-    if (playbackCtx && playbackCtx.state === 'suspended') {
-      playbackCtx.resume().then(function () {
-        console.log('[live] playbackCtx resumed — state=' + playbackCtx.state);
-      }).catch(function (err) {
-        console.warn('[live] playbackCtx.resume failed', err);
-      });
-    }
+    // Crée le ctx + pipeline routing (destination stream + <audio>) dans
+    // la chaîne de user-gesture (clic). Sinon Safari le suspendra.
+    ensurePlaybackCtx();
     nextPlayAt = playbackCtx ? playbackCtx.currentTime : 0;
+
+    // Applique le mode de sortie sélectionné (Navigateur / BlackHole)
+    // maintenant que le pipeline est prêt.
+    var outputGroup = document.querySelector('.radio-group[data-name="live-output"]');
+    var outMode = (outputGroup && (outputGroup.dataset.value
+        || (outputGroup.querySelector('.radio-option.selected') || {}).dataset
+        && outputGroup.querySelector('.radio-option.selected').dataset.value))
+        || 'browser';
+    applyOutputMode(outMode);
 
     var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + window.location.host + '/ws/stream');
@@ -782,7 +868,12 @@
           if (opt.classList.contains('disabled')) return;
           $$('.radio-option', group).forEach(function (o) { o.classList.remove('selected'); });
           opt.classList.add('selected');
-          group.dataset.value = opt.getAttribute('data-value');
+          var mode = opt.getAttribute('data-value');
+          group.dataset.value = mode;
+          // Applique tout de suite (le playbackCtx existe peut-être déjà
+          // si une session est en cours — basculer Navigateur ↔ BlackHole
+          // à chaud devient instantané).
+          applyOutputMode(mode);
         });
       });
     });

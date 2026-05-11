@@ -34,6 +34,12 @@ CAPTURE_BLOCKSIZE = 1600  # 100 ms à 16 kHz
 OUTPUT_RATE = 24000  # NeuTTS → 24 kHz
 OUTPUT_CHANNELS = 1
 OUTPUT_DTYPE = "int16"
+# Buffer de sortie tuned pour la latence (BlackHole → Teams/Zoom).
+# 480 samples @ 24 kHz = 20 ms. Combiné avec le buffer PortAudio interne
+# (~50 ms en moyenne sur macOS) ça donne une latence end-to-end ~70 ms
+# côté sortie, vs ~150-300 ms avec blocksize=0 (default ~5120 samples).
+# Override via env VB_OUTPUT_BLOCKSIZE.
+OUTPUT_BLOCKSIZE = int(os.environ.get("VB_OUTPUT_BLOCKSIZE", "480"))
 
 
 def list_input_devices() -> list[dict]:
@@ -107,11 +113,18 @@ class AudioPipeline:
 
         # Sortie : RawOutputStream (PCM 16-bit) — on écrit via stream.write()
         # depuis un thread dédié pour éviter de bloquer le callback d'entrée.
+        # blocksize=OUTPUT_BLOCKSIZE (480 samples / 20 ms par défaut) au lieu
+        # de 0 (default ~5120/213 ms) → -150 ms de latence end-to-end côté
+        # sortie BlackHole.
         self._out_stream = sd.RawOutputStream(
             samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype=OUTPUT_DTYPE,
-            device=output_idx, blocksize=0,
+            device=output_idx, blocksize=OUTPUT_BLOCKSIZE,
+            latency='low',  # demande à PortAudio le buffer le plus petit possible
         )
         self._out_stream.start()
+        log.info("AudioPipeline output stream: rate=%d blocksize=%d "
+                 "latency=%.3fs", OUTPUT_RATE, OUTPUT_BLOCKSIZE,
+                 self._out_stream.latency)
         self._stop.clear()
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
         self._writer_thread.start()
