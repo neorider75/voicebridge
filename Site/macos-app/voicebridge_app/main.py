@@ -234,7 +234,7 @@ class VoiceBridgeApp(rumps.App):
         try:
             url = self.server_url.rstrip("/") + "/api/voices"
             req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
-            with urlopen(req, timeout=5) as r:
+            with urlopen(req, timeout=15) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 return data.get("voices", []) if isinstance(data, dict) else []
         except Exception as exc:  # noqa: BLE001
@@ -356,7 +356,7 @@ class VoiceBridgeApp(rumps.App):
         try:
             url = self.server_url.rstrip("/") + "/api/cloud/status"
             req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
-            with urlopen(req, timeout=5) as r:
+            with urlopen(req, timeout=15) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 self.runpod_configured = bool(data.get("runpod_configured"))
                 self.openai_configured = bool(data.get("openai_configured"))
@@ -468,7 +468,7 @@ class VoiceBridgeApp(rumps.App):
         try:
             url = self.server_url.rstrip("/") + "/api/rvc/models"
             req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
-            with urlopen(req, timeout=5) as r:
+            with urlopen(req, timeout=15) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 return data.get("models", []) if isinstance(data, dict) else []
         except Exception as exc:  # noqa: BLE001
@@ -637,7 +637,7 @@ class VoiceBridgeApp(rumps.App):
         try:
             url = self.server_url.rstrip("/") + "/api/auth/check"
             req = Request(url, headers={"Authorization": f"Bearer {self.api_token}"})
-            with urlopen(req, timeout=5) as r:
+            with urlopen(req, timeout=15) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 return bool(data.get("authenticated"))
         except Exception as exc:  # noqa: BLE001
