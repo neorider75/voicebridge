@@ -345,14 +345,15 @@
     return playbackCtx;
   }
 
-  function decodePcmChunk(b64, ctx) {
+  function decodePcmChunk(b64, ctx, sampleRate) {
     var raw = atob(b64);
     var bytes = new Uint8Array(raw.length);
     for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
     var int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
     var f32 = new Float32Array(int16.length);
     for (var j = 0; j < int16.length; j++) f32[j] = int16[j] / 32768;
-    var buffer = ctx.createBuffer(1, f32.length, TTS_RATE);
+    var sr = sampleRate || TTS_RATE;
+    var buffer = ctx.createBuffer(1, f32.length, sr);
     buffer.copyToChannel(f32, 0);
     return buffer;
   }
@@ -394,7 +395,7 @@
     }
   }
 
-  function enqueuePcmChunk(b64) {
+  function enqueuePcmChunk(b64, sampleRate) {
     try {
       var ctx = ensurePlaybackCtx();
       if (ctx.state === 'suspended') {
@@ -402,7 +403,7 @@
           console.warn('[live] resume during chunk failed', err);
         });
       }
-      var audioBuffer = decodePcmChunk(b64, ctx);
+      var audioBuffer = decodePcmChunk(b64, ctx, sampleRate);
 
       // Mode "wait_full" : on bufferise TOUS les chunks de la phrase
       // jusqu'à audio_end avant de commencer la lecture. Latence +durée
@@ -550,7 +551,7 @@
       } else if (payload.type === 'translation_error') {
         VB.notify('warning', payload.message || 'Traduction échouée');
       } else if (payload.type === 'audio_pcm') {
-        enqueuePcmChunk(payload.data);
+        enqueuePcmChunk(payload.data, payload.sample_rate);
       } else if (payload.type === 'audio_end') {
         onAudioEnd();
       } else if (payload.type === 'cost_update') {

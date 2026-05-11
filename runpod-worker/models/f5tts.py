@@ -65,7 +65,7 @@ class F5TTS:
     # ─── Synthèse complète (sans streaming) — utilisée pour cascade RVC ───
 
     def synthesize(self, text: str, voice_ref_b64: str,
-                   language: str = "fr") -> np.ndarray:
+                   language: str = "fr") -> tuple[np.ndarray, int]:
         """Synthétise un audio complet avec une voix de référence donnée.
 
         Args:
@@ -101,40 +101,78 @@ class F5TTS:
             os.unlink(ref_path)
 
         # result peut être : np.ndarray (ancien) OU tuple (wav, sr, spect) (v1+)
+        sr_out = TTS_SAMPLE_RATE
         if isinstance(result, tuple):
             audio = result[0]
+            if len(result) >= 2 and isinstance(result[1], (int, float)):
+                sr_out = int(result[1])
         else:
             audio = result
-        return audio
+
+        # F5-TTS peut renvoyer un torch.Tensor — on bascule en numpy.
+        if hasattr(audio, "detach") and hasattr(audio, "cpu"):
+            audio = audio.detach().cpu().numpy()
+        audio = np.asarray(audio)
+        if audio.ndim > 1:
+            audio = audio.squeeze()
+            if audio.ndim > 1:
+                audio = audio.mean(axis=0)  # multi-canal → mono
+
+        # Normalise vers float32 ∈ [-1, 1]. Si l'audio est déjà int16, on
+        # divise ; sinon on caste en float32.
+        if audio.dtype == np.int16:
+            audio = audio.astype(np.float32) / 32768.0
+        else:
+            audio = audio.astype(np.float32)
+
+        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        log.info("F5-TTS.infer done: samples=%d sr=%d dtype=%s peak=%.3f",
+                 audio.size, sr_out, audio.dtype, peak)
+        if audio.size == 0:
+            log.error("F5-TTS produced empty audio for text=%r", text[:80])
+        elif peak < 1e-4:
+            log.warning("F5-TTS produced near-silent audio (peak=%.5f)", peak)
+
+        return audio, sr_out
 
     # ─── Synthèse streaming (chunk par chunk) ───
 
     def synthesize_streaming(
         self, text: str, voice_ref_b64: str, language: str = "fr"
-    ) -> Generator[tuple[str, int], None, None]:
-        """Synthétise en streaming. Yield (chunk_b64, seq) tuples.
+    ) -> Generator[tuple[str, int, int], None, None]:
+        """Synthétise en streaming. Yield (chunk_b64, seq, sample_rate) tuples.
 
         Pour V3.0 : on synthétise complet puis on chunke. Pour V3.1, hooker
         la génération autoregressive de F5-TTS pour vrai streaming
         (cf. Décision 5 du doc 00-decisions-v3.md).
         """
-        full_audio = self.synthesize(text, voice_ref_b64, language)
-        yield from self._chunk_and_encode(full_audio)
+        full_audio, sr = self.synthesize(text, voice_ref_b64, language)
+        yield from self._chunk_and_encode(full_audio, sr)
 
     # ─── Helpers ───
 
     def _chunk_and_encode(
-        self, audio: np.ndarray
-    ) -> Generator[tuple[str, int], None, None]:
-        """Découpe l'audio en chunks de STREAM_CHUNK_MS ms et encode en base64."""
-        chunk_samples = int(TTS_SAMPLE_RATE * STREAM_CHUNK_MS / 1000)
+        self, audio: np.ndarray, sample_rate: int = TTS_SAMPLE_RATE
+    ) -> Generator[tuple[str, int, int], None, None]:
+        """Découpe l'audio en chunks de STREAM_CHUNK_MS ms et encode en base64.
+
+        Yield (chunk_b64, seq, sample_rate) — le sample_rate est propagé pour
+        que le client puisse jouer l'audio à la bonne cadence.
+        """
+        chunk_samples = max(1, int(sample_rate * STREAM_CHUNK_MS / 1000))
+        # Clip [-1, 1] pour éviter wrap-around lors du cast int16
+        audio = np.clip(audio, -1.0, 1.0)
         seq = 0
+        n_chunks = 0
         for i in range(0, len(audio), chunk_samples):
             chunk = audio[i:i + chunk_samples]
             pcm = (chunk * 32767.0).astype(np.int16).tobytes()
             chunk_b64 = base64.b64encode(pcm).decode("ascii")
-            yield chunk_b64, seq
+            yield chunk_b64, seq, sample_rate
             seq += 1
+            n_chunks += 1
+        log.info("_chunk_and_encode: %d chunks (%d samples @ %d Hz)",
+                 n_chunks, len(audio), sample_rate)
 
     def _decode_voice_ref(self, voice_ref_b64: str) -> np.ndarray:
         """Décode un WAV base64 et retourne un np.ndarray float32 24kHz mono."""

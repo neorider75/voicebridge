@@ -277,11 +277,11 @@ def handle_live_pipeline(inp: dict) -> Generator[dict, None, None]:
                 yield {"type": "error",
                        "message": f"voice_ref required for {mode} mode"}
                 return
-            for chunk_b64, seq in get_f5tts().synthesize_streaming(
+            for chunk_b64, seq, sr in get_f5tts().synthesize_streaming(
                 text_to_speak, voice_ref_b64, target_lang
             ):
                 yield {"type": "audio_pcm", "data": chunk_b64, "seq": seq,
-                       "sample_rate": 24000}
+                       "sample_rate": sr}
 
         elif mode == "gpu-hybrid":
             if not voice_ref_b64:
@@ -296,7 +296,7 @@ def handle_live_pipeline(inp: dict) -> Generator[dict, None, None]:
 
             # Phase 1 : F5-TTS avec la voix native source (synthèse complète,
             # pas de streaming car RVC traite l'audio entier)
-            native_audio_array = get_f5tts().synthesize(
+            native_audio_array, _native_sr = get_f5tts().synthesize(
                 text_to_speak, voice_ref_b64, target_lang
             )
 
