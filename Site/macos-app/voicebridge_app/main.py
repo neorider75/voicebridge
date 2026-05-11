@@ -59,6 +59,10 @@ ICON_PAUSED = "🟡"
 ICON_DISCONNECTED = "🔴"
 ICON_SPEAKING = "🎤"   # bascule depuis 🟢 quand le micro détecte de la voix
 
+# Frames d'animation pour le préchauffage GPU (rotation toutes les 500 ms).
+# Donne un retour visuel actif "ça travaille" plutôt qu'un état figé.
+WARMUP_FRAMES = ["🔥", "💨", "🔥", "✨"]
+
 # Modes Live V3 (cf. doc 00-decisions-v3.md)
 MODE_CPU_V1 = "cpu-fr-en"
 MODE_GPU_CLONE = "gpu-clone"
@@ -119,6 +123,14 @@ class VoiceBridgeApp(rumps.App):
         # ── État coût session (alimenté par cost_update WS) ─────────────
         self.session_cost_eur = 0.0
         self.session_duration_s = 0
+
+        # ── État warmup (anti re-click + animation icône) ───────────────
+        # _warmup_in_progress empêche l'utilisateur de stacker N jobs
+        # RunPod en queue en cliquant frénétiquement.
+        self._warmup_in_progress = False
+        self._warmup_timer: rumps.Timer | None = None
+        self._warmup_frame_idx = 0
+        self._title_before_warmup: str = self.title  # restauré après warmup
 
         self.audio = audio_mod.AudioPipeline(
             on_chunk_captured=self._on_capture,
@@ -533,13 +545,24 @@ class VoiceBridgeApp(rumps.App):
             rumps.alert("RunPod non configuré",
                         "Va dans Réglages → Cloud sur le panel web pour saisir ta clé RunPod.")
             return
+        # Anti re-click : éviter d'empiler N jobs en queue RunPod.
+        # Le worker pool a souvent 1 seul GPU, donc N clicks = N warmups
+        # séquentiels (chaque suivant attend la fin du précédent).
+        if self._warmup_in_progress:
+            rumps.notification(
+                "VoiceBridge",
+                "Préchauffage déjà en cours",
+                "Patiente — un seul warmup à la fois (les jobs RunPod "
+                "s'empilent sinon).",
+            )
+            return
+
         components = ["whisper", "f5tts", "nllb"]
         if self.mode == MODE_GPU_HYBRID:
             components.append("rvc")
 
-        # Run en thread : un cold-start RunPod peut prendre 2-5 min
-        # (pull image + load modèles depuis le Volume). Sur main thread
-        # ça freezerait toute la menu bar.
+        self._warmup_in_progress = True
+        self._title_before_warmup = self.title
         self.warmup_item.title = "⏳ Préchauffage GPU en cours…"
         try:
             rumps.notification("VoiceBridge", "Préchauffage lancé",
@@ -547,11 +570,47 @@ class VoiceBridgeApp(rumps.App):
         except Exception:  # noqa: BLE001
             pass
 
+        # Démarre l'animation de l'icône menu bar (rotation 🔥💨🔥✨)
+        self._start_warmup_animation()
+
+        # Run en thread : un cold-start RunPod peut prendre 2-5 min
+        # (pull image + load modèles depuis le Volume).
         threading.Thread(
             target=self._warmup_thread,
             args=(components,),
             daemon=True,
         ).start()
+
+    def _start_warmup_animation(self) -> None:
+        """rumps.Timer : tick toutes les 500 ms sur le main thread Cocoa.
+
+        Roule l'icône WARMUP_FRAMES pour montrer que ça travaille.
+        """
+        self._warmup_frame_idx = 0
+        # Arrête un timer résiduel éventuel
+        if self._warmup_timer is not None:
+            try:
+                self._warmup_timer.stop()
+            except Exception:  # noqa: BLE001
+                pass
+        self._warmup_timer = rumps.Timer(self._warmup_tick, 0.5)
+        self._warmup_timer.start()
+
+    def _warmup_tick(self, _timer) -> None:
+        frame = WARMUP_FRAMES[self._warmup_frame_idx % len(WARMUP_FRAMES)]
+        self._warmup_frame_idx += 1
+        self.title = f"{frame} Préchauffage…"
+
+    def _stop_warmup_animation(self) -> None:
+        if self._warmup_timer is not None:
+            try:
+                self._warmup_timer.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._warmup_timer = None
+        # Restaure le titre d'avant le warmup (sera réécrit par
+        # _apply_speaking_state au prochain tick audio de toute façon).
+        self.title = self._title_before_warmup
 
     def _warmup_thread(self, components: list[str]) -> None:
         """Appel HTTP bloquant /api/cloud/runpod/warmup en thread.
@@ -587,13 +646,29 @@ class VoiceBridgeApp(rumps.App):
         _call_after_main(self._apply_warmup_result, result, error_msg)
 
     def _apply_warmup_result(self, result: dict, error_msg: str | None) -> None:
+        # Cleanup commun (réussite ou échec) : stop animation + reset flag.
+        self._stop_warmup_animation()
+        self._warmup_in_progress = False
+
         is_gpu = self.mode != MODE_CPU_V1
         if error_msg:
             log.warning("warmup failed: %s", error_msg)
             # Affiche l'erreur en titre menu pour ne pas dépendre des
             # notifications macOS (peu fiables en mode dev non signé).
             self.warmup_item.title = "❌ Préchauffage échoué — réessayer"
-            rumps.alert("Préchauffe échouée", error_msg)
+            # Détecte les erreurs RunPod liées à la queue / au cold-start
+            # pour donner un message plus utile à l'utilisateur.
+            if "IN_QUEUE" in error_msg or "throttled" in error_msg.lower():
+                friendly = ("Le pool RunPod est en cold-start "
+                            "(image en cours de pull, ou worker throttled).\n\n"
+                            "Réessaye dans 1-2 minutes.")
+            elif "504" in error_msg or "timed out" in error_msg.lower():
+                friendly = ("Timeout serveur. Le préchauffage a probablement "
+                            "abouti côté RunPod mais Nginx a coupé la "
+                            "connexion. Vérifie avec /api/cloud/runpod/test.")
+            else:
+                friendly = error_msg
+            rumps.alert("Préchauffe échouée", friendly)
             return
         loaded = result.get("loaded", []) or []
         # Titre persistant qui indique que les modèles sont prêts. Reste
@@ -716,9 +791,9 @@ class VoiceBridgeApp(rumps.App):
 
     def _apply_speaking_state(self, speaking: bool) -> None:
         self._is_speaking = speaking
-        log.info("_apply_speaking_state speaking=%s ws=%s paused=%s title=%r",
-                 speaking, self.ws is not None, self.audio.is_paused(),
-                 self.title)
+        # Pendant l'animation warmup, ne pas toucher au titre
+        if self._warmup_in_progress:
+            return
         # Met à jour l'icône seulement si on est dans un état "actif"
         # (connecté/parlant, non en pause). Dans les autres états (🔴/🟡)
         # on garde l'icône d'état primaire — pas envie qu'un bruit micro
@@ -728,7 +803,6 @@ class VoiceBridgeApp(rumps.App):
         is_active_state = (self.title.startswith(ICON_CONNECTED)
                             or self.title.startswith(ICON_SPEAKING))
         if not is_active_state:
-            log.info("speaking state ignored (title not active): %r", self.title)
             return
         self._set_status(ICON_SPEAKING if speaking else ICON_CONNECTED)
 
@@ -739,6 +813,16 @@ class VoiceBridgeApp(rumps.App):
         _call_after_main(self._apply_ws_state, state, args)
 
     def _apply_ws_state(self, state: str, args: tuple) -> None:
+        # Pendant l'animation warmup, on mémorise l'état WS pour restaurer
+        # le bon titre à la fin, sans écraser l'animation en cours.
+        if self._warmup_in_progress and state != "voice_changed":
+            if state in ("connected", "ready"):
+                self._title_before_warmup = (
+                    f"{ICON_PAUSED} VoiceBridge" if self.audio.is_paused()
+                    else f"{ICON_CONNECTED} VoiceBridge")
+            elif state in ("disconnected", "error", "connecting"):
+                self._title_before_warmup = f"{ICON_DISCONNECTED} VoiceBridge"
+            return  # ne pas écraser le titre animé
         if state in ("connected", "ready"):
             self._set_status(ICON_PAUSED if self.audio.is_paused() else ICON_CONNECTED)
         elif state in ("disconnected", "error", "connecting"):
