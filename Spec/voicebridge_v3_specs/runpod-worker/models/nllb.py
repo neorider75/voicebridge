@@ -1,7 +1,7 @@
 """Wrapper NLLB-200 distilled 1.3B pour traduction multilingue.
 
 NLLB (No Language Left Behind, Meta) supporte 200+ langues.
-Licence CC-BY-NC 4.0 → OK pour usage personnel JC, à valider pour Limagrain.
+Licence CC-BY-NC 4.0 → OK pour usage personnel, à valider pour usage commercial.
 
 Variante distillée 1.3B : meilleur compromis qualité/perf.
 - 600M : plus rapide mais qualité moindre

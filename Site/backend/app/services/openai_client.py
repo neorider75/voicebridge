@@ -19,7 +19,7 @@ Usage typique :
     from ..services import openai_client
     session = openai_client.TranslationSession(
         provider="gpt-4o-mini",
-        briefing="Réunion CODIR Limagrain, marges Q1...",
+        briefing="Réunion CODIR mensuelle, sujets RH et finance...",
     )
     result = session.translate("Bonjour le monde", src="fr", tgt="en")
     # result.translated, result.cost_eur, result.latency_ms

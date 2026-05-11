@@ -104,7 +104,7 @@ Concerne notamment :
 
 ## Maquette de référence
 
-Le fichier `voicebridge_mockup.html` est la cible UX/UI à respecter pour les pages V1 existantes. Les pages V3 (rvc.html, recording-session.html, etc.) suivent le même langage visuel (palette Limagrain rouge `#A8243C`, typographie Syne + DM Mono).
+Le fichier `voicebridge_mockup.html` est la cible UX/UI à respecter pour les pages V1 existantes. Les pages V3 (rvc.html, recording-session.html, etc.) suivent le même langage visuel (palette rouge `#A8243C`, typographie Syne + DM Mono).
 
 ## Instructions générales pour Claude Code
 
@@ -122,7 +122,7 @@ Le fichier `voicebridge_mockup.html` est la cible UX/UI à respecter pour les pa
 - L'application macOS V3 reste rétrocompatible avec un serveur V1
 - Le watermark Perth reste automatique sur les audios générés
 - Le buffer de continuité Live (250ms en V3, vs 400ms en V1) reste invisible pour l'utilisateur
-- Le PSSI Limagrain classifie certaines données en "Confidentiel Sécurisé" : tout ce qui transite via OpenAI/RunPod doit être traité comme externalisé
+- Toutes les données transitant via OpenAI/RunPod doivent être considérées comme externalisées (à prendre en compte si l'utilisateur a des politiques de confidentialité internes)
 
 ## Langues supportées V3
 

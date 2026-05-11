@@ -6,7 +6,7 @@ import pytest
 
 def test_create_minimal(isolated_data_dir):
     from app.services import briefings_store as bs
-    b = bs.create("CODIR mensuel", "Réunion CODIR Limagrain, agenda mensuel")
+    b = bs.create("CODIR mensuel", "Réunion CODIR mensuelle, agenda standard")
     assert b["id"].startswith("br_")
     assert b["name"] == "CODIR mensuel"
     assert b["content"].startswith("Réunion")

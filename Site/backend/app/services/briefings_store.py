@@ -14,7 +14,7 @@ Format ``data/briefings/metadata.json`` :
 
     { "briefings": [
         { "id": "br_xxx", "name": "CODIR mensuel",
-          "content": "Réunion CODIR Limagrain, agenda mensuel, présents : ...",
+          "content": "Réunion CODIR mensuelle, agenda standard, présents : ...",
           "created_at": "...", "updated_at": "..." }
     ]}
 

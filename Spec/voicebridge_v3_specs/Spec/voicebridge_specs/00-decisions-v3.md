@@ -183,7 +183,7 @@ Tooltip : *"Première phrase = +5-10s le temps de charger les modèles GPU. Phra
 
 ## Décision 7 — Contexte GPT : briefings sauvegardés + édition par session
 
-**Problème :** la spec V3 mentionne le glossaire métier mais pas comment fournir un contexte ponctuel à GPT (ex: "réunion CODIR de Limagrain, sujet marges").
+**Problème :** la spec V3 mentionne le glossaire métier mais pas comment fournir un contexte ponctuel à GPT (ex: "réunion CODIR mensuelle, sujet marges").
 
 **Décision :** **Option C combinée** — briefings sauvegardés réutilisables **+** édition libre par session.
 
@@ -204,7 +204,7 @@ Tooltip : *"Première phrase = +5-10s le temps de charger les modèles GPU. Phra
 ```
 Briefing : [CODIR mensuel ▾]   [+ Nouveau]
 ┌─────────────────────────────────────────┐
-│ Réunion CODIR Limagrain, agenda mensuel,│
+│ Réunion CODIR mensuelle, agenda standard│
 │ présents : DG, DAF, DRH, DOP. Ton formel│
 │ Session du 6 mai : sujet marges Q1.     │← édition libre
 └─────────────────────────────────────────┘

@@ -425,4 +425,4 @@ Sur KVM 4 (200 Go) : largement suffisant, reste 192 Go pour les enregistrements 
 | FastAPI | MIT |
 | llama-cpp-python | MIT |
 
-⚠️ **Action utilisateur** : vérifier la NeuTTS Open License 1.0 pour usage interne entreprise (Limagrain). Acceptable pour usage personnel et probablement OK pour usage interne, mais à confirmer juridiquement.
+⚠️ **Action utilisateur** : vérifier la NeuTTS Open License 1.0 pour usage interne entreprise. Acceptable pour usage personnel et probablement OK pour usage interne, mais à confirmer juridiquement.

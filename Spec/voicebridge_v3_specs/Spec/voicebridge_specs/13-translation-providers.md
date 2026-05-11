@@ -800,7 +800,7 @@ async def test_provider_estimate_cost():
 | GPT-4o / GPT-4o-mini | OpenAI ToS | ✅ avec compte payant |
 | LibreTranslate | AGPL | ✅ avec contraintes |
 
-**NLLB pour usage commercial Limagrain** : zone grise. Pour usage perso JC : OK. Mentionner dans l'UI.
+**NLLB pour usage commercial** : zone grise (licence CC-BY-NC interdit l'usage commercial). Pour usage personnel : OK. Mentionner dans l'UI.
 
 ### Privacy
 

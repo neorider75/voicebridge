@@ -456,7 +456,7 @@
     list.innerHTML = '';
     var keys = Object.keys(glossaryWorking);
     if (!keys.length) {
-      list.innerHTML = '<div class="hint" style="padding:0.5rem">Aucune entrée. Ajoute des termes ci-dessous (ex: CODIR → Executive Committee, Limagrain → Limagrain pour le garder tel quel).</div>';
+      list.innerHTML = '<div class="hint" style="padding:0.5rem">Aucune entrée. Ajoute des termes ci-dessous (ex: CODIR → Executive Committee, Acme → Acme pour le garder tel quel).</div>';
       return;
     }
     keys.forEach(function (k) {
