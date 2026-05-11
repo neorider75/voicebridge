@@ -488,9 +488,10 @@
 
       <!-- Pré-warmup GPU + indicateur coût (visible si mode GPU) -->
       <div class="field" id="liveGpuField" style="display:none">
-        <div class="grid-2" style="gap:0.75rem">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
           <button class="btn btn-secondary" id="btnLiveWarmup" type="button">🔥 Préchauffer GPU</button>
-          <div id="liveWarmupStatus" class="hint" style="display:flex;align-items:center;font-family:'DM Mono',monospace;font-size:0.75rem">Cliquez pour réduire la latence du 1er appel.</div>
+          <button class="btn btn-secondary" id="btnLivePurge" type="button" title="Annule tous les jobs RunPod en attente (utile si warmup bloqué)">🧹 Purger queue</button>
+          <div id="liveWarmupStatus" class="hint" style="flex:1;display:flex;align-items:center;font-family:'DM Mono',monospace;font-size:0.75rem">Cliquez pour réduire la latence du 1er appel.</div>
         </div>
       </div>
 

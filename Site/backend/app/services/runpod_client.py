@@ -337,6 +337,41 @@ def stream(job_id: str, poll_interval: float = 0.05,
 # ────────────────────────────────────────────────────────────────────
 
 
+def purge_queue() -> dict:
+    """POST /v2/{endpoint_id}/purge-queue — annule TOUS les jobs en queue.
+
+    Utile quand des warmups bloqués s'accumulent (worker throttled,
+    GPU indisponible, cold-start qui dure). Retourne le nombre de jobs
+    annulés. N'affecte PAS les jobs déjà en cours d'exécution.
+    """
+    url = f"{RUNPOD_API_BASE}/{get_endpoint_id()}/purge-queue"
+    with _httpx_client(timeout=15.0) as client:
+        try:
+            r = client.post(url, headers=_auth_headers())
+        except Exception as exc:  # noqa: BLE001
+            raise RunPodError(f"purge-queue HTTP failed: {exc}") from exc
+    if r.status_code != 200:
+        raise RunPodError(f"purge-queue HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+def cancel_job(job_id: str) -> dict:
+    """POST /v2/{endpoint_id}/cancel/{job_id} — annule un job spécifique.
+
+    Si le job n'existe pas ou est déjà terminé, RunPod retourne 200 quand
+    même avec un status "CANCELLED" ou similaire.
+    """
+    url = f"{RUNPOD_API_BASE}/{get_endpoint_id()}/cancel/{job_id}"
+    with _httpx_client(timeout=10.0) as client:
+        try:
+            r = client.post(url, headers=_auth_headers())
+        except Exception as exc:  # noqa: BLE001
+            raise RunPodError(f"cancel HTTP failed: {exc}") from exc
+    if r.status_code != 200:
+        raise RunPodError(f"cancel HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
 def get_endpoint_health() -> dict:
     """GET /v2/{endpoint_id}/health — état temps réel du pool serverless.
 

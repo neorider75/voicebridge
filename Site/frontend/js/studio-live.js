@@ -356,6 +356,28 @@
     return s;
   }
 
+  function doPurgeQueue() {
+    if (!cloudStatus.runpod_configured) {
+      VB.notify('warning', 'RunPod non configuré');
+      return;
+    }
+    if (!confirm('Annuler TOUS les jobs RunPod en attente ? '
+               + '(Les jobs déjà en cours d\'exécution sur le GPU ne '
+               + 'sont pas affectés.)')) return;
+    var btn = $('btnLivePurge');
+    if (btn) btn.disabled = true;
+    VB.api.post('/api/cloud/runpod/purge-queue', {})
+      .then(function (d) {
+        if (btn) btn.disabled = false;
+        VB.notify('success', '✅ Queue RunPod purgée'
+                   + (d.removed !== undefined ? ' (' + d.removed + ' jobs)' : ''));
+      })
+      .catch(function (err) {
+        if (btn) btn.disabled = false;
+        VB.notify('error', 'Purge échouée : ' + (err.message || err));
+      });
+  }
+
   function doGpuWarmup() {
     if (!cloudStatus.runpod_configured) {
       VB.notify('warning', 'RunPod non configuré');
@@ -1049,6 +1071,8 @@
     if (briefingSel) briefingSel.addEventListener('change', onBriefingSelect);
     var btnWarmup = $('btnLiveWarmup');
     if (btnWarmup) btnWarmup.addEventListener('click', doGpuWarmup);
+    var btnPurge = $('btnLivePurge');
+    if (btnPurge) btnPurge.addEventListener('click', doPurgeQueue);
 
     // Loaders
     loadVoices();

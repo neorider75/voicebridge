@@ -192,6 +192,9 @@ class VoiceBridgeApp(rumps.App):
         self.rvc_item = rumps.MenuItem("Modèle RVC : (aucun)")
         # V3 — bouton préchauffe GPU
         self.warmup_item = rumps.MenuItem("🔥 Préchauffer GPU", callback=self._on_warmup_gpu)
+        # V3 — purger la queue RunPod (utile si jobs bloqués)
+        self.purge_item = rumps.MenuItem("🧹 Purger queue RunPod",
+                                          callback=self._on_purge_queue)
         # V3 — affichage coût session (read-only)
         self.cost_item = rumps.MenuItem("💰 Coût session : 0.0000€ · 0s")
         # V3 — panneau Live (transcript + traduction temps réel)
@@ -208,6 +211,7 @@ class VoiceBridgeApp(rumps.App):
             self.provider_item,
             self.rvc_item,
             self.warmup_item,
+            self.purge_item,
             None,
             self.live_panel_item,
             self.cost_item,
@@ -639,6 +643,57 @@ class VoiceBridgeApp(rumps.App):
         return _cb
 
     # ── V3 : Préchauffe GPU ────────────────────────────────────────
+
+    def _on_purge_queue(self, _sender) -> None:
+        """Annule tous les jobs RunPod en queue. Utile quand un warmup
+        bloqué empêche les suivants de passer (worker throttled, etc.)."""
+        if not self.runpod_configured:
+            rumps.alert("RunPod non configuré",
+                        "Pas de queue à purger.")
+            return
+        if not rumps.alert(
+            "Purger la queue RunPod ?",
+            "Tous les jobs en attente seront annulés (warmups, "
+            "live_pipeline en queue, etc.). Les jobs DÉJÀ en cours "
+            "d'exécution sur le GPU ne sont pas affectés.\n\n"
+            "Continuer ?",
+            ok="Purger", cancel="Annuler",
+        ):
+            return
+        # HTTP call en thread (peut prendre 5-10 s)
+        threading.Thread(target=self._purge_queue_thread, daemon=True).start()
+
+    def _purge_queue_thread(self) -> None:
+        try:
+            url = self.server_url.rstrip("/") + "/api/cloud/runpod/purge-queue"
+            req = Request(url, data=b"{}", method="POST",
+                           headers={"Authorization": f"Bearer {self.api_token}",
+                                    "Content-Type": "application/json"})
+            with urlopen(req, timeout=15) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            log.info("queue purged: %s", data)
+            _call_after_main(self._show_purge_result, data, None)
+        except HTTPError as exc:
+            try:
+                detail = json.loads(exc.read().decode("utf-8"))
+                msg = (detail.get("detail", {}).get("message")
+                       if isinstance(detail.get("detail"), dict)
+                       else str(detail)[:200])
+            except Exception:  # noqa: BLE001
+                msg = f"HTTP {exc.code} : {exc.reason}"
+            _call_after_main(self._show_purge_result, None, msg)
+        except Exception as exc:  # noqa: BLE001
+            _call_after_main(self._show_purge_result, None, str(exc))
+
+    def _show_purge_result(self, data, error_msg) -> None:
+        if error_msg:
+            rumps.alert("Purge échouée", error_msg)
+            return
+        try:
+            rumps.notification("VoiceBridge", "✅ Queue RunPod purgée",
+                               "Les jobs en attente ont été annulés.")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_warmup_gpu(self, _sender) -> None:
         if not self.runpod_configured:

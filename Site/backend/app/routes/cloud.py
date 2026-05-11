@@ -129,6 +129,36 @@ async def runpod_test(request: Request) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════
+# POST /runpod/purge-queue — annule tous les jobs en attente
+# ════════════════════════════════════════════════════════════════════
+
+
+@router.post("/runpod/purge-queue")
+@limiter.limit("10/minute")
+async def runpod_purge_queue(request: Request) -> dict:
+    """Annule TOUS les jobs en queue sur l'endpoint RunPod.
+
+    Utile quand des warmups s'accumulent suite à un cold-start qui dure
+    ou un worker throttled (GPU indispo). N'affecte pas les jobs déjà
+    en cours d'exécution sur un worker.
+    """
+    if not runpod_client.is_configured():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={
+            "error": "not_configured",
+            "message": "RunPod non configuré",
+        })
+    try:
+        import asyncio
+        result = await asyncio.to_thread(runpod_client.purge_queue)
+        return {"ok": True, **result}
+    except runpod_client.RunPodError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={
+            "error": "purge_failed",
+            "message": str(exc),
+        })
+
+
+# ════════════════════════════════════════════════════════════════════
 # GET /runpod/health — état du pool serverless (polling pendant warmup)
 # ════════════════════════════════════════════════════════════════════
 
