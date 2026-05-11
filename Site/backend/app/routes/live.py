@@ -79,7 +79,11 @@ TTS_SAMPLE_RATE = 24000
 # 32 ms / chunk Silero VAD → 5 s de buffer ≈ 156 chunks
 BUFFER_TICKS = 156
 SILENCE_FLUSH_TICKS_CPU = 13    # ~400 ms (V1, marge contre faux flush sur respirations)
-SILENCE_FLUSH_TICKS_GPU = 8     # ~250 ms (V3 — Décision Q2.1, gain latence GPU)
+SILENCE_FLUSH_TICKS_GPU = 16    # ~500 ms (V3 — initialement 8 (250 ms) pour gain
+                                # latence Décision Q2.1, mais coupait au milieu
+                                # des phrases sur les pauses inter-mots normales
+                                # (200-300 ms typiques en français). Aligné sur
+                                # CPU + marge pour fiabilité.
 SPEECH_FLUSH_TICKS = 125        # ~4 s de parole continue → flush forcé
 VAD_CHUNK_SAMPLES = 512         # taille de bloc attendue par Silero VAD
 
