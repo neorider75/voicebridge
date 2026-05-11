@@ -129,23 +129,30 @@
     return native[0] || null;
   }
 
+  function flagForLang(lang) {
+    return ({
+      fr: '🇫🇷', en: '🇬🇧', es: '🇪🇸', de: '🇩🇪',
+      it: '🇮🇹', pt: '🇵🇹', nl: '🇳🇱', ja: '🇯🇵', zh: '🇨🇳',
+    })[lang] || '🌐';
+  }
+
   function refreshVoiceDropdown() {
     var sel = $('liveVoiceSelect');
     if (!sel) return;
     var field = $('liveVoiceField');
 
     // En mode HYBRIDE : la voix native est auto-pickée selon la langue
-    // cible. On masque le sélecteur sauf si aucune voix native n'est
-    // disponible pour la langue cible — auquel cas on affiche un message
-    // explicite (sinon l'user ne comprendrait pas pourquoi la session
-    // refuse de démarrer).
+    // cible. RVC se charge ensuite de remplacer le timbre par celui de
+    // l'utilisateur, donc la "voix" est juste une référence prosodique.
     if (currentMode === 'gpu-hybrid') {
       var translateOn = $('liveTranslateToggle')
                          && $('liveTranslateToggle').checked;
       var srcLang = ($('liveLang') && $('liveLang').value) || 'fr';
       var tgtLang = ($('liveTranslateTo') && $('liveTranslateTo').value) || 'en';
       var effLang = translateOn ? tgtLang : srcLang;
-      var auto = autoPickNativeVoiceFor(effLang);
+      var auto = autoPickNativeVoiceFor(effLang)
+               || _allVoices.find(function (v) { return v.language === effLang; })
+               || _allVoices[0];
       sel.innerHTML = '';
       var opt = document.createElement('option');
       if (auto) {
@@ -153,54 +160,57 @@
         opt.value = auto.id;
         opt.textContent = auto.name + ' (auto)';
       } else {
-        // Pas de voix native pour la langue cible → on REND visible le
-        // champ avec un message pour que l'user puisse débloquer.
         if (field) field.style.display = '';
         opt.value = '';
-        opt.textContent = '⚠ Pas de voix native pour ' + effLang.toUpperCase()
-                        + ' — installe-les sur /voices';
+        opt.textContent = '⚠ Aucune voix disponible — ajoute-en une';
       }
       sel.appendChild(opt);
       return;
     }
 
-    // Autres modes : sélecteur visible, filtré par kind
+    // Autres modes : sélecteur visible
     if (field) field.style.display = '';
     var expectedKind = expectedVoiceKindFor(currentMode);
     var prevSelected = sel.value;
 
-    var filtered = _allVoices.filter(function (v) {
-      var k = v.kind || 'clone';
-      return k === expectedKind;
+    // Filtre principal : voix du kind attendu
+    var primary = _allVoices.filter(function (v) {
+      return (v.kind || 'clone') === expectedKind;
     });
+    // Fallback : si on cherche du natif et qu'il n'y en a pas, on montre
+    // les voix clones avec un marqueur (au moins l'user peut tester le
+    // mode). Sinon il serait bloqué.
+    var hadNoNative = (expectedKind === 'native' && primary.length === 0);
+    var displayed = primary.length > 0 ? primary : _allVoices;
 
     sel.innerHTML = '';
-    filtered.forEach(function (v) {
+    if (hadNoNative) {
+      var hint = document.createElement('option');
+      hint.value = '';
+      hint.disabled = true;
+      hint.textContent = '— Pas de voix native — utilise une clone :';
+      sel.appendChild(hint);
+    }
+    displayed.forEach(function (v) {
       var opt = document.createElement('option');
       opt.value = v.id;
-      var flag = v.language === 'fr' ? '🇫🇷'
-                : v.language === 'en' ? '🇬🇧'
-                : v.language === 'es' ? '🇪🇸'
-                : v.language === 'de' ? '🇩🇪'
-                : v.language === 'it' ? '🇮🇹'
-                : v.language === 'pt' ? '🇵🇹'
-                : '🌐';
-      opt.textContent = flag + ' ' + v.name;
+      opt.textContent = flagForLang(v.language) + ' ' + v.name;
       sel.appendChild(opt);
     });
 
     if (!sel.options.length) {
       var opt = document.createElement('option');
       opt.value = '';
-      if (expectedKind === 'native') {
-        opt.textContent = '⚠ Aucune voix native disponible — importe-en une sur /voices';
-      } else {
-        opt.textContent = 'Aucune voix disponible';
-      }
+      opt.textContent = 'Aucune voix disponible — ajoute-en une';
       sel.appendChild(opt);
     } else if (prevSelected
-                && filtered.some(function (v) { return v.id === prevSelected; })) {
+                && displayed.some(function (v) { return v.id === prevSelected; })) {
       sel.value = prevSelected;
+    } else {
+      // Skip le 1er item disabled si présent
+      for (var i = 0; i < sel.options.length; i++) {
+        if (!sel.options[i].disabled) { sel.selectedIndex = i; break; }
+      }
     }
   }
 
