@@ -261,7 +261,15 @@ class VoiceBridgeApp(rumps.App):
             return
 
         # Détection : la voix mémorisée existe-t-elle ?
-        ready_voices = [v for v in voices if v.get("status", "ready") == "ready"]
+        # On ne fallback QUE sur des voix utilisateur réelles (id préfixé "v_")
+        # — pas sur les voix démo exposées par /api/voices qui peuvent être
+        # listées sans fichier WAV exploitable (cas "juliette" sur certaines
+        # installs → le live route rejette quand même avec "voix introuvable").
+        ready_voices = [
+            v for v in voices
+            if v.get("status", "ready") == "ready"
+            and str(v.get("id", "")).startswith("v_")
+        ]
         current_exists = any(v.get("id") == self.voice_id for v in ready_voices)
         if not current_exists and ready_voices:
             fallback = ready_voices[0]
@@ -276,6 +284,19 @@ class VoiceBridgeApp(rumps.App):
             # Re-pousse le configure au serveur avec la voix corrigée
             if self.ws:
                 self.ws.set_voice(self.voice_id, self.language)
+        elif not current_exists and not ready_voices:
+            # Aucune voix utilisateur dispo → on notifie pour que l'user
+            # crée/importe une voix sur le panel web.
+            log.warning("aucune voix utilisateur (v_*) disponible côté serveur")
+            try:
+                rumps.notification(
+                    "VoiceBridge",
+                    "Aucune voix disponible",
+                    "Crée une voix sur le panel web (/voices) puis "
+                    "rafraîchis la liste depuis le sous-menu Voix.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         for v in voices:
             # Skip les voix non prêtes (encoding en cours, ou failed)

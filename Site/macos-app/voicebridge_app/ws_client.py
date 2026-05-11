@@ -161,9 +161,10 @@ class WSClient:
                 async with websockets.connect(
                     ws_url,
                     additional_headers={"Authorization": f"Bearer {self.api_token}"},
-                    open_timeout=10,
-                    ping_interval=30,
-                    ping_timeout=15,
+                    open_timeout=20,    # +10s pour cold-start serveur derrière Cloudflare/Nginx
+                    ping_interval=60,   # +30s — keepalive moins agressif (l'app est souvent
+                                         #        idle pendant des minutes entre 2 phrases)
+                    ping_timeout=30,    # +15s tolérance pour pongs
                 ) as ws:
                     self._ws = ws
                     self._ready = False  # ré-armé à chaque (re)connexion
