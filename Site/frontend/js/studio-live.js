@@ -355,35 +355,42 @@
     var f32 = new Float32Array(int16.length);
     for (var j = 0; j < int16.length; j++) f32[j] = int16[j] / 32768;
     var sr = sampleRate || TTS_RATE;
+
+    // Fade in/out IN-PLACE sur les samples (pas via GainNode WebAudio,
+    // qui posait un bug subtil quand bufRate=24000 ≠ ctxRate=48000 : la
+    // séquence setValueAtTime + linearRamp était mal interprétée et le
+    // gain restait à 0 → silence total). Ici on multiplie les premiers
+    // et derniers samples par une rampe linéaire, c'est 100% prédictible
+    // et indépendant du resampling AudioContext.
+    if (CHUNK_FADE_MS > 0 && f32.length > 0) {
+      var fadeSamples = Math.min(
+        Math.floor(CHUNK_FADE_MS * sr / 1000),
+        Math.floor(f32.length / 2)
+      );
+      for (var k = 0; k < fadeSamples; k++) {
+        var coef = k / fadeSamples;     // 0 → 1 linéaire
+        f32[k] *= coef;                  // fade-in
+        f32[f32.length - 1 - k] *= coef; // fade-out (symétrique)
+      }
+    }
+
     var buffer = ctx.createBuffer(1, f32.length, sr);
     buffer.copyToChannel(f32, 0);
     return buffer;
   }
 
   function scheduleBuffer(ctx, audioBuffer) {
+    // Le fade est appliqué in-place dans decodePcmChunk(), donc ici on
+    // connecte la source directement à la destination — pas de GainNode
+    // ni de ramp scheduling.
     var src = ctx.createBufferSource();
     src.buffer = audioBuffer;
+    src.connect(ctx.destination);
 
-    // Fade in/out pour masquer les micro-clicks aux jonctions des chunks.
-    // GainNode entre la source et la destination : ramp de 0→1 sur les
-    // premières ms, puis 1→0 sur les dernières.
     var safety = SCHEDULE_SAFETY_MS / 1000;
-    var fade = CHUNK_FADE_MS / 1000;
     var dur = audioBuffer.duration;
     var now = ctx.currentTime;
     var startAt = (nextPlayAt <= now + safety) ? (now + safety) : nextPlayAt;
-
-    if (CHUNK_FADE_MS > 0 && dur > 2 * fade) {
-      var gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, startAt);
-      gain.gain.linearRampToValueAtTime(1, startAt + fade);
-      gain.gain.setValueAtTime(1, startAt + dur - fade);
-      gain.gain.linearRampToValueAtTime(0, startAt + dur);
-      src.connect(gain);
-      gain.connect(ctx.destination);
-    } else {
-      src.connect(ctx.destination);
-    }
 
     try {
       src.start(startAt);
@@ -394,26 +401,9 @@
     }
     nextPlayAt = startAt + dur;
 
-    // Diagnostic verbeux du tout 1er chunk de la session (debug silence
-    // F5-TTS). Activable via localStorage.vbDebugPlayback.
-    if (window.__vbDbgFirstSchedule !== true
-        || localStorage.getItem('vbDebugPlayback') === '1') {
-      console.log('[live] scheduleBuffer: startAt=' + startAt.toFixed(3)
-                + ' now=' + now.toFixed(3)
-                + ' dur=' + (dur * 1000).toFixed(0) + 'ms'
-                + ' ctxState=' + ctx.state
-                + ' ctxRate=' + ctx.sampleRate
-                + ' bufRate=' + audioBuffer.sampleRate
-                + ' bufLen=' + audioBuffer.length
-                + ' fadeOn=' + (CHUNK_FADE_MS > 0 && dur > 2 * fade));
-      window.__vbDbgFirstSchedule = true;
-    }
-
     // Détection underrun : si on a dû reset à `now + safety`, c'est qu'on
     // a perdu le slot précédent → log pour diagnostic.
-    if (startAt > nextPlayAt - dur + 0.001 && nextPlayAt - dur > now) {
-      // OK : on est en avance comme prévu, pas d'underrun
-    } else if (startAt === now + safety && hasStartedUtterance) {
+    if (startAt === now + safety && hasStartedUtterance) {
       console.warn('[live] underrun: reset start to now+' + SCHEDULE_SAFETY_MS + 'ms');
     }
   }
