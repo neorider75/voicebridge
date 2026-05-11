@@ -268,9 +268,57 @@
 
   // ── Pré-warmup GPU manuel (Décision 5) ──
 
+  // Frames d'animation du bouton pendant le warmup (rotation toutes les 500 ms).
+  // Donne un retour visuel actif "ça travaille" plutôt qu'un état figé.
+  var WARMUP_FRAMES = ['🔥', '💨', '🔥', '✨'];
+  var warmupAnimTimer = null;
+  var warmupFrameIdx = 0;
+
+  function startWarmupAnimation(btn, status) {
+    warmupFrameIdx = 0;
+    if (warmupAnimTimer) clearInterval(warmupAnimTimer);
+    warmupAnimTimer = setInterval(function () {
+      var frame = WARMUP_FRAMES[warmupFrameIdx % WARMUP_FRAMES.length];
+      warmupFrameIdx += 1;
+      if (btn) btn.textContent = frame + ' Préchauffage GPU…';
+      if (status) status.textContent = frame + ' Chargement Whisper + F5-TTS + NLLB sur RunPod…';
+    }, 500);
+  }
+
+  function stopWarmupAnimation() {
+    if (warmupAnimTimer) {
+      clearInterval(warmupAnimTimer);
+      warmupAnimTimer = null;
+    }
+  }
+
+  // Traduit les erreurs RunPod brutes en messages exploitables.
+  function friendlyWarmupError(rawMsg) {
+    var s = String(rawMsg || '');
+    if (/IN_QUEUE/i.test(s) || /throttled/i.test(s)) {
+      return 'Pool RunPod en cold-start (image en cours de pull, ou worker throttled). Réessaye dans 1-2 min.';
+    }
+    if (/\b504\b/.test(s) || /timed out/i.test(s) || /timeout/i.test(s)) {
+      return 'Timeout serveur. Le warmup a probablement abouti côté RunPod mais Nginx a coupé. Vérifie /api/cloud/runpod/test.';
+    }
+    if (/\b503\b/.test(s)) {
+      return 'Service RunPod indisponible. Endpoint en cold-start ou clé API invalide.';
+    }
+    if (/\b502\b/.test(s)) {
+      return 'Backend FastAPI ne répond pas. Vérifie le service voicebridge sur Hostinger.';
+    }
+    return s;
+  }
+
   function doGpuWarmup() {
     if (!cloudStatus.runpod_configured) {
       VB.notify('warning', 'RunPod non configuré');
+      return;
+    }
+    // Anti re-click : ignore si déjà en cours (évite d'empiler des jobs
+    // RunPod en queue qui s'exécuteront séquentiellement).
+    if (gpuWarmupPending) {
+      VB.notify('info', 'Préchauffage déjà en cours — patience.');
       return;
     }
     var components = ['whisper', 'f5tts', 'nllb'];
@@ -279,21 +327,32 @@
     var btn = $('btnLiveWarmup');
     var status = $('liveWarmupStatus');
     if (btn) btn.disabled = true;
-    if (status) status.textContent = '⏳ Chargement modèles GPU sur RunPod… (3-15s au premier appel)';
+    startWarmupAnimation(btn, status);
 
     VB.api.post('/api/cloud/runpod/warmup', { components: components })
       .then(function (d) {
         gpuWarmupPending = false;
-        if (btn) btn.disabled = false;
-        if (status) status.textContent = '✅ GPU prêt (' + (d.loaded || []).join(', ') + ')';
+        stopWarmupAnimation();
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔥 Préchauffer GPU';
+        }
+        var loaded = (d.loaded || []).join(' · ') || '(aucun)';
+        if (status) status.textContent = '✅ GPU prêt (' + loaded + ')';
         setTimeout(function () {
           if (status) status.textContent = '✅ GPU chaud · 1ère phrase rapide';
-        }, 2500);
+        }, 4000);
       })
       .catch(function (err) {
         gpuWarmupPending = false;
-        if (btn) btn.disabled = false;
-        if (status) status.textContent = '⚠️ Échec : ' + (err.message || err);
+        stopWarmupAnimation();
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔥 Préchauffer GPU';
+        }
+        var friendly = friendlyWarmupError(err && err.message);
+        if (status) status.textContent = '⚠️ ' + friendly;
+        VB.notify('error', friendly);
       });
   }
 
