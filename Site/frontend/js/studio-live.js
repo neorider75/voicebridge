@@ -899,11 +899,47 @@
     });
   }
 
+  // setSinkId est requis pour router vers BlackHole. Supporté par
+  // Chrome ≥110, Edge ≥110. Safari et Firefox : pas de support (au
+  // moment où ces lignes sont écrites, fin 2026).
+  function browserSupportsSinkId() {
+    try {
+      // On teste sur une instance d'<audio> temporaire — typeof seul
+      // peut renvoyer "function" même quand l'API est stub-ée.
+      var probe = document.createElement('audio');
+      return typeof probe.setSinkId === 'function';
+    } catch (e) {
+      return false;
+    }
+  }
+
   function bindRadioGroups() {
+    var canSink = browserSupportsSinkId();
     $$('.radio-group[data-name="live-output"]').forEach(function (group) {
       $$('.radio-option', group).forEach(function (opt) {
+        // Désactive l'option BlackHole sur les navigateurs sans setSinkId
+        if (opt.getAttribute('data-value') === 'blackhole' && !canSink) {
+          opt.classList.add('disabled');
+          opt.setAttribute('title',
+            'Non supporté par ce navigateur. Utilise Chrome ou Edge (≥110), '
+            + 'ou l\'app macOS pour router vers BlackHole.');
+          // Restaure visuel "non sélectionné"
+          opt.classList.remove('selected');
+          // Force le toggle sur "browser" si l'utilisateur avait BlackHole
+          // mémorisé d'une session précédente.
+          group.dataset.value = 'browser';
+          var browserOpt = group.querySelector('.radio-option[data-value="browser"]');
+          if (browserOpt) browserOpt.classList.add('selected');
+        }
         opt.addEventListener('click', function () {
-          if (opt.classList.contains('disabled')) return;
+          if (opt.classList.contains('disabled')) {
+            if (opt.getAttribute('data-value') === 'blackhole' && !canSink) {
+              VB.notify('warning',
+                'Sortie BlackHole : navigateur incompatible. '
+                + 'Utilise Chrome ≥110 ou l\'app macOS.');
+            }
+            return;
+          }
           $$('.radio-option', group).forEach(function (o) { o.classList.remove('selected'); });
           opt.classList.add('selected');
           var mode = opt.getAttribute('data-value');

@@ -225,6 +225,15 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,99,
   background: rgba(108,99,255,0.1);
   border-color: var(--accent); color: var(--accent2);
 }
+.radio-option.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--surface3);
+}
+.radio-option.disabled:hover {
+  border-color: var(--border);
+  color: var(--text2);
+}
 
 /* ── MODE CARDS V3 (sélecteur 4 modes Live) ── */
 .mode-cards {
