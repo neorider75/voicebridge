@@ -26,6 +26,18 @@ from urllib.request import Request, urlopen
 
 import rumps  # type: ignore
 
+try:
+    # PyObjCTools.AppHelper.callAfter() dispatch un callable sur le run-loop
+    # principal Cocoa. Indispensable pour toute modif AppKit (StatusBar,
+    # NSMenuItem.title …) déclenchée depuis un thread Python non-main, sinon
+    # NSInternalInconsistencyException ("layout engine modified from
+    # background thread").
+    from PyObjCTools.AppHelper import callAfter as _call_after_main  # type: ignore
+except ImportError:
+    # Fallback en cas d'environnement minimal (tests) : appel direct.
+    def _call_after_main(fn, *args, **kwargs):
+        fn(*args, **kwargs)
+
 # Ajout du répertoire de main.py dans sys.path pour que les imports plats
 # (audio, config, ws_client) résolvent en mode dev (python main.py) comme
 # en mode bundle (PyInstaller flatten déjà mais on sécurise).
@@ -514,7 +526,13 @@ class VoiceBridgeApp(rumps.App):
         self._refresh_translate_submenu()
 
     def _on_cost_update(self, cost_eur: float, duration_s: int) -> None:
-        """Callback alimenté par WSClient quand un cost_update arrive."""
+        """Callback alimenté par WSClient quand un cost_update arrive.
+
+        Appelé depuis le thread asyncio → marshalle vers main thread Cocoa.
+        """
+        _call_after_main(self._apply_cost_update, cost_eur, duration_s)
+
+    def _apply_cost_update(self, cost_eur: float, duration_s: int) -> None:
         self.session_cost_eur = cost_eur
         self.session_duration_s = duration_s
         if self.mode != MODE_CPU_V1:
@@ -571,6 +589,12 @@ class VoiceBridgeApp(rumps.App):
             self.ws.push_audio(raw_bytes)
 
     def _on_ws_state(self, state: str, *args) -> None:
+        # Callback appelé depuis le thread asyncio de WSClient. On marshalle
+        # vers le main thread Cocoa (sinon AppKit lève
+        # NSInternalInconsistencyException sur tout setTitle).
+        _call_after_main(self._apply_ws_state, state, args)
+
+    def _apply_ws_state(self, state: str, args: tuple) -> None:
         if state in ("connected", "ready"):
             self._set_status(ICON_PAUSED if self.audio.is_paused() else ICON_CONNECTED)
         elif state in ("disconnected", "error", "connecting"):
