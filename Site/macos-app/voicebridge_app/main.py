@@ -49,6 +49,7 @@ if str(_HERE) not in sys.path:
 
 import audio as audio_mod  # noqa: E402
 import config as cfg  # noqa: E402
+from live_panel import LivePanel  # noqa: E402
 from ws_client import WSClient  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s")
@@ -127,6 +128,9 @@ class VoiceBridgeApp(rumps.App):
         self.session_cost_eur = 0.0
         self.session_duration_s = 0
 
+        # ── Panneau Live (transcript + traduction en temps réel) ────────
+        self.live_panel = LivePanel()
+
         # ── État warmup (anti re-click + animation icône) ───────────────
         # _warmup_in_progress empêche l'utilisateur de stacker N jobs
         # RunPod en queue en cliquant frénétiquement.
@@ -160,6 +164,9 @@ class VoiceBridgeApp(rumps.App):
         self.warmup_item = rumps.MenuItem("🔥 Préchauffer GPU", callback=self._on_warmup_gpu)
         # V3 — affichage coût session (read-only)
         self.cost_item = rumps.MenuItem("💰 Coût session : 0.0000€ · 0s")
+        # V3 — panneau Live (transcript + traduction temps réel)
+        self.live_panel_item = rumps.MenuItem("👁  Afficher panneau Live",
+                                                callback=self._toggle_live_panel)
         self.pause_item = rumps.MenuItem("⏸ Mettre en pause", callback=self._toggle_pause)
         self.preferences_item = rumps.MenuItem("Préférences…", callback=self._open_preferences)
         self.quit_item = rumps.MenuItem("⏹ Quitter", callback=self._on_quit)
@@ -171,6 +178,7 @@ class VoiceBridgeApp(rumps.App):
             self.rvc_item,
             self.warmup_item,
             None,
+            self.live_panel_item,
             self.cost_item,
             None,
             self.pause_item,
@@ -777,12 +785,35 @@ class VoiceBridgeApp(rumps.App):
             rvc_model_id=self.rvc_model_id,
             on_state_change=self._on_ws_state,
             on_cost_update=self._on_cost_update,
+            on_transcript=self._on_transcript,
+            on_translated=self._on_translated,
+            on_server_error=self._on_server_error,
         )
         self.ws.start()
 
     def _on_capture(self, raw_bytes: bytes) -> None:
         if self.ws:
             self.ws.push_audio(raw_bytes)
+
+    # ── Panneau Live (transcript + traduction) ─────────────────────
+
+    def _toggle_live_panel(self, _sender) -> None:
+        # rumps callback → main thread Cocoa (OK pour AppKit direct).
+        visible = self.live_panel.toggle()
+        self.live_panel_item.title = ("👁  Masquer panneau Live" if visible
+                                        else "👁  Afficher panneau Live")
+
+    def _on_transcript(self, text: str) -> None:
+        # Callback depuis le thread asyncio WS → marshalle vers main thread
+        _call_after_main(self.live_panel.append_transcript, text)
+
+    def _on_translated(self, text: str, target_lang: str) -> None:
+        _call_after_main(self.live_panel.append_translated, text, target_lang)
+        # Sépare visuellement chaque paire transcript+traduction
+        _call_after_main(self.live_panel.append_separator)
+
+    def _on_server_error(self, msg: str) -> None:
+        _call_after_main(self.live_panel.append_error, msg)
 
     def _on_audio_level(self, speaking: bool) -> None:
         """Callback AudioPipeline : transition parole/silence du micro.

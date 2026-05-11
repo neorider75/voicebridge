@@ -32,7 +32,10 @@ class WSClient:
                  target_lang: str | None = None,
                  rvc_model_id: str | None = None,
                  on_state_change=None,
-                 on_cost_update=None) -> None:
+                 on_cost_update=None,
+                 on_transcript=None,
+                 on_translated=None,
+                 on_server_error=None) -> None:
         self.server_url = server_url
         self.api_token = api_token
         self.audio = audio_pipeline
@@ -45,6 +48,10 @@ class WSClient:
         self.rvc_model_id = rvc_model_id
         self.on_state_change = on_state_change or (lambda *a, **kw: None)
         self.on_cost_update = on_cost_update or (lambda *a, **kw: None)
+        # Callbacks pour le panneau Live (texte transcrit + traduit)
+        self.on_transcript = on_transcript or (lambda *a, **kw: None)
+        self.on_translated = on_translated or (lambda *a, **kw: None)
+        self.on_server_error = on_server_error or (lambda *a, **kw: None)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -231,11 +238,20 @@ class WSClient:
                     raw = raw[idx + 8:]
             self.audio.play_response(raw)
         elif ptype == "transcript":
-            # Texte transcrit — purement informatif côté app macOS.
-            pass
+            text = payload.get("text", "")
+            log.info("transcript: %r", text[:80])
+            try:
+                self.on_transcript(text)
+            except Exception:  # noqa: BLE001
+                pass
         elif ptype == "translated":
-            # V3 : phrase traduite côté serveur — log only.
-            pass
+            text = payload.get("text", "")
+            tgt = payload.get("tgt_lang") or payload.get("target_lang") or ""
+            log.info("translated [%s]: %r", tgt, text[:80])
+            try:
+                self.on_translated(text, tgt)
+            except Exception:  # noqa: BLE001
+                pass
         elif ptype == "cost_update":
             # V3 : coût session en mode GPU — remonté à l'app pour affichage
             # dans le menu bar.
@@ -257,8 +273,13 @@ class WSClient:
             # qu'on n'a pas reçu un nouveau "ready". L'app pourra réémettre
             # un configure avec une voix valide.
             self._ready = False
-            log.warning("server error: %s", payload.get("message"))
-            self.on_state_change("error", payload.get("message"))
+            msg = payload.get("message", "")
+            log.warning("server error: %s", msg)
+            self.on_state_change("error", msg)
+            try:
+                self.on_server_error(msg)
+            except Exception:  # noqa: BLE001
+                pass
         elif ptype == "state_update":
             voice = payload.get("active_voice")
             if voice:
