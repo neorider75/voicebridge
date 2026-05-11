@@ -26,13 +26,9 @@ sacremoses>=0.1        # tokenizers OPUS-MT
 ctranslate2>=4.4
 faster-whisper>=1.0
 
-# Quantization
-# /!\ Pin strict 0.43.3 : bitsandbytes 0.44+ utilise une API d'enregistrement
-# de kernel CUDA introduite pour torch 2.5+ et incompatible avec torch 2.4.
-# Symptôme avec >=0.44 : "infer_schema(func): Parameter input has unsupported
-# type torch.Tensor" au load NLLB (qui utilise bnb pour quantization INT8).
-# 0.43.3 = dernière 0.43.x stable, compatible torch 2.4.0+cu121.
-bitsandbytes==0.43.3
+# Quantization — retiré : NLLB est désormais chargé en FP16 safetensors
+# (pas INT8) car bitsandbytes exige pytorch_model.bin qui n'est plus sur
+# le Volume (supprimé pour économiser 5 Go ; FP16 = 5 Go VRAM, OK sur 4090).
 
 # F5-TTS (PyPI — le tag v1.0.0 sur le repo git n'existe pas)
 f5-tts>=1.0.0

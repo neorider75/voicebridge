@@ -37,26 +37,41 @@ class NLLB:
     """Wrapper NLLB-200 distilled 1.3B."""
 
     def __init__(self):
-        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
         import torch
 
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=HF_CACHE)
 
+        # /!\ Volume RunPod a UNIQUEMENT model.safetensors (pas pytorch_model.bin
+        # — supprimé pour économiser ~5 Go). bitsandbytes INT8 exige
+        # pytorch_model.bin, donc on ne tente PAS l'INT8 ici.
+        # FP16 sur RTX 4090 = ~5 Go VRAM, largement OK.
+        #
+        # use_safetensors=True : force transformers à utiliser le snapshot
+        # safetensors et à NE PAS retomber sur un download HF (sinon ça
+        # plante avec "Disk quota exceeded" car le Volume est saturé).
+        # local_files_only=True : interdit toute tentative de download.
         try:
-            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                MODEL_ID,
-                cache_dir=HF_CACHE,
-                quantization_config=bnb_config,
-            )
-            log.info("NLLB loaded with INT8 quantization")
-        except Exception as e:
-            log.warning("INT8 quantization failed, fallback to FP16: %s", e)
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 MODEL_ID,
                 cache_dir=HF_CACHE,
                 torch_dtype=torch.float16,
+                use_safetensors=True,
+                local_files_only=True,
             ).to("cuda")
+            log.info("NLLB loaded (FP16 safetensors, offline)")
+        except Exception as e:
+            # Fallback : retente sans local_files_only au cas où le cache
+            # n'aurait pas le snapshot config.json référencé. Si ça plante
+            # aussi → le Volume est mal monté.
+            log.warning("NLLB offline load failed (%s), retry online", e)
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                MODEL_ID,
+                cache_dir=HF_CACHE,
+                torch_dtype=torch.float16,
+                use_safetensors=True,
+            ).to("cuda")
+            log.info("NLLB loaded (FP16 safetensors, online fallback)")
 
         self.model.eval()
 
