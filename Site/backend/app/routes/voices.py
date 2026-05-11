@@ -44,7 +44,7 @@ from .. import config
 from ..auth import require_auth
 from ..limiter import limiter
 from ..models import tts as tts_model
-from ..services import audio, url_extract
+from ..services import audio, native_voices, url_extract
 from ..services import voices_store as store
 from ..utils import files
 
@@ -107,6 +107,46 @@ def _encode_voice_background(voice_id: str, language: str, ref_text: str | None)
 @router.get("")
 async def list_voices() -> dict:
     return {"voices": store.list_voices()}
+
+
+# ---------------------------------------------------------------------------
+# Voix natives — catalogue + installation automatique
+# ---------------------------------------------------------------------------
+
+
+@router.get("/native/catalog")
+async def native_catalog() -> dict:
+    """Liste les voix natives disponibles dans le catalogue (avec statut
+    installé ou pas). Utile pour UI."""
+    return {"catalog": native_voices.catalog_summary()}
+
+
+@router.post("/native/install")
+@limiter.limit("3/minute")
+async def native_install(request: Request, force: bool = False) -> dict:
+    """Télécharge + installe TOUTES les voix natives du catalogue par
+    défaut. Idempotent — skip les déjà installées sauf si force=true.
+
+    Long (~30 s à 1 min selon réseau, ~5 Mo par voix). Run en thread
+    pour ne pas bloquer l'event loop FastAPI.
+    """
+    import asyncio
+    result = await asyncio.to_thread(native_voices.install_all, force)
+    return {"ok": True, **result}
+
+
+@router.post("/native/install/{lang}")
+@limiter.limit("10/minute")
+async def native_install_one(request: Request, lang: str, force: bool = False) -> dict:
+    """Installe (ou ré-installe avec force=true) la voix native d'une langue."""
+    import asyncio
+    result = await asyncio.to_thread(native_voices.install_one, lang, force)
+    if not result.get("installed") and result.get("error") not in (None, "already_installed"):
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail={
+            "error": "install_failed",
+            "message": result["error"],
+        })
+    return {"ok": True, **result}
 
 
 # ---------------------------------------------------------------------------

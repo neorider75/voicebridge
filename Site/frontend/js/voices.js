@@ -169,5 +169,40 @@
       });
   }
 
-  document.addEventListener('DOMContentLoaded', refresh);
+  function installNativeVoices() {
+    var btn = document.getElementById('btnInstallNative');
+    if (!btn) return;
+    if (!window.confirm(
+        'Télécharger et installer les voix natives par défaut (FR, EN, ES, DE, IT, PT) ?\n\n'
+        + 'Source : Wikimedia Commons (Wikipédia parlée, licence CC-BY-SA).\n'
+        + 'Téléchargement : 5-10 Mo, 30 s à 1 min selon réseau.\n\n'
+        + 'Continuer ?')) return;
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Installation…';
+    VB.api.post('/api/voices/native/install')
+      .then(function (r) {
+        var msg = '✅ ' + (r.installed || []).length + ' voix installée(s)';
+        if ((r.skipped || []).length) msg += ' · ' + r.skipped.length + ' déjà présente(s)';
+        if ((r.failed || []).length) msg += ' · ⚠️ ' + r.failed.length + ' en échec';
+        VB.notify('success', msg);
+        if ((r.failed || []).length) {
+          console.warn('[voices] native install failures:', r.failed);
+        }
+        refresh();
+      })
+      .catch(function (e) {
+        VB.notify('error', 'Échec installation : ' + (e.message || e));
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = orig;
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    refresh();
+    var btn = document.getElementById('btnInstallNative');
+    if (btn) btn.addEventListener('click', installNativeVoices);
+  });
 })();

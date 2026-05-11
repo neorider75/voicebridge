@@ -131,6 +131,22 @@ def delete(voice_id: str) -> bool:
 
 
 def wav_path(voice_id: str) -> Path:
+    """Chemin du WAV de référence pour une voix.
+
+    Convention :
+    - Voix utilisateur (kind=clone) : ``VOICES_DIR/<id>.wav``
+    - Voix natives (kind=native) : ``VOICES_DIR/native/<id>.wav``
+      → on stocke aussi ``wav_path`` explicitement dans le dict pour
+        d'éventuels chemins custom (import externe).
+    """
+    # Lookup pour récupérer la voix → respecte ``wav_path`` si déclaré
+    v = get(voice_id)
+    if v:
+        custom = v.get("wav_path")
+        if custom:
+            return Path(custom)
+        if v.get("kind") == "native":
+            return config.VOICES_DIR / "native" / f"{voice_id}.wav"
     return config.VOICES_DIR / f"{voice_id}.wav"
 
 
