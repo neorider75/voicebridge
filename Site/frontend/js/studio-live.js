@@ -572,22 +572,26 @@
       playbackCtx = new Ctx({ latencyHint: 'interactive' });
       nextPlayAt = playbackCtx.currentTime;
       console.log('[live] AudioContext (lazy) — rate=' + playbackCtx.sampleRate
-                + ' state=' + playbackCtx.state);
-      // Crée le pipeline de routing : ctx → MediaStreamDestination →
-      // <audio>.srcObject. L'élément <audio> peut alors voir son output
-      // device changé via setSinkId() (Chrome 110+, Edge).
-      try {
-        playbackDestNode = playbackCtx.createMediaStreamDestination();
-        playbackAudioEl = document.createElement('audio');
-        playbackAudioEl.style.display = 'none';
-        playbackAudioEl.autoplay = true;
-        playbackAudioEl.srcObject = playbackDestNode.stream;
-        document.body.appendChild(playbackAudioEl);
-        // setSinkId initial : système par défaut (haut-parleurs)
-        // → mis à jour quand l'user choisit "BlackHole" via applyOutputMode().
-      } catch (e) {
-        console.warn('[live] MediaStreamDest unavailable, fallback ctx.destination', e);
-        playbackDestNode = null;
+                + ' state=' + playbackCtx.state + ' isSafari=' + IS_SAFARI);
+      // Crée le pipeline de routing MediaStreamDestination + <audio>
+      // UNIQUEMENT si on est sur un navigateur qui supporte setSinkId
+      // (= NON Safari). Safari a une autoplay policy stricte qui peut
+      // bloquer l'<audio>.play() même attaché à un MediaStream, ce qui
+      // casse l'output. On reste sur ctx.destination direct pour Safari.
+      if (!IS_SAFARI) {
+        try {
+          playbackDestNode = playbackCtx.createMediaStreamDestination();
+          playbackAudioEl = document.createElement('audio');
+          playbackAudioEl.style.display = 'none';
+          playbackAudioEl.autoplay = true;
+          playbackAudioEl.srcObject = playbackDestNode.stream;
+          document.body.appendChild(playbackAudioEl);
+        } catch (e) {
+          console.warn('[live] MediaStreamDest unavailable, fallback ctx.destination', e);
+          playbackDestNode = null;
+        }
+      } else {
+        console.log('[live] Safari detected — using ctx.destination direct (no MSD pipeline)');
       }
     }
     if (playbackCtx.state === 'suspended') {
