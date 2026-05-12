@@ -111,23 +111,55 @@ class AudioPipeline:
         self.input_device = input_idx
         self.output_device = output_idx
 
-        # Sortie : RawOutputStream (PCM 16-bit) — on écrit via stream.write()
-        # depuis un thread dédié pour éviter de bloquer le callback d'entrée.
-        # blocksize=OUTPUT_BLOCKSIZE (480 samples / 20 ms par défaut) au lieu
-        # de 0 (default ~5120/213 ms) → -150 ms de latence end-to-end côté
-        # sortie BlackHole.
+        # Sortie : RawOutputStream en mode CALLBACK (PortAudio pull-driven).
+        # PortAudio appelle _out_callback à son rythme naturel (= ce que
+        # BlackHole consomme). Quand on a un chunk à jouer, on le fournit ;
+        # sinon, du silence. Avantage critique : pas d'accumulation possible
+        # (pas de write() bloquant). Plus de bug "phrase reste bloquée tant
+        # que tu ne reparles pas".
+        self._out_carry = bytearray()  # buffer interne pour reste de chunk
+
+        def _out_callback(outdata, frames, time_info, status):  # noqa: ARG001
+            need_bytes = frames * 2  # int16 mono
+            out_view = memoryview(outdata)
+            written = 0
+            # 1) Vide d'abord le carry restant de la dernière itération
+            if self._out_carry:
+                take = min(len(self._out_carry), need_bytes - written)
+                out_view[written:written + take] = self._out_carry[:take]
+                del self._out_carry[:take]
+                written += take
+            # 2) Tire de la queue tant qu'il manque des bytes
+            while written < need_bytes:
+                try:
+                    chunk = self._out_queue.get_nowait()
+                except Empty:
+                    break
+                need = need_bytes - written
+                if len(chunk) <= need:
+                    out_view[written:written + len(chunk)] = chunk
+                    written += len(chunk)
+                else:
+                    out_view[written:written + need] = chunk[:need]
+                    self._out_carry.extend(chunk[need:])
+                    written = need_bytes
+                    break
+            # 3) Complète avec du silence si la queue est vide
+            if written < need_bytes:
+                out_view[written:need_bytes] = bytes(need_bytes - written)
+
         self._out_stream = sd.RawOutputStream(
             samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype=OUTPUT_DTYPE,
             device=output_idx, blocksize=OUTPUT_BLOCKSIZE,
-            latency='low',  # demande à PortAudio le buffer le plus petit possible
+            latency='low',
+            callback=_out_callback,
         )
         self._out_stream.start()
-        log.info("AudioPipeline output stream: rate=%d blocksize=%d "
-                 "latency=%.3fs", OUTPUT_RATE, OUTPUT_BLOCKSIZE,
-                 self._out_stream.latency)
+        log.info("AudioPipeline output stream (callback mode): "
+                 "rate=%d blocksize=%d latency=%.3fs",
+                 OUTPUT_RATE, OUTPUT_BLOCKSIZE, self._out_stream.latency)
         self._stop.clear()
-        self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
-        self._writer_thread.start()
+        # Plus besoin du writer thread — PortAudio pull via callback.
 
         self._callback_count = 0
 
@@ -227,38 +259,14 @@ class AudioPipeline:
                     pass
         if self._writer_thread:
             self._writer_thread.join(timeout=2)
+        # En mode callback (depuis le commit callback-based), _writer_thread
+        # est None — pas de thread à join.
 
     # ── Internal ────────────────────────────────────────────────────
 
-    def _writer_loop(self) -> None:
-        # Frame de silence (20 ms à 24 kHz mono int16 = OUTPUT_BLOCKSIZE * 2 bytes)
-        # injecté quand la queue est vide. Garde BlackHole/CoreAudio actif
-        # entre les phrases (sinon le device se suspend et le chunk suivant
-        # reste bloqué jusqu'à un réveil).
-        silence_frame = b"\x00" * (OUTPUT_BLOCKSIZE * 2)
-        # Durée réelle d'un frame de silence en secondes (= timeout idéal).
-        # On veut écrire le silence AU MÊME RYTHME que PortAudio le consomme,
-        # sinon le buffer interne (105 ms) se remplit en silence et bloque
-        # les chunks audio réels qui doivent attendre leur tour.
-        silence_duration_s = OUTPUT_BLOCKSIZE / OUTPUT_RATE  # 20 ms à 24 kHz
-        while not self._stop.is_set():
-            try:
-                # Timeout = durée d'un frame de silence → on n'écrit du
-                # silence que si vraiment rien n'arrive pendant ce temps.
-                chunk = self._out_queue.get(timeout=silence_duration_s)
-            except Empty:
-                if self._out_stream is not None:
-                    try:
-                        self._out_stream.write(silence_frame)
-                    except Exception:  # noqa: BLE001
-                        pass
-                continue
-            if self._out_stream is None:
-                continue
-            try:
-                self._out_stream.write(chunk)
-            except Exception:  # noqa: BLE001
-                log.exception("output write failed")
+    # _writer_loop supprimé : on est désormais en mode callback PortAudio
+    # (cf. _out_callback dans start()). PortAudio pull notre audio depuis
+    # _out_queue à son rythme naturel, plus de thread writer dédié.
 
     def _update_speaking_state(self, pcm_int16_bytes: bytes) -> None:
         """Détecte parole/silence sur le chunk capturé via RMS + hystérésis.
