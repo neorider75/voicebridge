@@ -194,12 +194,257 @@
       .then(function (s) {
         sessionId = s.id;
         $('stepIntro').style.display = 'none';
-        $('stepBlocks').style.display = '';
-        setBlock(1);
+        $('stepMicTest').style.display = '';
+        resetMicTestUI();
       })
       .catch(function (err) {
         VB.notify('error', err.message || 'Échec création session');
       });
+  }
+
+  // ── Test micro (silence + parole + score qualité) ──
+
+  var micTestCtx = null;
+  var micTestStream = null;
+  var micTestSource = null;
+  var micTestWorklet = null;
+  var micTestSampleBuffer = [];   // tampon des chunks Int16 (Uint8Array) en cours de phase
+
+  function resetMicTestUI() {
+    $('micTestIcon').textContent = '🎙';
+    $('micTestLabel').textContent = 'Prêt ?';
+    $('micTestSubLabel').textContent = 'Clique pour démarrer le test du micro.';
+    $('micTestPhrase').style.display = 'none';
+    $('micTestProgress').style.display = 'none';
+    $('micTestMeter').style.display = 'none';
+    $('micTestResult').style.display = 'none';
+    $('micTestStartBtnWrap').style.display = '';
+    $('micTestProgressBar').style.width = '0%';
+    $('micTestMeterBar').style.width = '0%';
+  }
+
+  function stopMicTestStream() {
+    try { if (micTestWorklet) micTestWorklet.disconnect(); } catch (e) {}
+    try { if (micTestSource) micTestSource.disconnect(); } catch (e) {}
+    if (micTestStream) {
+      micTestStream.getTracks().forEach(function (t) { t.stop(); });
+    }
+    if (micTestCtx) { micTestCtx.close().catch(function () {}); }
+    micTestCtx = null; micTestStream = null;
+    micTestSource = null; micTestWorklet = null;
+  }
+
+  // Calcule RMS et peak (en [0..1]) d'un buffer Int16 (Uint8Array)
+  function analyzeChunks(chunks) {
+    var totalLen = chunks.reduce(function (s, c) { return s + c.length; }, 0);
+    if (totalLen === 0) return { rms: 0, peak: 0, samples: 0 };
+    var sumSq = 0;
+    var peak = 0;
+    var nSamples = 0;
+    chunks.forEach(function (c) {
+      // c est Uint8Array, on lit en Int16 little-endian
+      var dv = new DataView(c.buffer, c.byteOffset, c.byteLength);
+      for (var i = 0; i + 1 < c.length; i += 2) {
+        var s = dv.getInt16(i, true) / 32768; // normalisé [-1..1]
+        sumSq += s * s;
+        var a = Math.abs(s);
+        if (a > peak) peak = a;
+        nSamples++;
+      }
+    });
+    return {
+      rms: nSamples > 0 ? Math.sqrt(sumSq / nSamples) : 0,
+      peak: peak,
+      samples: nSamples,
+    };
+  }
+
+  function startMicTest() {
+    $('micTestStartBtnWrap').style.display = 'none';
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    }).then(function (s) {
+      micTestStream = s;
+      micTestCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return micTestCtx.audioWorklet.addModule('/js/live-worklet.js').then(function () {
+        micTestSource = micTestCtx.createMediaStreamSource(micTestStream);
+        micTestWorklet = new AudioWorkletNode(micTestCtx, 'pcm-capture');
+        micTestWorklet.port.onmessage = function (e) {
+          micTestSampleBuffer.push(new Uint8Array(e.data));
+        };
+        micTestSource.connect(micTestWorklet);
+        runMicTestSequence();
+      });
+    }).catch(function (err) {
+      VB.notify('error', 'Accès micro refusé : ' + (err.message || err));
+      resetMicTestUI();
+    });
+  }
+
+  function runPhase(opts, done) {
+    // opts: {label, subLabel, icon, durationMs, phraseText, showMeter}
+    $('micTestIcon').textContent = opts.icon;
+    $('micTestLabel').textContent = opts.label;
+    $('micTestSubLabel').textContent = opts.subLabel;
+    if (opts.phraseText) {
+      $('micTestPhrase').textContent = opts.phraseText;
+      $('micTestPhrase').style.display = '';
+    } else {
+      $('micTestPhrase').style.display = 'none';
+    }
+    $('micTestProgress').style.display = '';
+    $('micTestMeter').style.display = opts.showMeter ? '' : 'none';
+    micTestSampleBuffer = [];
+    var t0 = Date.now();
+    var lastMeterUpdate = 0;
+    function tick() {
+      var elapsed = Date.now() - t0;
+      var pct = Math.min(100, (elapsed / opts.durationMs) * 100);
+      $('micTestProgressBar').style.width = pct + '%';
+      var remaining = Math.max(0, opts.durationMs - elapsed);
+      $('micTestCountdown').textContent = (remaining / 1000).toFixed(1) + ' s';
+      // VU-mètre live
+      if (opts.showMeter && Date.now() - lastMeterUpdate > 80) {
+        lastMeterUpdate = Date.now();
+        if (micTestSampleBuffer.length > 0) {
+          var last = micTestSampleBuffer.slice(-3);
+          var a = analyzeChunks(last);
+          var meterPct = Math.min(100, (a.rms / 0.3) * 100);
+          $('micTestMeterBar').style.width = meterPct + '%';
+        }
+      }
+      if (elapsed >= opts.durationMs) {
+        done(micTestSampleBuffer.slice());
+      } else {
+        requestAnimationFrame(tick);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function runMicTestSequence() {
+    // Petit délai pour laisser le user "se préparer"
+    $('micTestIcon').textContent = '⏳';
+    $('micTestLabel').textContent = 'Préparation…';
+    $('micTestSubLabel').textContent = 'Test démarre dans 2 s.';
+    setTimeout(function () {
+      // Phase 1 : silence (3 s)
+      runPhase({
+        icon: '🤫',
+        label: 'Reste silencieux',
+        subLabel: 'On mesure le bruit ambiant. Ne parle pas.',
+        durationMs: 3000,
+        showMeter: false,
+      }, function (silenceChunks) {
+        var silenceStats = analyzeChunks(silenceChunks);
+        // Phase 2 : parole (5 s)
+        runPhase({
+          icon: '🎤',
+          label: 'Lis cette phrase à voix haute',
+          subLabel: 'Parle normalement, comme pour les blocs.',
+          durationMs: 5000,
+          showMeter: true,
+          phraseText: 'Bonjour, je teste mon microphone pour la session d\'enregistrement. ' +
+                      'Le micro est à vingt centimètres de ma bouche, dans une pièce calme.',
+        }, function (speechChunks) {
+          var speechStats = analyzeChunks(speechChunks);
+          stopMicTestStream();
+          showMicTestResult(silenceStats, speechStats);
+        });
+      });
+    }, 2000);
+  }
+
+  function toDb(linear) {
+    if (linear <= 0) return -120;
+    return 20 * Math.log10(linear);
+  }
+
+  function showMicTestResult(silence, speech) {
+    var noiseDb = toDb(silence.rms);
+    var speechDb = toDb(speech.rms);
+    var peakDb = toDb(speech.peak);
+    var snrDb = speechDb - noiseDb;
+
+    // Scoring (chaque métrique 0..25)
+    var noiseScore = noiseDb < -55 ? 25 : noiseDb < -50 ? 22 : noiseDb < -45 ? 18
+                    : noiseDb < -40 ? 12 : noiseDb < -35 ? 6 : 0;
+    var speechScore;
+    if (speechDb > -8) speechScore = 8;          // trop fort
+    else if (speechDb > -12) speechScore = 20;
+    else if (speechDb >= -22) speechScore = 25;  // sweet spot
+    else if (speechDb >= -28) speechScore = 18;
+    else if (speechDb >= -34) speechScore = 10;
+    else speechScore = 3;                         // trop faible
+    var peakScore = peakDb < -3 ? 25 : peakDb < -1.5 ? 18 : peakDb < -0.5 ? 8 : 0;
+    var snrScore = snrDb > 35 ? 25 : snrDb > 28 ? 22 : snrDb > 22 ? 16
+                  : snrDb > 15 ? 10 : 4;
+
+    var total = noiseScore + speechScore + peakScore + snrScore;
+    var verdict;
+    if (total >= 85) verdict = '✅ Excellent — tu peux y aller';
+    else if (total >= 65) verdict = '👍 Correct — quelques améliorations possibles';
+    else if (total >= 40) verdict = '⚠️ Moyen — ajuste avant de continuer';
+    else verdict = '❌ Insuffisant — corrige absolument';
+
+    function row(label, value, score, status) {
+      var color = score >= 20 ? '#22c55e' : score >= 10 ? '#eab308' : '#ef4444';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid var(--border)">'
+        + '<div><div style="font-weight:600">' + label + '</div>'
+        + '<div style="font-size:0.78rem;color:var(--text3);font-family:DM Mono,monospace">' + value + '</div></div>'
+        + '<div style="color:' + color + ';font-weight:600">' + status + '</div></div>';
+    }
+
+    var details = '';
+    details += row('Bruit ambiant',
+                   noiseDb.toFixed(1) + ' dBFS',
+                   noiseScore,
+                   noiseScore >= 20 ? 'Très calme' : noiseScore >= 12 ? 'Acceptable' : 'Trop bruyant');
+    details += row('Niveau de voix',
+                   speechDb.toFixed(1) + ' dBFS',
+                   speechScore,
+                   speechScore >= 20 ? 'Optimal' : speechScore >= 10 ? 'Limite' : speechDb > -12 ? 'Trop fort' : 'Trop faible');
+    details += row('Pic max',
+                   peakDb.toFixed(1) + ' dBFS',
+                   peakScore,
+                   peakScore >= 20 ? 'Pas de saturation' : peakScore >= 8 ? 'Proche saturation' : 'Saturation détectée');
+    details += row('Rapport signal/bruit',
+                   snrDb.toFixed(1) + ' dB',
+                   snrScore,
+                   snrScore >= 20 ? 'Excellent' : snrScore >= 10 ? 'Acceptable' : 'Insuffisant');
+
+    var recos = [];
+    if (noiseScore < 15) recos.push('🌬️ Réduis le bruit ambiant : ferme la fenêtre, éloigne ventilateur/clim, désactive les notifications.');
+    if (speechDb < -28) recos.push('🔉 Rapproche-toi du micro ou monte le gain d\'entrée (System Settings → Sound → Input).');
+    if (speechDb > -10) recos.push('🔉 Éloigne-toi du micro ou baisse le gain — risque de saturation et de plosives.');
+    if (peakScore < 15) recos.push('⚠️ Saturation détectée : baisse le gain d\'entrée de quelques dB pour garder de la marge.');
+    if (snrScore < 15) recos.push('📉 Le signal est trop proche du bruit ambiant : améliore le niveau de voix ou réduis le bruit.');
+    if (recos.length === 0) recos.push('🎉 Setup nickel, lance les blocs.');
+
+    $('micTestScore').textContent = total + ' / 100';
+    $('micTestVerdict').textContent = verdict;
+    $('micTestDetails').innerHTML = details;
+    $('micTestRecommendations').innerHTML = recos.map(function (r) {
+      return '<div style="margin:0.3rem 0">' + r + '</div>';
+    }).join('');
+
+    $('micTestIcon').textContent = total >= 85 ? '✅' : total >= 65 ? '👍' : total >= 40 ? '⚠️' : '❌';
+    $('micTestLabel').textContent = 'Résultat';
+    $('micTestSubLabel').textContent = '';
+    $('micTestProgress').style.display = 'none';
+    $('micTestMeter').style.display = 'none';
+    $('micTestPhrase').style.display = 'none';
+    $('micTestResult').style.display = '';
+  }
+
+  function proceedToBlocks() {
+    $('stepMicTest').style.display = 'none';
+    $('stepBlocks').style.display = '';
+    setBlock(1);
   }
 
   function gotoNextBlock() {
@@ -278,6 +523,12 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     $('btnStartSession').addEventListener('click', startSession);
+    $('btnMicTestStart').addEventListener('click', startMicTest);
+    $('btnMicTestRetry').addEventListener('click', function () {
+      stopMicTestStream();
+      resetMicTestUI();
+    });
+    $('btnMicTestProceed').addEventListener('click', proceedToBlocks);
     $('btnNextBlock').addEventListener('click', gotoNextBlock);
     $('btnPrevBlock').addEventListener('click', gotoPrevBlock);
     $('btnGoValidate').addEventListener('click', gotoValidation);

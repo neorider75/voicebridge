@@ -70,6 +70,57 @@
     <button class="btn btn-primary" id="btnStartSession">▶ Démarrer la session</button>
   </section>
 
+  <!-- Étape 0.5 : test micro avant les blocs -->
+  <section class="step" data-step="rec-mictest" id="stepMicTest" style="display:none">
+    <div class="step-header">
+      <div class="step-number">🎙</div>
+      <div class="step-title">Test du micro</div>
+    </div>
+
+    <div class="alert alert-info" style="margin-bottom:1rem">
+      Avant de démarrer les blocs, on vérifie ton setup : <strong>bruit ambiant</strong>, <strong>niveau de voix</strong>, <strong>saturation</strong>. Le test dure ~10 secondes au total.
+    </div>
+
+    <div id="micTestStage" style="text-align:center;padding:1.5rem 1rem">
+      <div id="micTestIcon" style="font-size:3rem;margin-bottom:0.5rem">🎙</div>
+      <div id="micTestLabel" style="font-size:1.1rem;font-weight:600;margin-bottom:0.5rem">Prêt ?</div>
+      <div id="micTestSubLabel" style="color:var(--text3);font-size:0.85rem;margin-bottom:1rem">Clique pour démarrer le test du micro.</div>
+      <div id="micTestPhrase" style="display:none;background:var(--bg2);padding:1rem;border-radius:8px;margin:1rem 0;font-size:1.05rem;line-height:1.6;font-style:italic"></div>
+      <div id="micTestProgress" style="display:none;margin:1rem 0">
+        <div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden">
+          <div id="micTestProgressBar" style="height:100%;background:var(--accent2);width:0%;transition:width 0.1s linear"></div>
+        </div>
+        <div id="micTestCountdown" style="margin-top:0.5rem;font-family:'DM Mono',monospace;font-size:0.85rem;color:var(--text3)">—</div>
+      </div>
+      <div id="micTestMeter" style="display:none;margin:0.5rem auto;max-width:300px">
+        <div style="height:14px;background:var(--bg2);border-radius:7px;overflow:hidden;position:relative">
+          <div id="micTestMeterBar" style="height:100%;background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#eab308 80%,#ef4444 100%);width:0%;transition:width 0.05s linear"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="micTestResult" style="display:none;margin-top:1rem">
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
+          <div>
+            <div style="font-size:2rem;font-weight:800" id="micTestScore">— / 100</div>
+            <div style="font-size:0.78rem;color:var(--text3);font-family:'DM Mono',monospace" id="micTestVerdict"></div>
+          </div>
+        </div>
+        <div id="micTestDetails" style="font-size:0.85rem;line-height:1.6"></div>
+        <div id="micTestRecommendations" style="margin-top:0.75rem;font-size:0.85rem"></div>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:space-between">
+        <button class="btn btn-secondary" id="btnMicTestRetry">↻ Refaire le test</button>
+        <button class="btn btn-primary" id="btnMicTestProceed">Continuer vers les blocs →</button>
+      </div>
+    </div>
+
+    <div id="micTestStartBtnWrap" style="text-align:center;margin-top:1rem">
+      <button class="btn btn-primary" id="btnMicTestStart">▶ Démarrer le test</button>
+    </div>
+  </section>
+
   <!-- Étape 1-5 : enregistrement des blocs -->
   <section class="step" data-step="rec-blocks" id="stepBlocks" style="display:none">
     <div class="step-header">
