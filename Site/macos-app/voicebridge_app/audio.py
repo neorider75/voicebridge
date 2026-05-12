@@ -118,6 +118,8 @@ class AudioPipeline:
         # (pas de write() bloquant). Plus de bug "phrase reste bloquée tant
         # que tu ne reparles pas".
         self._out_carry = bytearray()  # buffer interne pour reste de chunk
+        self._out_cb_count = 0
+        self._out_cb_with_data = 0
 
         def _out_callback(outdata, frames, time_info, status):  # noqa: ARG001
             need_bytes = frames * 2  # int16 mono
@@ -130,11 +132,13 @@ class AudioPipeline:
                 del self._out_carry[:take]
                 written += take
             # 2) Tire de la queue tant qu'il manque des bytes
+            had_data = bool(self._out_carry) or written > 0
             while written < need_bytes:
                 try:
                     chunk = self._out_queue.get_nowait()
                 except Empty:
                     break
+                had_data = True
                 need = need_bytes - written
                 if len(chunk) <= need:
                     out_view[written:written + len(chunk)] = chunk
@@ -147,6 +151,17 @@ class AudioPipeline:
             # 3) Complète avec du silence si la queue est vide
             if written < need_bytes:
                 out_view[written:need_bytes] = bytes(need_bytes - written)
+
+            # Diagnostic : log régulier pour confirmer que PortAudio pull
+            # le callback en continu (et pas seulement quand on parle).
+            self._out_cb_count += 1
+            if had_data:
+                self._out_cb_with_data += 1
+            if self._out_cb_count in (1, 50, 200, 500):
+                log.info("_out_callback tick #%d (with_data=%d, queue=%d, "
+                         "status=%s)",
+                         self._out_cb_count, self._out_cb_with_data,
+                         self._out_queue.qsize(), status)
 
         self._out_stream = sd.RawOutputStream(
             samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype=OUTPUT_DTYPE,
