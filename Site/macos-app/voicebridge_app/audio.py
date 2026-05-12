@@ -121,6 +121,39 @@ class AudioPipeline:
         self._out_cb_count = 0
         self._out_cb_with_data = 0
 
+        # Pré-calcule un buffer de "silence dithered" pour remplir les
+        # gaps entre les phrases. Du silence PUR (zéros) déclenche le
+        # mode DTX (Discontinuous Transmission) de Teams/Zoom/etc, qui
+        # arrête de transmettre tant qu'il pense qu'on ne parle pas.
+        # Conséquence : le cloned audio est bloqué dans la file BlackHole
+        # jusqu'à ce qu'un événement audio "réveille" le consumer.
+        # Solution : bruit blanc à très basse amplitude (-60 dBFS,
+        # imperceptible) — assez pour garder le VAD du consumer actif.
+        if np is not None:
+            _dither_samples = np.random.randint(
+                -32, 33, OUTPUT_BLOCKSIZE * 4, dtype=np.int16
+            )
+            self._dither_buffer = bytes(_dither_samples.tobytes())
+        else:
+            self._dither_buffer = bytes(OUTPUT_BLOCKSIZE * 4 * 2)
+        self._dither_offset = 0
+
+        def _dither_chunk(nbytes: int) -> bytes:
+            """Retourne nbytes de dither, en bouclant sur _dither_buffer."""
+            buf = self._dither_buffer
+            blen = len(buf)
+            off = self._dither_offset
+            if off + nbytes <= blen:
+                out = buf[off:off + nbytes]
+                self._dither_offset = (off + nbytes) % blen
+                return out
+            # Wrap around
+            part1 = buf[off:]
+            remaining = nbytes - len(part1)
+            part2 = buf[:remaining]
+            self._dither_offset = remaining % blen
+            return bytes(part1) + bytes(part2)
+
         def _out_callback(outdata, frames, time_info, status):  # noqa: ARG001
             need_bytes = frames * 2  # int16 mono
             out_view = memoryview(outdata)
@@ -148,9 +181,12 @@ class AudioPipeline:
                     self._out_carry.extend(chunk[need:])
                     written = need_bytes
                     break
-            # 3) Complète avec du silence si la queue est vide
+            # 3) Complète avec du DITHER (pas de silence pur) si la queue
+            #    est vide. Ça garde le VAD/DTX du consumer (Teams, Zoom)
+            #    actif pendant les pauses entre phrases.
             if written < need_bytes:
-                out_view[written:need_bytes] = bytes(need_bytes - written)
+                gap = need_bytes - written
+                out_view[written:need_bytes] = _dither_chunk(gap)
 
             # Diagnostic : log régulier pour confirmer que PortAudio pull
             # le callback en continu (et pas seulement quand on parle).
