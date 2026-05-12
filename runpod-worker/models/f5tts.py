@@ -112,10 +112,14 @@ class F5TTS:
         Whisper sans hint de langue → détecte EN par défaut → la prosodie
         générée a un accent anglais même en mode FR→FR.
         """
-        key = hashlib.sha1(voice_ref_b64.encode("ascii")).hexdigest()[:16]
+        # ⚠ La clé DOIT inclure la langue : sinon, un ref_text transcrit
+        # forcé en EN (mode FR→EN) sera réutilisé en FR→FR et la prosodie
+        # produira un accent anglais sur du français. Bug observé en prod.
+        wav_hash = hashlib.sha1(voice_ref_b64.encode("ascii")).hexdigest()[:16]
+        key = f"{wav_hash}:{language}"
         cached = _REF_TEXT_CACHE.get(key)
         if cached is not None:
-            log.debug("F5-TTS ref_text cache hit key=%s lang=%s", key, language)
+            log.debug("F5-TTS ref_text cache hit key=%s", key)
             return cached
 
         try:
@@ -154,8 +158,8 @@ class F5TTS:
             ref_text = ""
 
         _REF_TEXT_CACHE[key] = ref_text
-        log.info("F5-TTS ref_text computed key=%s lang=%s text=%r",
-                 key, language, ref_text[:80])
+        log.info("F5-TTS ref_text computed key=%s text=%r",
+                 key, ref_text[:80])
         return ref_text
 
     def synthesize(self, text: str, voice_ref_b64: str,
