@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time as _time
 from typing import Any, Callable, Iterator, Optional
 
 from .. import config
@@ -39,6 +40,50 @@ DEFAULT_TIMEOUT_STREAM = 300.0   # /run + /stream/{job_id} — pipeline live
 
 class RunPodError(Exception):
     """Erreur générique d'appel RunPod (réseau, auth, business)."""
+
+
+# Codes HTTP transitoires côté infra RunPod : on retry avec backoff.
+# 500/502/503/504 = platform glitch (routage queue, worker pas prêt côté
+# RunPod, gateway, etc.) — typiquement résolu en 1-2 retries.
+_RUNPOD_RETRY_STATUSES = (500, 502, 503, 504)
+
+
+def _post_with_retry(client, url, headers, body, *,
+                     max_attempts: int = 3,
+                     base_delay: float = 0.5,
+                     label: str = "runpod"):
+    """POST avec retry exponentiel sur 5xx transitoires + erreurs réseau.
+
+    Retries : 0.5s, 1s, 2s (sur 3 tentatives max). Au-delà, on remonte
+    l'erreur d'origine au caller (RunPodError formatée).
+    """
+    last_exc = None
+    last_resp = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            r = client.post(url, headers=headers, json=body)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                log.warning("%s POST network error (attempt %d/%d): %s — "
+                            "retry in %.1fs", label, attempt, max_attempts,
+                            exc, delay)
+                _time.sleep(delay)
+                continue
+            raise RunPodError(f"{label} HTTP failed: {exc}") from exc
+        if r.status_code in _RUNPOD_RETRY_STATUSES and attempt < max_attempts:
+            delay = base_delay * (2 ** (attempt - 1))
+            log.warning("%s POST HTTP %d (attempt %d/%d): %s — retry in %.1fs",
+                        label, r.status_code, attempt, max_attempts,
+                        r.text[:200], delay)
+            _time.sleep(delay)
+            continue
+        return r
+    # Inatteignable normalement, mais filet de sécu
+    if last_exc:
+        raise RunPodError(f"{label} HTTP failed: {last_exc}") from last_exc
+    return last_resp
 
 
 class RunPodNotConfiguredError(RunPodError):
@@ -184,10 +229,8 @@ def runsync(payload: dict, timeout: float = DEFAULT_TIMEOUT_SYNC) -> dict:
     log.info("runpod.runsync op=%s", payload.get("operation", "?"))
 
     with _httpx_client(timeout) as client:
-        try:
-            r = client.post(url, headers=_auth_headers(), json=body)
-        except Exception as exc:  # noqa: BLE001
-            raise RunPodError(f"runsync HTTP failed: {exc}") from exc
+        r = _post_with_retry(client, url, _auth_headers(), body,
+                             label="runsync")
 
     if r.status_code != 200:
         raise RunPodError(f"runsync HTTP {r.status_code}: {r.text[:300]}")
@@ -258,10 +301,8 @@ def run_async(payload: dict) -> str:
     log.info("runpod.run_async op=%s", payload.get("operation", "?"))
 
     with _httpx_client(DEFAULT_TIMEOUT_SYNC) as client:
-        try:
-            r = client.post(url, headers=_auth_headers(), json=body)
-        except Exception as exc:  # noqa: BLE001
-            raise RunPodError(f"run HTTP failed: {exc}") from exc
+        r = _post_with_retry(client, url, _auth_headers(), body,
+                             label="run")
 
     if r.status_code != 200:
         raise RunPodError(f"run HTTP {r.status_code}: {r.text[:300]}")
