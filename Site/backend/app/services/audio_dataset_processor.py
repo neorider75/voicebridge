@@ -60,8 +60,8 @@ class QualityReport:
 def process_session(
     session_dir: Path,
     progress_cb: ProgressCallback,
-    denoise_strength: float = 0.7,
-    min_clip_seconds: float = 5.0,
+    denoise_strength: float = 0.5,
+    min_clip_seconds: float = 2.0,
     max_clip_seconds: float = 15.0,
 ) -> dict:
     """Pipeline complet. Appelle ``progress_cb(percent, step, details)``.
@@ -201,11 +201,17 @@ def _detect_speech_regions(audio, sr: int) -> list[tuple[int, int]]:
             x_new = np.linspace(0, 1, new_len, endpoint=False)
             audio_t = torch.from_numpy(np.interp(x_new, x_old, audio).astype(np.float32))
 
+    # min_silence_duration_ms=500 : ne casse pas les segments sur les
+    # micro-pauses inter-mots (~200-400 ms en français parlé naturellement).
+    # Garde des segments plus longs et plus continus → moins de drop côté
+    # _segment_clips qui exige min_clip_seconds.
+    # min_speech_duration_ms=300 : on tolère des segments plus courts au
+    # niveau VAD ; le filtre min_clip_seconds reprendra la main si besoin.
     timestamps = get_speech_timestamps(
         audio_t, model,
         sampling_rate=16000,
-        min_speech_duration_ms=500,
-        min_silence_duration_ms=300,
+        min_speech_duration_ms=300,
+        min_silence_duration_ms=500,
     )
     factor = sr / 16000
     return [(int(t["start"] * factor), int(t["end"] * factor))

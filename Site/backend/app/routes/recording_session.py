@@ -261,8 +261,11 @@ async def finish_block(session_id: str, payload: FinishBlockPayload) -> dict:
 
 
 class ProcessPayload(BaseModel):
-    denoise_strength: float = Field(default=0.7, ge=0.0, le=1.0)
-    min_clip_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    # Defaults adoucis (2024-05) : les valeurs précédentes (denoise 0.7,
+    # min_clip 5s) jetaient ~95% de l'audio sur des lectures naturelles
+    # avec pauses entre phrases. Standard RVC : clips 1-10s suffisent.
+    denoise_strength: float = Field(default=0.5, ge=0.0, le=1.0)
+    min_clip_seconds: float = Field(default=2.0, ge=1.0, le=30.0)
     max_clip_seconds: float = Field(default=15.0, ge=2.0, le=60.0)
 
 
