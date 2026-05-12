@@ -109,6 +109,18 @@
         </div>
         <div id="micTestDetails" style="font-size:0.85rem;line-height:1.6"></div>
         <div id="micTestRecommendations" style="margin-top:0.75rem;font-size:0.85rem"></div>
+        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+          <div style="font-size:0.8rem;color:var(--text3);margin-bottom:0.5rem;font-weight:600">🔊 Écouter ce qui a été enregistré</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:0.5rem 0.75rem;align-items:center">
+            <div style="font-size:0.85rem">🤫 Silence (3 s)</div>
+            <audio id="micTestPlaybackSilence" controls style="width:100%;height:32px"></audio>
+            <div style="font-size:0.85rem">🎤 Voix (8 s)</div>
+            <audio id="micTestPlaybackSpeech" controls style="width:100%;height:32px"></audio>
+          </div>
+          <div style="font-size:0.78rem;color:var(--text3);margin-top:0.5rem">
+            💡 Astuce : si tu entends des grésillements/saturation sur l'enregistrement de ta voix, baisse encore le gain du micro.
+          </div>
+        </div>
       </div>
       <div style="display:flex;gap:0.5rem;justify-content:space-between">
         <button class="btn btn-secondary" id="btnMicTestRetry">↻ Refaire le test</button>

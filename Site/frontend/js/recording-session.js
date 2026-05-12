@@ -330,7 +330,7 @@
     // Petit délai pour laisser le user "se préparer"
     $('micTestIcon').textContent = '⏳';
     $('micTestLabel').textContent = 'Préparation…';
-    $('micTestSubLabel').textContent = 'Test démarre dans 2 s.';
+    $('micTestSubLabel').textContent = 'Test démarre dans 3 s.';
     setTimeout(function () {
       // Phase 1 : silence (3 s)
       runPhase({
@@ -341,22 +341,83 @@
         showMeter: false,
       }, function (silenceChunks) {
         var silenceStats = analyzeChunks(silenceChunks);
-        // Phase 2 : parole (5 s)
+        // Phase 2 : parole (8 s) — phrase plus courte pour ne pas
+        // précipiter la lecture, parle à ton rythme naturel.
         runPhase({
           icon: '🎤',
           label: 'Lis cette phrase à voix haute',
-          subLabel: 'Parle normalement, comme pour les blocs.',
-          durationMs: 5000,
+          subLabel: 'Parle à ton rythme naturel, comme pour les blocs. Tu as 8 secondes.',
+          durationMs: 8000,
           showMeter: true,
-          phraseText: 'Bonjour, je teste mon microphone pour la session d\'enregistrement. ' +
-                      'Le micro est à vingt centimètres de ma bouche, dans une pièce calme.',
+          phraseText: 'Bonjour, je teste mon microphone. Je parle naturellement, ' +
+                      'sans forcer, dans une pièce calme.',
         }, function (speechChunks) {
           var speechStats = analyzeChunks(speechChunks);
           stopMicTestStream();
+          // Stocke les chunks pour la lecture
+          lastMicTestSilenceChunks = silenceChunks;
+          lastMicTestSpeechChunks = speechChunks;
           showMicTestResult(silenceStats, speechStats);
         });
       });
-    }, 2000);
+    }, 3000);
+  }
+
+  // ── Conversion chunks Int16 PCM 16 kHz → WAV blob lisible ──
+
+  var lastMicTestSilenceChunks = null;
+  var lastMicTestSpeechChunks = null;
+
+  function chunksToWavBlob(chunks, sampleRate) {
+    sampleRate = sampleRate || 16000;
+    var totalLen = chunks.reduce(function (s, c) { return s + c.length; }, 0);
+    var merged = new Uint8Array(totalLen);
+    var off = 0;
+    chunks.forEach(function (c) { merged.set(c, off); off += c.length; });
+
+    var dataSize = merged.length;          // bytes
+    var byteRate = sampleRate * 2;          // mono 16-bit
+    var blockAlign = 2;
+    var wavSize = 44 + dataSize;
+    var buf = new ArrayBuffer(wavSize);
+    var dv = new DataView(buf);
+
+    function writeStr(off, s) {
+      for (var i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i));
+    }
+    writeStr(0, 'RIFF');
+    dv.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    dv.setUint32(16, 16, true);            // PCM fmt chunk size
+    dv.setUint16(20, 1, true);              // PCM format
+    dv.setUint16(22, 1, true);              // mono
+    dv.setUint32(24, sampleRate, true);
+    dv.setUint32(28, byteRate, true);
+    dv.setUint16(32, blockAlign, true);
+    dv.setUint16(34, 16, true);             // bits per sample
+    writeStr(36, 'data');
+    dv.setUint32(40, dataSize, true);
+    // Copie des bytes PCM
+    new Uint8Array(buf, 44).set(merged);
+
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  function setAudioPlayback(elemId, chunks) {
+    var el = $(elemId);
+    if (!el) return;
+    if (!chunks || chunks.length === 0) {
+      el.src = '';
+      return;
+    }
+    // Révoque l'ancien blob URL s'il existe (évite les fuites)
+    var prev = el.dataset.blobUrl;
+    if (prev) { try { URL.revokeObjectURL(prev); } catch (e) {} }
+    var blob = chunksToWavBlob(chunks, 16000);
+    var url = URL.createObjectURL(blob);
+    el.src = url;
+    el.dataset.blobUrl = url;
   }
 
   function toDb(linear) {
@@ -439,6 +500,10 @@
     $('micTestMeter').style.display = 'none';
     $('micTestPhrase').style.display = 'none';
     $('micTestResult').style.display = '';
+
+    // Branche les lecteurs audio (WAV générés à la volée depuis les chunks)
+    setAudioPlayback('micTestPlaybackSilence', lastMicTestSilenceChunks);
+    setAudioPlayback('micTestPlaybackSpeech', lastMicTestSpeechChunks);
   }
 
   function proceedToBlocks() {
