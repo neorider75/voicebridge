@@ -123,20 +123,25 @@ class AudioPipeline:
 
         # Pré-calcule un buffer de "silence dithered" pour remplir les
         # gaps entre les phrases. Du silence PUR (zéros) déclenche le
-        # mode DTX (Discontinuous Transmission) de Teams/Zoom/etc, qui
-        # arrête de transmettre tant qu'il pense qu'on ne parle pas.
-        # Conséquence : le cloned audio est bloqué dans la file BlackHole
-        # jusqu'à ce qu'un événement audio "réveille" le consumer.
-        # Solution : bruit blanc à très basse amplitude (-60 dBFS,
-        # imperceptible) — assez pour garder le VAD du consumer actif.
+        # mode DTX (Discontinuous Transmission) ou la noise suppression
+        # de Teams/Zoom, qui arrêtent de transmettre tant que l'input
+        # ressemble à du silence. Conséquence : cloned audio bloqué.
+        # Solution : bruit blanc à -40 dBFS (~328/32768 amplitude).
+        # C'est sous le seuil d'audibilité normal mais BIEN AU-DESSUS
+        # du seuil VAD typique (-50 à -60 dBFS). Override via
+        # VB_DITHER_AMPLITUDE (int16, max 32767).
+        _dither_amp = int(os.environ.get("VB_DITHER_AMPLITUDE", "328"))
         if np is not None:
             _dither_samples = np.random.randint(
-                -32, 33, OUTPUT_BLOCKSIZE * 4, dtype=np.int16
+                -_dither_amp, _dither_amp + 1,
+                OUTPUT_BLOCKSIZE * 4, dtype=np.int16,
             )
             self._dither_buffer = bytes(_dither_samples.tobytes())
         else:
             self._dither_buffer = bytes(OUTPUT_BLOCKSIZE * 4 * 2)
         self._dither_offset = 0
+        log.info("AudioPipeline output dither amplitude=%d (~%.0f dBFS)",
+                 _dither_amp, 20 * (np.log10(_dither_amp / 32767.0) if np else -60))
 
         def _dither_chunk(nbytes: int) -> bytes:
             """Retourne nbytes de dither, en bouclant sur _dither_buffer."""
