@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -200,6 +201,7 @@ class VoiceBridgeApp(rumps.App):
         # V3 — panneau Live (transcript + traduction temps réel)
         self.live_panel_item = rumps.MenuItem("👁  Afficher panneau Live",
                                                 callback=self._toggle_live_panel)
+        self.mute_item = rumps.MenuItem("🎙 Couper le micro", callback=self._toggle_mute)
         self.pause_item = rumps.MenuItem("⏸ Mettre en pause", callback=self._toggle_pause)
         self.preferences_item = rumps.MenuItem("Préférences…", callback=self._open_preferences)
         self.quit_item = rumps.MenuItem("⏹ Quitter", callback=self._on_quit)
@@ -216,6 +218,7 @@ class VoiceBridgeApp(rumps.App):
             self.live_panel_item,
             self.cost_item,
             None,
+            self.mute_item,
             self.pause_item,
             None,
             self.preferences_item,
@@ -242,6 +245,18 @@ class VoiceBridgeApp(rumps.App):
             self._refresh_voice_submenu()
 
     # ── Callbacks UI ────────────────────────────────────────────────
+
+    def _toggle_mute(self, sender: rumps.MenuItem) -> None:
+        """Mute total du micro côté app (aucun chunk envoyé au serveur).
+        Indépendant du toggle physique des AirPods : utile quand le micro
+        sélectionné n'est pas celui des AirPods, ou pour un mute rapide
+        sans bouger les écouteurs."""
+        if self.audio.is_mic_muted():
+            self.audio.set_mic_muted(False)
+            sender.title = "🎙 Couper le micro"
+        else:
+            self.audio.set_mic_muted(True)
+            sender.title = "🔇 Réactiver le micro"
 
     def _toggle_pause(self, sender: rumps.MenuItem) -> None:
         if self.audio.is_paused():
@@ -957,12 +972,29 @@ class VoiceBridgeApp(rumps.App):
         if not self.server_url or not self.api_token:
             self._set_status(ICON_DISCONNECTED)
             return
-        bh = audio_mod.find_blackhole_index()
-        if bh is None:
-            rumps.alert("BlackHole introuvable",
-                        "Téléchargez et installez BlackHole 2ch (existential.audio/blackhole) "
-                        "puis relancez l'app.")
-            return
+        # Override de diagnostic : VB_OUTPUT_DEVICE=<substring> force le device
+        # de sortie (utile pour tester sans BlackHole sur haut-parleurs internes
+        # et isoler les bugs de buffer aval). Vide ou absent → BlackHole.
+        override = os.environ.get("VB_OUTPUT_DEVICE", "").strip().lower()
+        if override:
+            bh = None
+            for d in audio_mod.list_output_devices():
+                if override in d["name"].lower():
+                    bh = d["index"]
+                    log.info("VB_OUTPUT_DEVICE override: %s (idx=%d)",
+                             d["name"], bh)
+                    break
+            if bh is None:
+                rumps.alert("Device override introuvable",
+                            f"VB_OUTPUT_DEVICE='{override}' ne matche aucun device.")
+                return
+        else:
+            bh = audio_mod.find_blackhole_index()
+            if bh is None:
+                rumps.alert("BlackHole introuvable",
+                            "Téléchargez et installez BlackHole 2ch (existential.audio/blackhole) "
+                            "puis relancez l'app.")
+                return
         self.audio.start(input_idx=None, output_idx=bh)
 
         self.ws = WSClient(

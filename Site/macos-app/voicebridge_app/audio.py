@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from queue import Empty, Queue
 
 try:
@@ -87,6 +88,7 @@ class AudioPipeline:
         self._out_stream = None
         self._stop = threading.Event()
         self._paused = threading.Event()
+        self._mic_muted = threading.Event()
         self._out_queue: Queue[bytes] = Queue()
         self._writer_thread: threading.Thread | None = None
         self.input_device = None
@@ -101,6 +103,29 @@ class AudioPipeline:
         # du chunk courant pour ne pas couper le début du mot.
         self._preroll_buffer: list[bytes] = []
         self._preroll_max = 3
+        # ── Tail post-parole : on continue d'envoyer N chunks au serveur
+        # APRÈS la transition parole→silence, pour laisser Silero VAD côté
+        # serveur conclure son utterance et flusher le STT. Sans ça, le
+        # serveur reste bloqué dans `in_speech=True` (silence_count gelé)
+        # jusqu'à la prochaine phrase, qui débloque l'ancienne — bug
+        # "la phrase précédente ne sort que quand je reparle".
+        # 8 chunks × 100 ms = 800 ms — calibré juste au-dessus de
+        # SILENCE_FLUSH_TICKS_GPU (~500 ms) avec marge pour jitter réseau.
+        # Combiné aux 600 ms d'hystérésis silence client, le serveur reçoit
+        # ~1.4 s de silence après parole, largement de quoi flusher sans
+        # gaspiller de bande passante.
+        self._tail_remaining = 0
+        self._tail_max = int(os.environ.get("VB_GATE_TAIL_CHUNKS", "8"))
+        # ── Half-duplex : mute le micro pendant la lecture de la voix synth ──
+        # Sinon le mic capte la voix synthétisée (via haut-parleurs ou
+        # loopback BlackHole) → Whisper la retranscrit → boucle infinie de
+        # phrases dupliquées + hallucinations type "Merci". On garde un
+        # timestamp jusqu'à quand bloquer l'envoi mic. Marge 300 ms après
+        # la fin estimée de l'audio pour absorber la réverbération et le
+        # ringing audio. Désactivable via VB_HALF_DUPLEX=0.
+        self._mute_mic_until = 0.0
+        self._half_duplex_margin_s = float(
+            os.environ.get("VB_HALF_DUPLEX_MARGIN", "0.3"))
 
     # ── Public ───────────────────────────────────────────────────────
 
@@ -278,16 +303,42 @@ class AudioPipeline:
                 # est détectée (évite que le VAD Silero serveur déclenche
                 # sur les bruits ambiants / voix en arrière-plan).
                 # Désactivable via VB_NOISE_GATE=0 pour debug.
+                # Mute mic : aucun chunk n'est envoyé au serveur. Pre-roll
+                # vidé pour ne pas pousser des bouts d'audio antérieurs au
+                # unmute.
+                if self._mic_muted.is_set():
+                    self._preroll_buffer.clear()
+                    return
+
+                # Half-duplex (opt-in via VB_HALF_DUPLEX=1) : on droppe le
+                # chunk mic tant que la voix synthétisée est en cours de
+                # lecture. Utile en test avec haut-parleurs (le mic capte
+                # la synth → boucle). En prod (sortie BlackHole virtuelle,
+                # casque séparé) c'est inutile et dégrade l'expérience
+                # (impossible de couper la parole) → laissé OFF par défaut.
+                if (os.environ.get("VB_HALF_DUPLEX", "0") == "1"
+                        and time.monotonic() < self._mute_mic_until):
+                    self._preroll_buffer.clear()
+                    return
+
                 gate_enabled = os.environ.get("VB_NOISE_GATE", "1") == "1"
                 if gate_enabled and not self._speaking:
-                    # En silence : on alimente quand même le ring buffer
-                    # pour pouvoir flusher les ~300 ms qui précèdent la
-                    # prochaine détection de parole (sinon début de mot
-                    # coupé).
+                    # En silence : on continue d'envoyer ``tail_max`` chunks
+                    # APRÈS la fin de la parole pour laisser Silero VAD côté
+                    # serveur conclure et flusher. Au-delà → drop pur.
+                    if self._tail_remaining > 0:
+                        self._tail_remaining -= 1
+                        try:
+                            self.on_chunk_captured(data_bytes)
+                        except Exception:  # noqa: BLE001
+                            log.exception("on_chunk_captured (tail) failed")
+                        # Pas de return ici : on continue le ring buffer.
+                    # Ring buffer pre-roll pour ne pas couper le début
+                    # de la prochaine phrase.
                     self._preroll_buffer.append(data_bytes)
                     if len(self._preroll_buffer) > self._preroll_max:
                         self._preroll_buffer.pop(0)
-                    return  # ← drop : on n'envoie rien au serveur
+                    return  # ← drop : on n'envoie rien au serveur (sauf tail)
 
                 # Flush du pre-roll au moment précis du passage en speaking
                 # (cf. _update_speaking_state qui a flippé _speaking=True
@@ -325,6 +376,32 @@ class AudioPipeline:
     def play_response(self, audio_bytes: bytes) -> None:
         """Le ws_client appelle ça quand un audio_chunk arrive du serveur."""
         if audio_bytes:
+            # Half-duplex : étend la fenêtre de mute mic jusqu'à la fin
+            # estimée de la lecture de ce chunk + marge.
+            # Durée chunk = bytes / 2 (int16) / OUTPUT_RATE
+            chunk_duration_s = (len(audio_bytes) / 2) / OUTPUT_RATE
+            # OFF par défaut : en prod, BlackHole = sortie virtuelle, pas
+            # de loopback acoustique. Activer uniquement quand on monitore
+            # via haut-parleurs (test/debug) → VB_HALF_DUPLEX=1.
+            if os.environ.get("VB_HALF_DUPLEX", "0") == "1":
+                now = time.monotonic()
+                # On part de max(now, fin_actuelle) pour accumuler les chunks
+                # successifs sans saut en arrière dans le temps.
+                base = max(now, self._mute_mic_until)
+                self._mute_mic_until = (
+                    base + chunk_duration_s + self._half_duplex_margin_s)
+            # Diagnostic : VB_RESPONSE_BEEP=1 préfixe un bip 880 Hz 100 ms
+            # au premier chunk de chaque réponse (queue vide). Permet de
+            # confirmer auditivement à quel moment exact l'audio synth sort.
+            if (os.environ.get("VB_RESPONSE_BEEP") == "1"
+                    and self._out_queue.empty() and np is not None):
+                if not hasattr(self, "_beep_bytes"):
+                    t = np.arange(int(OUTPUT_RATE * 0.1)) / OUTPUT_RATE
+                    self._beep_bytes = (
+                        np.sin(2 * np.pi * 880 * t) * 16000
+                    ).astype(np.int16).tobytes()
+                self._out_queue.put(self._beep_bytes)
+                log.info("play_response: marker BEEP injected (start of utterance)")
             self._out_queue.put(audio_bytes)
             # Diagnostic : log la croissance de la queue
             qsize = self._out_queue.qsize()
@@ -340,6 +417,20 @@ class AudioPipeline:
 
     def is_paused(self) -> bool:
         return self._paused.is_set()
+
+    def set_mic_muted(self, value: bool) -> None:
+        """Mute total du micro : aucun chunk audio n'est envoyé au serveur
+        tant que le flag est levé. Différent de pause() qui passe en mode
+        bypass (micro → BlackHole direct sans aller-retour)."""
+        if value:
+            self._mic_muted.set()
+            log.info("mic MUTED")
+        else:
+            self._mic_muted.clear()
+            log.info("mic UNMUTED")
+
+    def is_mic_muted(self) -> bool:
+        return self._mic_muted.is_set()
 
     def stop(self) -> None:
         self._stop.set()
@@ -407,7 +498,12 @@ class AudioPipeline:
             self._speech_counter = 0
             if self._speaking and self._silence_counter >= 6:
                 self._speaking = False
-                log.info("mic → SILENCE (rms=%.5f < %.4f)", rms, silence_th)
+                # Active le tail post-parole : on continue d'envoyer
+                # ``tail_max`` chunks au serveur pour laisser le VAD
+                # conclure et flusher l'utterance (cf. note dans __init__).
+                self._tail_remaining = self._tail_max
+                log.info("mic → SILENCE (rms=%.5f < %.4f), tail=%d chunks",
+                         rms, silence_th, self._tail_remaining)
                 self.on_level(False)
 
     @staticmethod

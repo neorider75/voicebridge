@@ -210,6 +210,15 @@ class WSClient:
         except json.JSONDecodeError:
             return
         ptype = payload.get("type")
+        # Auto-recovery : si on était en état "error" et qu'un signal de
+        # succès arrive (transcript, audio_pcm, translated), c'est que le
+        # serveur a repris — on remet _ready=True et on notifie l'UI pour
+        # repasser le bouton au vert sans intervention utilisateur.
+        if (not self._ready
+                and ptype in ("transcript", "audio_pcm", "translated",
+                              "audio_chunk")):
+            self._ready = True
+            self.on_state_change("ready")
         if ptype == "audio_pcm":
             # Streaming Live : chunks PCM 16-bit mono 24 kHz, à pousser tels
             # quels dans le RawOutputStream BlackHole (qui est configuré au
