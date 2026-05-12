@@ -120,6 +120,15 @@ class AudioPipeline:
         self._out_carry = bytearray()  # buffer interne pour reste de chunk
         self._out_cb_count = 0
         self._out_cb_with_data = 0
+        # Diagnostic CoreAudio : suivre l'évolution du DAC time entre les
+        # callbacks pour détecter si BlackHole stalle (output time qui
+        # n'avance plus = device suspendu par macOS Energy Saver).
+        self._last_cb_time = None
+        self._last_dac_time = None
+        self._dac_stall_count = 0
+        # Logue le 1er callback "after silence" pour repérer les "wakes"
+        # (transitions silence prolongé → vraies données).
+        self._was_idle = True
 
         # Silence pur en idle (zéros). On a tenté du dither de bruit blanc
         # pour empêcher la suspension BlackHole/Teams VAD, mais ça créait
@@ -187,16 +196,44 @@ class AudioPipeline:
                 gap = need_bytes - written
                 out_view[written:need_bytes] = _dither_chunk(gap)
 
-            # Diagnostic : log régulier pour confirmer que PortAudio pull
-            # le callback en continu (et pas seulement quand on parle).
+            # Diagnostic CoreAudio : track DAC time progression
             self._out_cb_count += 1
             if had_data:
                 self._out_cb_with_data += 1
-            if self._out_cb_count in (1, 50, 200, 500):
+            import time as _t
+            wall_time = _t.monotonic()
+            dac_time = getattr(time_info, "outputBufferDacTime", 0)
+
+            # Détecte un stall DAC : si wall_time avance mais dac_time non
+            if self._last_cb_time is not None and self._last_dac_time is not None:
+                wall_delta = wall_time - self._last_cb_time
+                dac_delta = dac_time - self._last_dac_time
+                # Normal : dac_delta ≈ frames/sample_rate ≈ 0.02s à chaque cb
+                # Stall : dac_delta = 0 mais wall_delta > 0 (souvent)
+                if wall_delta > 0.030 and dac_delta < 0.001:
+                    self._dac_stall_count += 1
+                    if self._dac_stall_count in (1, 5, 20, 100):
+                        log.warning("DAC STALL #%d: wall+%.3fs but dac+%.6fs "
+                                    "(BlackHole frozen?)",
+                                    self._dac_stall_count,
+                                    wall_delta, dac_delta)
+            self._last_cb_time = wall_time
+            self._last_dac_time = dac_time
+
+            # Log transition idle → data ("wake up event")
+            if had_data and self._was_idle:
+                log.info("WAKE UP from idle: cb #%d, queue had data after "
+                         "silence (qsize=%d)",
+                         self._out_cb_count, self._out_queue.qsize())
+                self._was_idle = False
+            elif not had_data:
+                self._was_idle = True
+
+            if self._out_cb_count in (1, 50, 200, 500, 1500):
                 log.info("_out_callback tick #%d (with_data=%d, queue=%d, "
-                         "status=%s)",
+                         "stalls=%d, status=%s)",
                          self._out_cb_count, self._out_cb_with_data,
-                         self._out_queue.qsize(), status)
+                         self._out_queue.qsize(), self._dac_stall_count, status)
 
         self._out_stream = sd.RawOutputStream(
             samplerate=OUTPUT_RATE, channels=OUTPUT_CHANNELS, dtype=OUTPUT_DTYPE,
