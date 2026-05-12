@@ -96,13 +96,32 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Étape 3 — Forker le notebook RVC</div>
+      <div class="card-title">Étape 3 — Choisir un notebook RVC</div>
       <p class="hint" style="margin-bottom:0.75rem">
-        Le notebook officiel <strong>"Applio RVC Trainer"</strong> est pré-configuré pour 300 epochs (~3h, qualité standard) ou 500 epochs (~6h, haute qualité).
+        Le notebook est le <strong>code d'entraînement</strong> : script PyTorch + modèles RVC v2 de base sur lesquels on fine-tune ta voix. Sans lui, le GPU Kaggle n'a rien à exécuter. Tu copies (fork) un notebook public existant dans ton compte Kaggle.
       </p>
-      <a href="https://www.kaggle.com/code/lemonpepper/applio-rvc-trainer" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none">
-        🔗 Notebook Applio RVC Trainer
-      </a>
+      <p class="hint" style="margin-bottom:0.75rem">
+        <strong>Options recommandées</strong> (toutes gratuites, 300-500 epochs ~3-6h) :
+      </p>
+      <ul style="padding-left:1.25rem;line-height:1.7;font-size:0.85rem;margin:0 0 0.75rem 0">
+        <li><strong>Applio (GitHub officiel)</strong> — repo source, contient un notebook Colab compatible Kaggle. Le plus à jour, maintenu activement.</li>
+        <li><strong>Recherche Kaggle "RVC trainer"</strong> — plusieurs notebooks communautaires fonctionnels. Vérifie la date de dernière mise à jour (privilégier < 6 mois).</li>
+        <li><strong>Mangio-RVC-Fork</strong> — historique, stable, bien documenté.</li>
+      </ul>
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+        <a href="https://github.com/IAHispano/Applio" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none">
+          🔗 Applio (GitHub)
+        </a>
+        <a href="https://www.kaggle.com/search?q=rvc+trainer" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none">
+          🔍 Rechercher sur Kaggle
+        </a>
+        <a href="https://github.com/Mangio621/Mangio-RVC-Fork" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none">
+          🔗 Mangio-RVC-Fork
+        </a>
+      </div>
+      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;color:var(--muted)">
+        Une fois sur la page du notebook Kaggle de ton choix → bouton <strong>"Copy & Edit"</strong> en haut à droite → le notebook est forké dans ton compte (modifiable).
+      </p>
     </div>
 
     <div class="card">
