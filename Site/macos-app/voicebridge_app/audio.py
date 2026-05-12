@@ -254,6 +254,11 @@ class AudioPipeline:
         """Le ws_client appelle ça quand un audio_chunk arrive du serveur."""
         if audio_bytes:
             self._out_queue.put(audio_bytes)
+            # Diagnostic : log la croissance de la queue
+            qsize = self._out_queue.qsize()
+            if qsize <= 2 or qsize % 10 == 0:
+                log.info("play_response: queued %d bytes (qsize=%d)",
+                         len(audio_bytes), qsize)
 
     def pause(self, value: bool) -> None:
         if value:

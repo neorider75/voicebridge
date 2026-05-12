@@ -219,6 +219,13 @@ class WSClient:
                 raw = base64.b64decode(data)
             except Exception:  # noqa: BLE001
                 return
+            seq = payload.get("seq", 0)
+            sr = payload.get("sample_rate", 24000)
+            # Log diagnostic : confirmer la réception des chunks audio.
+            # 1er chunk + tous les 10 pour ne pas spammer.
+            if seq == 0 or seq % 10 == 0:
+                log.info("recv audio_pcm seq=%d sr=%d bytes=%d (b64=%d)",
+                         seq, sr, len(raw), len(data))
             self.audio.play_response(raw)
         elif ptype == "audio_end":
             # Fin de la phrase synthétisée — rien à faire de spécial côté
